@@ -12,7 +12,7 @@ The project uses a nix flake. The flake gives the Rust toolchain and all
 other tools that the CI uses:
 
 ```console
-$ git clone https://github.com/bmabsout/prodrome
+$ git clone https://github.com/fulfilium/prodrome
 $ cd prodrome
 $ nix develop
 ```

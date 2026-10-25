@@ -2,7 +2,7 @@
 
 The roadmap of this crate is a Prodrome store. The store is on its own
 branch,
-[`roadmap-data`](https://github.com/bmabsout/prodrome/tree/roadmap-data),
+[`roadmap-data`](https://github.com/fulfilium/prodrome/tree/roadmap-data),
 apart from the code. Each item in the store is a todo: a piece of work that
 is left for this crate. The [viewer](viewer.md) shows the roadmap in the
 browser.
@@ -29,13 +29,13 @@ cannot break the reading of the roadmap without the CI failing.
 
 When someone opens an issue on this repository, a workflow adds an item
 `gh-<number>` to the roadmap branch, with a neutral price of 80%. The
-item's page is `https://bmabsout.github.io/prodrome/#/todo/gh-<number>`.
+item's page is `https://fulfilium.github.io/prodrome/#/todo/gh-<number>`.
 When someone closes the issue, the workflow completes the item. When someone
 reopens the issue, the workflow reopens the item.
 
 A maintainer sets the price of an item with a comment on the issue. The
 price uses the scale in the branch's
-[`PRICING.md`](https://github.com/bmabsout/prodrome/blob/roadmap-data/PRICING.md):
+[`PRICING.md`](https://github.com/fulfilium/prodrome/blob/roadmap-data/PRICING.md):
 
 ```
 /price 40

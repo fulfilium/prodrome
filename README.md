@@ -3,7 +3,7 @@
 A temporal, content-addressed event database with fulfillment-priority
 semantics.
 
-[![CI](https://github.com/bmabsout/prodrome/actions/workflows/ci.yml/badge.svg)](https://github.com/bmabsout/prodrome/actions/workflows/ci.yml)
+[![CI](https://github.com/fulfilium/prodrome/actions/workflows/ci.yml/badge.svg)](https://github.com/fulfilium/prodrome/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#license)
 
 Prodrome stores a history of events about todos. A program adds events to
@@ -41,7 +41,7 @@ dependency at a fixed commit:
 
 ```toml
 [dependencies]
-prodrome = { package = "prodrome-core", git = "https://github.com/bmabsout/prodrome", rev = "<commit>" }
+prodrome = { package = "prodrome-core", git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
 The library needs Rust 1.85 or later. The command-line tool is called
@@ -49,8 +49,8 @@ The library needs Rust 1.85 or later. The command-line tool is called
 build it with nix:
 
 ```console
-$ cargo install --git https://github.com/bmabsout/prodrome prodrome-cli
-$ nix build github:bmabsout/prodrome#prodrome-cli
+$ cargo install --git https://github.com/fulfilium/prodrome prodrome-cli
+$ nix build github:fulfilium/prodrome#prodrome-cli
 ```
 
 ## Example
@@ -100,10 +100,10 @@ it.
   development guide, and the description of the GitHub issue mirror.
 - [The roadmap](docs/roadmap.md) describes the work that is left for this
   crate. The roadmap is itself a Prodrome store, on the
-  [`roadmap-data`](https://github.com/bmabsout/prodrome/tree/roadmap-data)
+  [`roadmap-data`](https://github.com/fulfilium/prodrome/tree/roadmap-data)
   branch.
 - [The viewer](docs/viewer.md) shows the roadmap in the browser, on
-  [GitHub Pages](https://bmabsout.github.io/prodrome/).
+  [GitHub Pages](https://fulfilium.github.io/prodrome/).
 - Run `cargo doc --open` to read the API documentation.
 
 ## Contributing

@@ -230,7 +230,7 @@ Some guidelines:
   old spec still gives the value at every earlier time.
 
 The roadmap's
-[`PRICING.md`](https://github.com/bmabsout/prodrome/blob/roadmap-data/PRICING.md)
+[`PRICING.md`](https://github.com/fulfilium/prodrome/blob/roadmap-data/PRICING.md)
 is one example of a price scale, with reference points from 10% to 90%.
 
 ### 8. The chain compiler
