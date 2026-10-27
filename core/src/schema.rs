@@ -16,6 +16,8 @@
 //! A schema MAY price its entities ([`Price`]); one that does not has no
 //! price at all, which is not FPL's `Absent`.
 
+pub mod envelope;
+
 use std::fmt::Debug;
 
 use crate::event::Actor;

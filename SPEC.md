@@ -1287,7 +1287,8 @@ byte as before is law 22 and every vector suite, unchanged.
     its frontier's values, each once, and one value exactly when one is
     greatest; under the discrete order on events that is the candidates.
     `order_laws.rs::a_reading_is_the_maximal_values`,
-    `order_laws.rs::the_discrete_reading_is_the_candidates`.
+    `order_laws.rs::the_discrete_reading_is_the_candidates`,
+    `order_laws.rs::a_note_reading_is_the_candidates`.
 32. **An inflationary reading is a homomorphism.** An append to an
     inflationary register whose value is not `≥` the reading it supersedes
     is refused, and over the histories so written `read(h₁ ∪ h₂) =
@@ -1297,9 +1298,11 @@ byte as before is law 22 and every vector suite, unchanged.
     `review.rs::the_append_refuses_a_move_back`,
     `review.rs::the_reading_of_a_union_is_the_join_of_the_readings`.
 
-Law 33 is the design's law 1, over two schemas: the todo schema and a
+Law 33 is the design's law 1, over three schemas: the todo schema, a
 second one in the tests (`review.rs`), a machine priced by a flat term per
-phase and nothing else, so the law is seen to ask nothing of a schema. The
+phase and nothing else, and a third (`note.rs`), an application schema at
+the generic event of `schema::envelope` with one register, so the law is
+seen to ask nothing of a schema. The
 design's law 5 is law 34, over any `Price`, and law 24 is it for the todo
 through the entry; its law 6 is law 22.
 
@@ -1311,8 +1314,10 @@ through the entry; its law 6 is law 22.
     and each register type values exactly those writes.
     `schema_laws.rs::a_todo_reading_is_a_function_of_the_object_set`,
     `schema_laws.rs::a_review_reading_is_a_function_of_the_object_set`,
+    `schema_laws.rs::a_note_reading_is_a_function_of_the_object_set`,
     `schema_laws.rs::a_todo_write_joins_the_registers_it_names`,
-    `schema_laws.rs::a_review_write_joins_the_registers_it_names`.
+    `schema_laws.rs::a_review_write_joins_the_registers_it_names`,
+    `schema_laws.rs::a_note_write_joins_the_registers_it_names`.
 34. **A conflict prices as `Least` over its candidates.** Under any schema
     with a `Price`, a reading whose candidates price nothing has no price,
     one priced candidate is the price written as it, and otherwise the
@@ -1363,11 +1368,13 @@ replicas in memory sync in between and whose events are dated anywhere.
     So a writer's own successive writes to one entity stream in the order
     it wrote them, whatever their registers and instants.
     `causal.rs::a_change_rests_on_what_its_writer_saw`,
+    `causal.rs::a_note_change_rests_on_what_its_writer_saw`,
     `causal.rs::an_add_then_a_complete_stream_in_the_order_written`.
 37. **Supersession is per register.** Each register's frontier is its
     writes that no other write TO IT descends from: a write descending from
     a write in another register supersedes nothing there.
-    `causal.rs::a_change_rests_on_what_its_writer_saw`.
+    `causal.rs::a_change_rests_on_what_its_writer_saw`,
+    `causal.rs::a_note_change_rests_on_what_its_writer_saw`.
 
 Law 38 is §7's next change, over generated terms, environments, instants
 and observations.

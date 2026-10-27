@@ -152,6 +152,24 @@ misses once.
 
 ### Added
 
+- **A generic event for application schemas (`schema::envelope`), and a
+  product for a schema with one register (`fold::sole`).** `Event<S>`
+  holds a key, `at`, `actor` and a body `S`, and implements `Schema`. It
+  prints as `Constructor(<key fields>, at, actor, <body fields>)` through
+  `literal::codec`. The trait `Says` gives the body: the key type, the
+  registers, the event constructors, the registers that a body writes, the
+  print of the body and the parse of a whole event. `Head` gives the
+  fields of a key, and every `Literal` key has one field. `Vocab<S>` is the
+  vocabulary of `Event<S>`. `fold::sole::One<R>` is the product of a schema
+  whose events write one register, `Only`. The trait `Sole` gives that
+  register's reading, its refusal of a write that falls below the reading,
+  and whether a frontier is a conflict. An application implements `Sole`
+  for its own body type, because Rust's orphan rule does not let it
+  implement a trait of this crate for `Event<Body>`. A MINOR change under
+  this file's rule: new API only, and no stored byte, vector or export
+  moves. The schema laws 31, 33, 36 and 37 also run over a note schema at
+  `Event` in the tests (`core/tests/schemas/note.rs`), and
+  `core/tests/all/note.rs` checks its print.
 - **A codec between Rust values and literals (`literal::codec`).** The
   trait `Literal` gives a type one stored form that reads back exactly,
   with `to_value` and `from_value`. `record` and `headed` build the call of

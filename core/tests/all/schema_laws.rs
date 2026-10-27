@@ -3,9 +3,11 @@
 //! parents first, every duplication, and every partition into two replicas
 //! folded apart and then merged reads the same, register by register.
 //!
-//! Stated once, generic over a schema, and run over the todo schema and the
-//! review schema of `review.rs`: the law asks nothing of a schema, so neither
-//! may break it.
+//! Stated once, generic over a schema, and run over the todo schema, the
+//! review schema of `review.rs` and the note schema of `note.rs`: the law
+//! asks nothing of a schema, so none may break it. The note schema is an
+//! application schema at the generic event (`schema::envelope`), so the law
+//! covers the envelope and `fold::sole::One` too.
 //!
 //! Law 5, VALUATION: a reading's price is `Least` over the terms its
 //! candidates price as, and `Least` is their meet in the fulfillment order.
@@ -38,6 +40,7 @@ use crate::common::draw::{a_draw, history, Draw};
 
 use prodrome::todo::{Content, Spec, State};
 
+use crate::note::{self, Note};
 use crate::review::{self, Field, Phase, PhaseRegister, Review, PHASES};
 
 /// Every register's frontier and its reading by name ([`Product::reading`]),
@@ -273,6 +276,18 @@ fn a_review_event() -> impl Strategy<Value = Review> {
         })
 }
 
+/// A note event by `ada`: one of two notes, one of three titles, at one of
+/// three instants, so that a draw holds equal events under different deps.
+pub(crate) fn a_note_event() -> impl Strategy<Value = Note> {
+    (0..2usize, 0..3u32, 0..3u8).prop_map(|(name, minute, title)| {
+        note::by_ada(
+            ["n1", "n2"][name],
+            note::at(minute * 60),
+            &format!("t{title}"),
+        )
+    })
+}
+
 proptest! {
     #![proptest_config(crate::common::cases::cases(128))]
 
@@ -283,6 +298,13 @@ proptest! {
 
     #[test]
     fn a_review_reading_is_a_function_of_the_object_set(draw in a_draw(a_review_event())) {
+        free(&draw)?;
+    }
+
+    /// Law 33, over the note schema: an application schema at the generic
+    /// event, whose product is `fold::sole::One`.
+    #[test]
+    fn a_note_reading_is_a_function_of_the_object_set(draw in a_draw(a_note_event())) {
         free(&draw)?;
     }
 
@@ -309,5 +331,12 @@ proptest! {
     fn a_review_write_joins_the_registers_it_names(event in a_review_event()) {
         routed(&event)?;
         prop_assert!(valued::<_, PhaseRegister>(&event, Field::Phase));
+    }
+
+    /// Law 33, over the note schema: a write joins `Only`, the one register
+    /// it names.
+    #[test]
+    fn a_note_write_joins_the_registers_it_names(event in a_note_event()) {
+        routed(&event)?;
     }
 }
