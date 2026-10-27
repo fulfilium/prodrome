@@ -330,6 +330,18 @@ since this grammar has tuples and no mapping.
   the base's objects and fold, with its own objects folded over them. It
   writes nothing to the base until flushed, and its flush is `sync(overlay,
   base)`.
+- **A frontier token** names a frontier, a set of tips, in 64
+  characters: the sha256 of the tips' names in sorted order, each followed
+  by a newline. A pull asks a store of record for the objects that a
+  replica lacks. The store of record reads the pull's token, sends some
+  objects, and records the tips of what the replica then holds under their
+  token. The replica names that token in its next pull. The store of
+  record keeps a bounded number of the most recently recorded frontiers of
+  each store. It reads a token as the closure of the tips recorded under
+  it when it holds every one of those tips. It reads any other token, one
+  it never recorded, let go or forgot, or one that names a tip it no
+  longer holds, as unknown, and answers that pull as one from a replica
+  that holds nothing (law 47).
 - **A decision is the store of record's.** A question no monotone reading
   answers ("is it still standing, so I may perform?") is asked of a store on
   disk under its lock, and the record of its answer appended and synced
@@ -1587,6 +1599,61 @@ cost, parents and measure are functions of its name.
     `digest.rs::an_appended_line_only_coarsens_the_past`,
     `digest.rs::a_late_line_renames_a_logarithmic_spine`,
     `digest.rs::a_digest_read_through_memo_is_the_plain_one`.
+
+Law 47 is a pull that names its replica by a frontier token (§3), over
+two writers' histories over one shared history. A store of record keeps
+one, two or three frontiers and answers two replicas and another writer.
+The replicas write, post, and pull one piece at a time, and the pieces of
+one pull interleave with every other step. The store of record can
+forget every frontier it recorded and can go back to what it held after
+an earlier post, and a replica can go back to an earlier state of its own.
+
+47. **A pull by a frontier token is the pull from its tips.** A replica
+    follows two rules. It names a token only after it takes the whole
+    piece that named it. It names nothing once it holds less than its
+    token's frontier, for example after it goes back to an earlier state.
+    Each piece of each pull, and each post, records one frontier. The
+    store of record holds a token when it recorded the token and neither
+    let it go nor forgot it since. It lets a token go when the kept number
+    of other distinct frontiers of the store are recorded after the token
+    was last recorded.
+    (a) An answer reaches exactly the closure of its token's tips when the
+    store of record holds the token, the tips held under it are the tips
+    the token names, and the store holds every one of those tips. It
+    reaches nothing otherwise. The answer lacks the other objects, in the
+    store's linear order (§3: Kahn's algorithm over parents with a
+    min-heap on the name). A piece sends a prefix of them.
+    (b) Each frontier that an answer records is the tips of what the
+    answer reaches joined to what it sends, or, for a post, to what the
+    replica posted and the objects those rest on. So every frontier names
+    only objects that the replica holds, and no answer leaves out an
+    object that the replica lacks (safe).
+    (c) A piece falls back to nothing when, after its token was last
+    recorded, the store of record forgot its frontiers, the store went
+    back to an earlier state that lacks one of its token's tips, or the
+    store of record recorded the kept number of other distinct frontiers
+    of the store. A pull with no other step between its pieces falls back
+    at most once and ends, with the replica holding every object of the
+    store (complete). In general, a pull ends only while fewer than the
+    kept number of other distinct frontiers are recorded between each two
+    of its pieces, and while the store gains fewer objects between two
+    pieces than a piece sends. Two cases do not end: with a kept number
+    of 3, a writer that posts 3 times between each two pieces lets every
+    token go, so every piece falls back and sends the same first objects;
+    and with pieces of one object, a writer that posts one object between
+    each two pieces keeps the number of lacking objects the same.
+    (d) A pull from a known token whose closure is every object of the
+    store sends nothing and records the same token (quiet).
+    (e) A store of record that stops between two writes of a record keeps
+    only tokens that read as unknown or as the tips they name. It removes
+    the tokens it lets go, then writes the list of the tokens it keeps,
+    and writes the new tips last, so it never keeps tips that the list
+    does not name.
+    `frontier.rs::a_pull_by_frontier_token_is_the_pull_from_its_tips`,
+    `frontier.rs::a_record_stopped_at_any_write_reads_as_unknown_or_as_recorded`,
+    `frontier.rs::a_record_whose_tips_are_not_its_token_s_reads_as_unknown`,
+    `frontier.rs::a_pull_whose_token_is_let_go_between_its_pieces_does_not_end`,
+    `frontier.rs::a_pull_whose_store_gains_a_piece_between_its_pieces_does_not_end`.
 
 ## 10. Non-goals
 
