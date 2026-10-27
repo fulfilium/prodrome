@@ -10,6 +10,7 @@ mod causal;
 mod chain;
 mod change;
 mod change_vectors;
+mod codec;
 mod conformance_view;
 mod dag;
 mod declared;

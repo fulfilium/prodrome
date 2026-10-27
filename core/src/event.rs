@@ -32,6 +32,7 @@ use sha2::{Digest, Sha256};
 
 use crate::change::Change;
 use crate::genesis::Genesis;
+use crate::literal::codec::Literal;
 use crate::literal::{
     parse_literal, print_literal, Call, Datetime, ProdromeError, Signature, Table, Value,
     Vocabulary,
@@ -186,6 +187,26 @@ impl Actor {
                 "actor must match ^[a-z][a-z0-9_-]*$, got {text:?}"
             )))
         }
+    }
+}
+
+impl Literal for Hash {
+    fn to_value(&self) -> Value {
+        Value::str(self.as_str())
+    }
+
+    fn from_value(value: &Value) -> Result<Self, ProdromeError> {
+        Hash::new(String::from_value(value)?)
+    }
+}
+
+impl Literal for Actor {
+    fn to_value(&self) -> Value {
+        Value::str(self.as_str())
+    }
+
+    fn from_value(value: &Value) -> Result<Self, ProdromeError> {
+        Actor::new(String::from_value(value)?)
     }
 }
 

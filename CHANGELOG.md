@@ -152,6 +152,22 @@ misses once.
 
 ### Added
 
+- **A codec between Rust values and literals (`literal::codec`).** The
+  trait `Literal` gives a type one stored form that reads back exactly,
+  with `to_value` and `from_value`. `record` and `headed` build the call of
+  a `Constructor` (a name and its field order), and `Fields` reads the call
+  back by field name. `arm` and `no_arm` help a reader of a sum. The module
+  implements `Literal` for `String`, `bool`, `u32`, `u64`, `usize`,
+  `Datetime`, `chrono::NaiveDate` (as `YYYY-MM-DD`), `Option`, `Vec` and
+  `BTreeSet` (a sorted tuple, each member once), and `event` implements it
+  for `Actor` and `Hash`. The macro `text_literal!` implements it for a
+  type whose literal is its text, read back through the type's
+  `TryFrom<String>`. The macro `word_literal!` implements it for a type
+  with a finite set of values, each printed as a word, and reads a word
+  back from the list of all the type's values. `literal::Table` holds a list of `Constructor`s, which
+  is the same type as before. A MINOR change under this file's rule: new
+  API only, and no stored byte, vector or export moves. Tests in
+  `core/tests/all/codec.rs`.
 - **A store's reads are total (SPEC law 45).** `EventStore::tips`, `dag`,
   `folded`, `events`, `ancestors`, `concurrent` and `Replica::held` answer
   the history of the files that verify: a file failing its hash, not text
