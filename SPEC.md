@@ -1300,7 +1300,8 @@ byte as before is law 22 and every vector suite, unchanged.
     greatest; under the discrete order on events that is the candidates.
     `order_laws.rs::a_reading_is_the_maximal_values`,
     `order_laws.rs::the_discrete_reading_is_the_candidates`,
-    `order_laws.rs::a_note_reading_is_the_candidates`.
+    `order_laws.rs::a_note_reading_is_the_candidates`,
+    `bodies.rs::a_flag_reads_its_greatest_body`.
 32. **An inflationary reading is a homomorphism.** An append to an
     inflationary register whose value is not `≥` the reading it supersedes
     is refused, and over the histories so written `read(h₁ ∪ h₂) =
@@ -1329,7 +1330,9 @@ through the entry; its law 6 is law 22.
     `schema_laws.rs::a_note_reading_is_a_function_of_the_object_set`,
     `schema_laws.rs::a_todo_write_joins_the_registers_it_names`,
     `schema_laws.rs::a_review_write_joins_the_registers_it_names`,
-    `schema_laws.rs::a_note_write_joins_the_registers_it_names`.
+    `schema_laws.rs::a_note_write_joins_the_registers_it_names`,
+    `bodies.rs::a_flag_reading_is_a_function_of_the_object_set`,
+    `bodies.rs::a_flag_write_joins_the_registers_it_names`.
 34. **A conflict prices as `Least` over its candidates.** Under any schema
     with a `Price`, a reading whose candidates price nothing has no price,
     one priced candidate is the price written as it, and otherwise the

@@ -10,6 +10,16 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`fold::sole::Bodies<B>`, the register type whose value is an
+  `Event<B>`'s body under the body's own `Order`.** A one-register schema
+  whose reading is its bodies (a flag set off or on, a discrete label)
+  writes no register type of its own: `One<Bodies<B>>` is its product. Two
+  writes with equal bodies are one value, named by the least write, and an
+  event whose body writes no register joins nothing. `Order` holds for a
+  reference to an ordered value, as for the value. A MINOR change under
+  this file's rule: new API only. Tests in `core/tests/all/bodies.rs`, a
+  flag schema with an ordered body and a view that writes nothing, over
+  laws 31 and 33.
 - `store::frontier`, a frontier token for a pull over a wire (SPEC §3,
   law 47). `Token::of` names a set of tips by the sha256 of their sorted
   names, one on each line. `Frontiers::answer` reads a pull's token against
