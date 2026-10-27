@@ -131,6 +131,8 @@ pub mod event;
 pub mod fold;
 pub mod fpl;
 pub mod genesis;
+#[cfg(feature = "laws")]
+pub mod laws;
 pub mod literal;
 pub mod memo;
 pub mod nest;

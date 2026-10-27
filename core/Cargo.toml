@@ -19,8 +19,14 @@ autotests = false
 # it, which is why it ships rather than living in `tests/`. A host that
 # defines its own payload and wants none of these types compiles with
 # `default-features = false`.
-default = ["reference"]
+default = ["reference", "laws"]
 reference = []
+# THE LAW KIT, on by default. `prodrome::laws` holds the laws of SPEC §9 that
+# ask nothing of a schema, as functions over a store's objects, an event or
+# two replicas. The crate's own tests run them over the reference schemas.
+# A host that turns the default features off enables it for its own tests,
+# to check its schemas with the same laws.
+laws = []
 
 [lib]
 name = "prodrome"

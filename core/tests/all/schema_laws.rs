@@ -19,20 +19,18 @@
 //! register type's `value`) agree, so a write joins exactly the frontiers its
 //! event names.
 
-use std::collections::{BTreeMap, BTreeSet};
-
 use prodrome::dag::Dag;
 use prodrome::event::{
-    mk_cancelled, mk_completed, mk_created, mk_reopened, mk_spec_revised, mk_tended, Hash,
-    TodoEvent,
+    mk_cancelled, mk_completed, mk_created, mk_reopened, mk_spec_revised, mk_tended, TodoEvent,
 };
 use prodrome::fold::sole::{Only, Whole};
-use prodrome::fold::{price, read, Kind, Product, RegisterType};
+use prodrome::fold::{price, read, Kind};
 use prodrome::fpl::{self, mk_flat, Closed, Env};
+use prodrome::laws;
 use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::reference::{mk_authored, Todo};
-use prodrome::registers::{extend, fold, Folded, Genesis, Node};
+use prodrome::registers::{fold, Folded};
 use prodrome::schema::{History, Price, Schema};
 use prodrome::term::Term;
 use proptest::prelude::*;
@@ -44,101 +42,14 @@ use prodrome::todo::{Content, Spec, State};
 use crate::note::{self, Entry, Note};
 use crate::review::{self, Field, Phase, PhaseRegister, Review, PHASES};
 
-/// Every register's frontier and its reading by name ([`Product::reading`]),
-/// for every entity: what the law is about, compared by object names because
-/// a fold's positions are its own business.
-type Reading<E> = BTreeMap<(Genesis, <E as Schema>::Key), Vec<(Vec<Hash>, Vec<Hash>)>>;
-
-fn reading<E: Schema>(state: &Folded<E>) -> Reading<E> {
-    let mut out = BTreeMap::new();
-    for (genesis, prodrome) in state.prodromes() {
-        for (key, stream) in prodrome {
-            let registers = read(stream, None, &Everything);
-            let frontiers = registers
-                .registers()
-                .into_iter()
-                .map(|register| {
-                    let read = registers.reading(register);
-                    let names = read.iter().map(|stamp| stamp.name.clone()).collect();
-                    (registers.frontier(register).names(), names)
-                })
-                .collect();
-            out.insert((genesis.clone(), key.clone()), frontiers);
-        }
-    }
-    out
+/// A broken law, as the property test's failure.
+pub(crate) fn failed(broken: laws::Broken) -> TestCaseError {
+    TestCaseError::fail(broken.to_string())
 }
 
-/// `nodes` in the order their ranks give, parents first.
-fn ordered<E: Schema>(nodes: &[Node<E>], ranks: &[u32]) -> Vec<Node<E>> {
-    let mut placed: BTreeSet<&Hash> = BTreeSet::new();
-    let mut left: Vec<(u32, &Node<E>)> = nodes
-        .iter()
-        .enumerate()
-        .map(|(i, node)| (ranks.get(i).copied().unwrap_or(0), node))
-        .collect();
-    let mut out = Vec::with_capacity(nodes.len());
-    while !left.is_empty() {
-        let ready = left
-            .iter()
-            .enumerate()
-            .filter(|(_, (_, node))| {
-                node.parents()
-                    .iter()
-                    .all(|p| placed.contains(p) || !nodes.iter().any(|n| n.name() == p))
-            })
-            .min_by_key(|(_, (rank, node))| (*rank, node.name()))
-            .map(|(i, _)| i)
-            .expect("a DAG always has a ready node");
-        let (_, node) = left.remove(ready);
-        placed.insert(node.name());
-        out.push(node.clone());
-    }
-    out
-}
-
-/// Law 1 at one draw.
+/// Law 33's first clause at one draw, by the kit.
 pub(crate) fn free<E: Schema>(draw: &Draw<E>) -> Result<(), TestCaseError> {
-    let dag: Dag<E> = history(&draw.events).into_iter().collect();
-    let nodes = dag.nodes().expect("a DAG");
-    let expected = reading(&fold(&nodes));
-
-    let permuted = ordered(&nodes, &draw.ranks);
-    prop_assert_eq!(reading(&fold(&permuted)), expected.clone(), "permuted");
-
-    let mut doubled = permuted.clone();
-    for i in &draw.twice {
-        let node = permuted[i % permuted.len()].clone();
-        let after = doubled
-            .iter()
-            .position(|held| held.name() == node.name())
-            .expect("held");
-        let at = (after + 1 + i % 3).min(doubled.len());
-        doubled.insert(at, node);
-    }
-    prop_assert_eq!(reading(&fold(&doubled)), expected.clone(), "duplicated");
-
-    let seeds = |mine: bool| {
-        nodes
-            .iter()
-            .enumerate()
-            .filter(move |(i, _)| (draw.replica >> (i % 64) & 1 == 1) == mine)
-            .map(|(_, node)| node.name().clone())
-    };
-    let (here, there) = (dag.closure(seeds(true)), dag.closure(seeds(false)));
-    let within = |held: &BTreeSet<Hash>| -> Vec<Node<E>> {
-        permuted
-            .iter()
-            .filter(|node| held.contains(node.name()))
-            .cloned()
-            .collect()
-    };
-    let merged = extend(
-        &fold(&within(&here)),
-        &ordered(&within(&there), &draw.ranks),
-    );
-    prop_assert_eq!(reading(&merged), expected, "partitioned, then merged");
-    Ok(())
+    laws::free(&history(&draw.events), &draw.shuffle).map_err(failed)
 }
 
 /// Every entity's registers in `draw`'s history, read whole.
@@ -197,34 +108,16 @@ fn historied<E: History>(draw: &Draw<E>) -> Result<(), TestCaseError> {
     Ok(())
 }
 
-/// One write, folded alone, joins exactly the frontiers its event names.
+/// Law 33's second clause at one event, by the kit.
 pub(crate) fn routed<E: Schema>(event: &E) -> Result<(), TestCaseError> {
-    let dag: Dag<E> = history(&[(event.clone(), 0)]).into_iter().collect();
-    let state = fold(&dag.nodes().expect("a DAG"));
-    let (_, stream) = state.entities().next().expect("one entity");
-    let registers = read(stream, None, &Everything);
-    for register in registers.registers() {
-        prop_assert_eq!(
-            registers.frontier(register).writes().len(),
-            usize::from(event.writes().any(|written| written == register)),
-            "{:?}",
-            register
-        );
-    }
-    Ok(())
-}
-
-/// A register type's value is there exactly for the events whose names
-/// name its register.
-fn valued<E: Schema, R: RegisterType<E>>(event: &E, register: E::Register) -> bool {
-    R::value(event).is_some() == event.writes().any(|written| written == register)
+    laws::routed(event).map_err(failed)
 }
 
 fn at(seconds: u32) -> Datetime {
     Datetime::new(2026, 10, 1 + seconds / 86_400, 0, 0, 0, 0).expect("a real instant")
 }
 
-fn a_todo_event() -> impl Strategy<Value = TodoEvent<Todo>> {
+pub(crate) fn a_todo_event() -> impl Strategy<Value = TodoEvent<Todo>> {
     (0..2usize, 0..8u8, 0u32..5 * 86_400, 0..3u8).prop_map(|(todo, kind, seconds, note)| {
         let flat = f64::from(note) / 4.0;
         let (todo, at, note) = (["alpha", "beta"][todo], at(seconds), format!("n{note}"));
@@ -262,7 +155,7 @@ fn a_todo_event() -> impl Strategy<Value = TodoEvent<Todo>> {
     })
 }
 
-fn a_review_event() -> impl Strategy<Value = Review> {
+pub(crate) fn a_review_event() -> impl Strategy<Value = Review> {
     (
         0..2usize,
         prop::option::of(prop::sample::select(PHASES.to_vec())),
@@ -324,15 +217,15 @@ proptest! {
     #[test]
     fn a_todo_write_joins_the_registers_it_names(event in a_todo_event()) {
         routed(&event)?;
-        prop_assert!(valued::<_, State>(&event, Kind::State));
-        prop_assert!(valued::<_, Spec>(&event, Kind::Spec));
-        prop_assert!(valued::<_, Content>(&event, Kind::Content));
+        laws::valued::<_, State>(&event, Kind::State).map_err(failed)?;
+        laws::valued::<_, Spec>(&event, Kind::Spec).map_err(failed)?;
+        laws::valued::<_, Content>(&event, Kind::Content).map_err(failed)?;
     }
 
     #[test]
     fn a_review_write_joins_the_registers_it_names(event in a_review_event()) {
         routed(&event)?;
-        prop_assert!(valued::<_, PhaseRegister>(&event, Field::Phase));
+        laws::valued::<_, PhaseRegister>(&event, Field::Phase).map_err(failed)?;
     }
 
     /// Law 33, over the note schema: a title joins `Only`, a view joins no
@@ -340,6 +233,6 @@ proptest! {
     #[test]
     fn a_note_write_joins_the_registers_it_names(event in a_note_event()) {
         routed(&event)?;
-        prop_assert!(valued::<_, Whole<Note>>(&event, Only));
+        laws::valued::<_, Whole<Note>>(&event, Only).map_err(failed)?;
     }
 }

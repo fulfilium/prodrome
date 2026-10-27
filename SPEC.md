@@ -1352,7 +1352,9 @@ The design's law 7 is law 35: replicas, wherever each is held.
     it, and its flush leaves the base reading the union.
     `replica.rs::sync_is_the_join`,
     `replica.rs::a_store_in_memory_appends_what_a_disk_store_appends`,
-    `replica.rs::an_overlay_reads_as_its_union_until_it_is_flushed`.
+    `replica.rs::an_overlay_reads_as_its_union_until_it_is_flushed`,
+    and, by the law kit (`prodrome::laws::synced`) over the reference
+    schemas, `kit.rs::the_kit_holds_for_todos`.
 
 Law 40 is §3's reading of a store that is not closed under parents, over
 two writers' changes and over legacy chains, with any objects removed.

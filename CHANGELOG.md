@@ -10,6 +10,23 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The law kit (`prodrome::laws`), behind the `laws` feature, which is on
+  by default.** The laws of SPEC §9 that ask nothing of a schema are
+  functions an application runs over its own schemas and stores: `printed`
+  (law 1: every print parses, prints back byte for byte and hashes to its
+  name), `free`, `routed` and `valued` (law 33: a reading is a function of
+  the object set, folded in any parents-first order given by a `Shuffle`,
+  with objects folded twice, and split into two replicas; a write joins
+  exactly the registers it names; a register type values exactly those
+  writes), and `synced` (law 35: a sync into a fresh replica takes all,
+  a second takes nothing, and the copy reads as its source). `history`
+  builds a history from events. Each answers `Ok` or the law it found
+  `Broken`. The functions take data, not generators, so an application
+  can run them over the objects its stores hold. The crate's tests run
+  them over the todo, review and note schemas (`schema_laws.rs`,
+  `kit.rs`), and the tests' generator draws a `Shuffle`. A MINOR change
+  under this file's rule: new API only, and no stored byte, vector or
+  export moves.
 - `store::frontier`, a frontier token for a pull over a wire (SPEC §3,
   law 47). `Token::of` names a set of tips by the sha256 of their sorted
   names, one on each line. `Frontiers::answer` reads a pull's token against
