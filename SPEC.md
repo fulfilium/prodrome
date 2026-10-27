@@ -1664,6 +1664,69 @@ an earlier post, and a replica can go back to an earlier state of its own.
     `frontier.rs::a_pull_whose_token_is_let_go_between_its_pieces_does_not_end`,
     `frontier.rs::a_pull_whose_store_gains_a_piece_between_its_pieces_does_not_end`.
 
+Law 48 is a mergeable tag set (`tags`), over notes tagged with labels.
+Three replicas each hold a membership store and an alias store, each begun
+by one genesis. Each replica writes the events that its own tag set
+returns for an add, a removal or a rename, and the replicas take in each
+other's objects in any order.
+
+48. **A tag set is an observed-remove set where an add wins, read through
+    its aliases.** A host gives the type of a target, the type of a tag,
+    and the field name of each, which differ from each other and from
+    `at`, `actor` and `to`. A membership event prints as
+    `Added(<target>, <tag>, at, actor)` or
+    `Removed(<target>, <tag>, at, actor)`. Its key is the pair of the
+    target and the tag, so each pair has one register, and the register
+    reads the greatest value of its frontier under `Off < On`. An alias
+    event prints as `Aliased(<tag>, at, actor, to)` or
+    `Unaliased(<tag>, at, actor)`, and no tag is an alias of itself. Its
+    register is discrete. The chosen alias of a tag is the alias of the
+    write with the least object name in its register's frontier. A tag set
+    reads one prodrome of each store. It follows each name's chosen alias
+    to the end of the chain. Every name of a ring of chosen aliases, and
+    every name whose chain enters the ring, reads as the least name of the
+    ring.
+    (a) The tag set is a function of the two prodromes' object sets: a
+    union of replicas commutes, associates and is idempotent, and every
+    replica that has taken in the others' objects reads it. After any
+    history, each name reads as a name that reads as itself, a name and
+    the name that its chosen alias points to read alike, and the name
+    that a name reads as has no alias or is the least name of a ring.
+    (b) After two replicas write apart, renames included, and merge in
+    either direction, a pair reads as the one replica that wrote it after
+    the fork left it. Where both did, it is on if either left it on: a
+    removal takes off only the adds that its writer saw. A target carries
+    the spelling of every name whose pair is on.
+    (c) A rename writes aliases and no membership. On a replica that holds
+    any merged history, after a rename, every target that carried the
+    renamed tag, or the tag that the new name stood for, carries the new
+    name, and every other tag stays where it was. The rename settles the
+    disagreements on the names it writes, and the same rename again writes
+    nothing.
+    (d) A target that one replica tags under a name that another replica
+    renamed meanwhile carries the new name after the merge. A merge can
+    bring back a removed tag through another name: when one replica merges
+    `gold` into `red` while another removes `red` from a target that
+    carries both, the target carries `red` after the merge, because the
+    removal did not see the add of `gold`. Two renames into each other are
+    a ring, read as its least name until a later rename settles it. Two
+    renames of one tag apart are a disagreement that every replica reads
+    alike.
+    (e) An event's name is its key, `at`, `actor` and body. So when one
+    actor adds a tag, removes it and adds it again with one `at`, the
+    second add is the first add's event, the store writes nothing for it,
+    and the tag stays off.
+    `tags.rs::merging_is_commutative_associative_and_idempotent`,
+    `tags.rs::every_name_reads_through_its_chosen_alias`,
+    `tags.rs::an_add_and_a_remove_apart_merge_the_same_way_in_either_order`,
+    `tags.rs::a_rename_keeps_every_membership`,
+    `tags.rs::a_filter_shows_exactly_the_notes_with_every_chosen_tag`,
+    `tags.rs::a_tag_under_the_old_name_lands_in_the_renamed_tag`,
+    `tags.rs::a_merge_concurrent_with_a_removal_brings_the_tag_back`,
+    `tags.rs::two_renames_into_each_other_read_as_the_least_name_until_one_settles_them`,
+    `tags.rs::two_renames_of_one_tag_apart_are_a_disagreement_every_replica_reads_alike`,
+    `tags.rs::an_add_again_in_one_tick_is_the_first_add`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;
