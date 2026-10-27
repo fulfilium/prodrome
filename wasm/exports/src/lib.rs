@@ -67,6 +67,7 @@ mod declared;
 pub mod json;
 #[cfg(test)]
 mod review;
+mod tags;
 #[cfg(test)]
 mod unread;
 pub mod wire;
@@ -104,15 +105,19 @@ use wire::{
 /// stored. Not a bound on [`Schema`]: JSON is this boundary's business, and a
 /// schema a host only stores and reads natively owes it nothing.
 ///
-/// An entity's key reads as a string (`Key: AsRef<str>`), since it is a key
-/// of a JSON object.
+/// A row names its entity by the fields of its key, each under its name: one
+/// field for most schemas, and several for a key of several fields.
 ///
-/// Both names are read off the schema VALUE, so a schema declared at run
+/// The names are read off the schema VALUE, so a schema declared at run
 /// time names them as its declaration does, and a Rust one as its type does.
-pub trait Json: Schema<Key: AsRef<str>> {
-    /// The field an event names its entity by, and so the field a row names
-    /// it under: `"todo"` for the todo schema.
-    fn key_field(schema: &Self::Vocabulary) -> &str;
+pub trait Json: Schema {
+    /// The fields an event names its entity by, in printed order, and so the
+    /// fields a row names it under: `["todo"]` for the todo schema.
+    fn key_fields(schema: &Self::Vocabulary) -> Vec<&str>;
+
+    /// The values of `key`'s fields, as JSON, in the order of
+    /// [`Json::key_fields`].
+    fn key_values(key: &Self::Key) -> Vec<Value>;
 
     /// A register's name, the key its reading is under.
     fn register(schema: &Self::Vocabulary, register: Self::Register) -> &str;
@@ -139,8 +144,12 @@ pub trait RowJson: Json + schema::Row {
 /// its todo. Here and not in a host, which could not implement this crate's
 /// trait for the core's type.
 impl<P: Payload> Json for TodoEvent<P> {
-    fn key_field(_: &TodoVocabulary<P>) -> &'static str {
-        "todo"
+    fn key_fields(_: &TodoVocabulary<P>) -> Vec<&str> {
+        vec!["todo"]
+    }
+
+    fn key_values(key: &prodrome::event::TodoId) -> Vec<Value> {
+        vec![json!(key.as_str())]
     }
 
     fn register(_: &TodoVocabulary<P>, kind: Kind) -> &str {
@@ -161,8 +170,12 @@ impl<P: Payload> Json for TodoEvent<P> {
 /// datum as JSON: text, an enum's alternative and a reference as strings,
 /// an integer as a number, an instant as ISO, a list as an array.
 impl Json for Declared {
-    fn key_field(schema: &Declaration) -> &str {
-        schema.key()
+    fn key_fields(schema: &Declaration) -> Vec<&str> {
+        vec![schema.key()]
+    }
+
+    fn key_values(key: &<Declared as Schema>::Key) -> Vec<Value> {
+        vec![json!(key.as_ref())]
     }
 
     fn register(schema: &Declaration, slot: Slot) -> &str {
@@ -823,7 +836,7 @@ struct Row {
     computed: String,
     parents: Vec<Hash>,
     kind: String,
-    key: String,
+    key: Vec<Value>,
     actor: String,
     at: String,
     problem: String,
@@ -839,7 +852,7 @@ impl Row {
             computed,
             parents: Vec::new(),
             kind: String::new(),
-            key: String::new(),
+            key: Vec::new(),
             actor: String::new(),
             at: String::new(),
             problem: String::new(),
@@ -875,7 +888,7 @@ impl Row {
                     Literal::Call(call) => call.name,
                     _ => String::new(),
                 };
-                event.key().as_ref().clone_into(&mut self.key);
+                self.key = E::key_values(event.key());
                 event.actor().as_str().clone_into(&mut self.actor);
                 self.at = iso(instant_of(event.at()));
             }
@@ -884,19 +897,32 @@ impl Row {
     }
 
     fn json<E: Json>(&self, schema: &E::Vocabulary) -> Value {
-        object(vec![
+        let mut fields = vec![
             ("hash", json!(self.hash)),
             ("computed", json!(self.computed)),
             ("hashOk", json!(self.hash_ok())),
             ("reachable", json!(self.reachable)),
             ("depth", json!(self.depth)),
             ("kind", json!(self.kind)),
-            (E::key_field(schema), json!(self.key)),
+        ];
+        fields.extend(keyed::<E>(schema, &self.key));
+        fields.extend(vec![
             ("actor", json!(self.actor)),
             ("at", json!(self.at)),
             ("problem", json!(self.problem)),
-        ])
+        ]);
+        object(fields)
     }
+}
+
+/// Each of a row's key fields under its name, with its value in `values`,
+/// or `""` for a row whose object carries no event.
+fn keyed<'s, E: Json>(schema: &'s E::Vocabulary, values: &[Value]) -> Vec<(&'s str, Value)> {
+    E::key_fields(schema)
+        .into_iter()
+        .enumerate()
+        .map(|(at, field)| (field, values.get(at).cloned().unwrap_or_else(|| json!(""))))
+        .collect()
 }
 
 /// §3's `verify`, for the set of objects a browser was handed.
@@ -1094,7 +1120,7 @@ pub fn since<E: Schema>(replica: &Replica<E>, tips: &str) -> Result<String, Refu
 /// `{untrusted, roots}`, that policy held to the actors' keys under the root
 /// keys `roots` ([`wire::WirePolicy`]); so for every reading below. Per
 /// entity in (genesis, key) order: `genesis` is the prodrome's, `null` for a
-/// legacy one, and the entity's key is under the schema's [`Json::key_field`].
+/// legacy one, and the entity's key is under the schema's [`Json::key_fields`].
 pub fn readings<E: Json>(
     replica: &Replica<E>,
     at: Option<String>,
@@ -1128,11 +1154,13 @@ pub fn readings<E: Json>(
                     )
                 })
                 .collect();
-            rows.push(object(vec![
-                ("genesis", json!(genesis.as_ref().map(Hash::as_str))),
-                (E::key_field(&replica.schema), json!(key.as_ref())),
-                ("registers", Value::Object(readings)),
-            ]));
+            rows.push(object(
+                vec![("genesis", json!(genesis.as_ref().map(Hash::as_str)))]
+                    .into_iter()
+                    .chain(keyed::<E>(&replica.schema, &E::key_values(key)))
+                    .chain([("registers", Value::Object(readings))])
+                    .collect::<Vec<_>>(),
+            ));
         }
     }
     read.answer(vec![("readings", Value::Array(rows))])
@@ -1147,39 +1175,45 @@ fn moment<E: Schema>(read: &Read<'_, E>, at: Option<String>) -> Result<Datetime,
 }
 
 fn json_entry<E: RowJson>(schema: &E::Vocabulary, entry: &Entry<E>) -> Value {
-    object(vec![
-        ("genesis", json!(entry.genesis.as_ref().map(Hash::as_str))),
-        (E::key_field(schema), json!(entry.key.as_ref())),
-        ("reading", E::reading_json(&entry.reading)),
-        (
-            "claim",
-            entry.claim.as_ref().map_or(Value::Null, E::reading_json),
-        ),
-        ("unconfirmed", json!(entry.confidence.is_provisional())),
-        (
-            "value",
-            match entry.value() {
-                Ok(Some(value)) => json!(value),
-                Ok(None) => json!("absent"),
-                Err(_) => Value::Null,
-            },
-        ),
-        ("unlinked", json!(entry.unlinked().map(ToString::to_string))),
-        (
-            "conflicts",
-            Value::Object(
-                entry
-                    .conflicts
-                    .iter()
-                    .map(|(register, writes)| {
-                        (E::register(schema, *register).to_owned(), names(writes))
-                    })
-                    .collect(),
-            ),
-        ),
-        ("spec", json!(print_term(entry.spec()))),
-        ("stream", names(&entry.stream)),
-    ])
+    let head: Vec<(&str, Value)> =
+        std::iter::once(("genesis", json!(entry.genesis.as_ref().map(Hash::as_str))))
+            .chain(keyed::<E>(schema, &E::key_values(&entry.key)))
+            .collect();
+    object(
+        head.into_iter()
+            .chain([
+                ("reading", E::reading_json(&entry.reading)),
+                (
+                    "claim",
+                    entry.claim.as_ref().map_or(Value::Null, E::reading_json),
+                ),
+                ("unconfirmed", json!(entry.confidence.is_provisional())),
+                (
+                    "value",
+                    match entry.value() {
+                        Ok(Some(value)) => json!(value),
+                        Ok(None) => json!("absent"),
+                        Err(_) => Value::Null,
+                    },
+                ),
+                ("unlinked", json!(entry.unlinked().map(ToString::to_string))),
+                (
+                    "conflicts",
+                    Value::Object(
+                        entry
+                            .conflicts
+                            .iter()
+                            .map(|(register, writes)| {
+                                (E::register(schema, *register).to_owned(), names(writes))
+                            })
+                            .collect(),
+                    ),
+                ),
+                ("spec", json!(print_term(entry.spec()))),
+                ("stream", names(&entry.stream)),
+            ])
+            .collect(),
+    )
 }
 
 /// §6.7: every entity the objects mention, as the folds see it at `at` under

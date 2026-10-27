@@ -39,6 +39,12 @@ pub struct Membership<S> {
 }
 
 impl<S> Membership<S> {
+    /// The presence that the event writes.
+    #[must_use]
+    pub fn presence(&self) -> Presence {
+        self.presence
+    }
+
     fn writing(presence: Presence) -> Self {
         Self {
             presence,

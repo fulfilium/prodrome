@@ -21,8 +21,12 @@ use schema::{day, moved, opened, Field, Phase, Review, ReviewVocabulary};
 /// A review names its entity `pr`; its one register is its phase, whose
 /// value is the phase a move names.
 impl Json for Review {
-    fn key_field(_: &ReviewVocabulary) -> &str {
-        "pr"
+    fn key_fields(_: &ReviewVocabulary) -> Vec<&str> {
+        vec!["pr"]
+    }
+
+    fn key_values(pr: &<Review as prodrome::schema::Schema>::Key) -> Vec<Value> {
+        vec![json!(pr.as_ref())]
     }
 
     fn register(_: &ReviewVocabulary, _phase: Field) -> &str {
