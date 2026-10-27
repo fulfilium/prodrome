@@ -45,6 +45,7 @@ mod schema_laws;
 mod series_vectors;
 mod sets;
 mod signatures;
+mod tags;
 mod tips;
 mod unread;
 mod verify_findings;

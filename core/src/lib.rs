@@ -148,6 +148,7 @@ pub mod schema;
 pub mod sign;
 pub mod snapshot;
 pub mod store;
+pub mod tags;
 pub mod term;
 pub mod todo;
 pub mod topo;

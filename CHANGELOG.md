@@ -10,6 +10,22 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`tags`, mergeable tag sets (SPEC law 48).** A host implements
+  `tags::Tagging`: the type of a target, the type of a tag (which can be
+  the same type), and the field name of each. A compile-time check
+  refuses two equal names, and the names `at`, `actor` and `to`. The
+  membership schema prints `Added(<target>, <tag>, at, actor)` and
+  `Removed(…)`, and its pair's register reads the greatest presence of
+  its frontier under `Off < On`: an observed-remove set where an add
+  wins. The alias schema prints `Aliased(<tag>, at, actor, to)` and
+  `Unaliased(<tag>, at, actor)`, and refuses a tag as an alias of
+  itself. Both schemas use `fold::sole::Bodies` for their one register.
+  `TagSet::of` reads one prodrome of each store. It follows each name's
+  chosen alias, reads a ring and every chain into it as the ring's least
+  name, lists each `Disagreement`, and returns the events for `add`,
+  `remove` and `rename`. A MINOR change under this file's rule: new API
+  only. Tests in `core/tests/all/tags.rs`, over notes tagged with
+  labels.
 - **`fold::sole::Bodies<B>`, the register type whose value is an
   `Event<B>`'s body under the body's own `Order`.** A one-register schema
   whose reading is its bodies (a flag set off or on, a discrete label)
