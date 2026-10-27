@@ -203,7 +203,7 @@ pub fn events() -> Vec<Event> {
         ok(mk_created(
             "todo-1",
             at(1, 9, 0),
-            "bassel",
+            "ada",
             "write the README for a stranger",
             "",
         )),
@@ -214,17 +214,11 @@ pub fn events() -> Vec<Event> {
             "it's \"quoted\", \ttabbed,\nnewlined, é ü ✓ 日本 🙂 and \u{200b}zero-width",
             "a note with a \\ backslash in it",
         )),
-        ok(mk_spec_revised(
-            "todo-1",
-            at(2, 9, 0),
-            "bassel",
-            a_spec(),
-            "",
-        )),
+        ok(mk_spec_revised("todo-1", at(2, 9, 0), "ada", a_spec(), "")),
         ok(mk_authored(
             "todo-1",
             at(3, 9, 250),
-            "bassel",
+            "ada",
             "todo",
             at(1, 9, 0),
             "= A heading\n\nBody with \\@escapes and #strong[markup].",
@@ -234,7 +228,7 @@ pub fn events() -> Vec<Event> {
                 "'quoted'".to_owned(),
             ],
             "writing",
-            "review from Bassel",
+            "review from Ada",
             "The detail, on its own line.",
             Some(mk_source(
                 "someone@example.com",
@@ -270,9 +264,9 @@ pub fn events() -> Vec<Event> {
             vec![],
             "",
         )),
-        ok(mk_completed("todo-1", at(4, 9, 0), "bassel", "done")),
-        ok(mk_tended("todo-2", at(4, 12, 0), "bassel", "vinegared")),
-        ok(mk_reopened("todo-1", at(5, 9, 0), "bassel", "")),
+        ok(mk_completed("todo-1", at(4, 9, 0), "ada", "done")),
+        ok(mk_tended("todo-2", at(4, 12, 0), "ada", "vinegared")),
+        ok(mk_reopened("todo-1", at(5, 9, 0), "ada", "")),
         ok(mk_cancelled("todo-2", at(6, 9, 999_999), "triage", "")),
     ]
 }
@@ -315,7 +309,7 @@ pub fn corpus() -> Vec<(Hash, Object)> {
 pub const TODOS: [&str; 3] = ["alpha", "beta", "gamma"];
 /// The reference generator's actors, in its proportions: two writes off the
 /// reference policy's roster for every one on it.
-pub const ACTORS: [&str; 3] = ["bassel", "bassel", "triage"];
+pub const ACTORS: [&str; 3] = ["ada", "ada", "triage"];
 /// The generator's window: sixty days from the origin.
 pub const WINDOW: i64 = 60 * 86_400;
 

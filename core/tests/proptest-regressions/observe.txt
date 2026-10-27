@@ -4,5 +4,5 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc b911af60c752d5c70af5bb3a3c9d027d44897d8127d57044948ad02636258aae # shrinks to term = Term(Piecewise { head: Term(Flat { value: 0.02 }), pieces: [(2026-09-01T00:00:00, Term(Flat { value: 0.8555363673153229 }))] }), now = 2026-08-31T23:00:05.196833, observation = Observation { levels: 2, rounding: Down }, k = 1
-cc e8dfb8a309920fd36e4e9e34f9bbb5f741f0b62e01ed1d53691d4eb14d97464d # shrinks to term = Term(Least { terms: [Term(Decay { start: 0.3, end: 0.025563350510316725, end_date: 2026-09-01T00:00:00, lead_up: TimeDelta { secs: 21600, nanos: 0 }, start_date: None }), Term(Least { terms: [Term(Piecewise(Schedule { head: Term(Flat { value: 0.49475967798362863 }), knots: [(2026-09-01T00:00:00, Term(Flat { value: 0.02 })), (2026-09-01T01:00:00, Term(Curve { points: [CurvePoint { at: 2026-09-01T00:00:00, value: 0.9058014804466238, label: "" }] }))] })), Term(Decay { start: 0.6081626724128455, end: 0.14758254821158268, end_date: 2026-09-09T05:00:00, lead_up: TimeDelta { secs: 709200, nanos: 0 }, start_date: None })] }), Term(Flat { value: 0.4702949505950595 })] }), now = 2026-09-01T00:00:00, observation = Observation { levels: 1, rounding: Down }, k = 0
+cc b911af60c752d5c70af5bb3a3c9d027d44897d8127d57044948ad02636258aae
+cc e8dfb8a309920fd36e4e9e34f9bbb5f741f0b62e01ed1d53691d4eb14d97464d

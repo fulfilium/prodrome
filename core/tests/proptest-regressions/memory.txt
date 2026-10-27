@@ -4,4 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc c1cf86636c68b3ddc84d71fd201fe000c155991118e79b4f8f5d48ec51c509b4 # shrinks to logs = ([], [], [Created(Created { todo: TodoId("alpha"), at: Datetime { year: 2026, month: 11, day: 2, hour: 10, minute: 6, second: 4, microsecond: 0 }, actor: Actor("bassel"), text: "t246", note: "theirs" })]), keys = [154, 408, 260, 809, 471], split = 8
+cc c1cf86636c68b3ddc84d71fd201fe000c155991118e79b4f8f5d48ec51c509b4
