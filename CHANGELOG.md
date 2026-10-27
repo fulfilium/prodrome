@@ -10,17 +10,19 @@ constructor's fields never change, in any release.
 
 ### Changed
 
-- **A pull that lacks nothing walks no object (SPEC law 47 (d)).**
-  `store::frontier::Frontiers::answer` takes the store's tips beside its
-  DAG, which a store of record already holds. When the
-  tips recorded under a pull's token are those tips, it answers the new
+- **A pull that lacks nothing walks no object (SPEC law 47 (d)).** When
+  the tips recorded under a pull's token are the DAG's own tips,
+  `store::frontier::Frontiers::answer` answers the new
   `Reached::Everything`: no closure is built, the objects are not put in
-  their linear order, and `Lacking::record` records the same tips with
-  the count of every object. Before, each such pull walked and ordered the
-  whole store. A breaking change to `answer`'s arguments and to
-  `Reached`. Test `frontier.rs::a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing`;
-  the law's model accepts `Everything` exactly where the token's closure
-  is every object.
+  their linear order, and `Lacking::record` records the same tips with the
+  count of every object. Before, each such pull walked and ordered the
+  whole store. `Dag::tips` is derived on its first ask and kept until the
+  DAG's objects change, so a store of record that keeps its DAG answers it
+  without a pass over the objects. A breaking change to `Reached`. Test
+  `frontier.rs::a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing`,
+  which also asks the same token over a DAG with one more object and is
+  answered `Known`; the law's model accepts `Everything` exactly where the
+  token's closure is every object.
 
 ### Added
 

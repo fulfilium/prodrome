@@ -197,15 +197,14 @@ impl Frontiers {
         Self::over(Remembered::default(), kept)
     }
 
-    /// The pull from `since` in `store`, whose objects are `dag` and whose
-    /// tips are `tips`: what `since` reaches, and the objects outside it in
-    /// `dag`'s linear order ([`Dag::linearise`]). The caller passes the tips
-    /// it already holds for the store, such as the tips its memory keeps, so
-    /// that the answer does not derive them from every object.
+    /// The pull from `since` in `store`, whose objects are `dag`: what
+    /// `since` reaches, and the objects outside it in `dag`'s linear order
+    /// ([`Dag::linearise`]).
     ///
     /// `since` reaches [`Reached::Everything`] when the store of record
-    /// holds its token and the tips held under it are `tips`. The answer
-    /// then lacks nothing, and it reads no object.
+    /// holds its token and the tips held under it are `dag`'s own tips
+    /// ([`Dag::tips`], which a DAG keeps once derived). The answer then
+    /// lacks nothing, and it builds no closure and orders no object.
     ///
     /// `since` reaches the closure of its tips when the store of record
     /// holds its token, the tips it holds under the token are the tips the
@@ -226,12 +225,12 @@ impl Frontiers {
         store: &'a str,
         since: &Since,
         dag: &'a Dag<E>,
-        tips: &'a BTreeSet<Hash>,
     ) -> Result<Lacking<'a, E>, Unanswered> {
+        let tips = dag.tips();
         let reached = match since {
             Since::Nothing => Reached::Known(BTreeSet::new()),
             Since::Frontier(token) => match self.records.tips(store, token)? {
-                Some(named) if Token::of(&named) == *token && &named == tips => Reached::Everything,
+                Some(named) if Token::of(&named) == *token && named == tips => Reached::Everything,
                 Some(named)
                     if Token::of(&named) == *token
                         && named.iter().all(|tip| dag.get(tip).is_some()) =>
@@ -308,7 +307,7 @@ pub struct Lacking<'a, E: Schema> {
     frontiers: &'a Frontiers,
     store: &'a str,
     dag: &'a Dag<E>,
-    tips: &'a BTreeSet<Hash>,
+    tips: BTreeSet<Hash>,
     reached: Reached,
     outside: Vec<(&'a Hash, &'a Envelope<E>)>,
 }
@@ -387,7 +386,7 @@ impl<E: Schema> Lacking<'_, E> {
     /// tips, and the count of the store's objects.
     fn everything(&self) -> Result<Recorded, Unrecorded> {
         Ok(Recorded {
-            token: self.frontiers.record(self.store, self.tips)?,
+            token: self.frontiers.record(self.store, &self.tips)?,
             count: self.dag.objects().len(),
         })
     }

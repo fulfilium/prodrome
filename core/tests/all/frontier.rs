@@ -236,10 +236,9 @@ impl Puller {
     /// of objects still lacking, and whether the piece fell back.
     fn piece(&mut self, record: &mut Record, size: usize) -> Result<(usize, bool), TestCaseError> {
         let dag = dag(&record.store);
-        let tips = dag.tips();
         let lacking = record
             .frontiers
-            .answer(STORE, &self.since, &dag, &tips)
+            .answer(STORE, &self.since, &dag)
             .expect("memory reads");
         let reached = record.read(&self.since, &dag, lacking.reached(), lacking.lacking())?;
         let sent: Vec<Hash> = lacking
@@ -267,10 +266,9 @@ impl Puller {
         sync(&self.replica, &record.store).expect("a replica's objects verify");
         record.earlier.push(prints(&record.store));
         let dag = dag(&record.store);
-        let tips = dag.tips();
         let lacking = record
             .frontiers
-            .answer(STORE, &self.since, &dag, &tips)
+            .answer(STORE, &self.since, &dag)
             .expect("memory reads");
         let reached = record.read(&self.since, &dag, lacking.reached(), lacking.lacking())?;
         let posted = objects(&self.replica);
@@ -501,10 +499,9 @@ proptest! {
         let frontiers = Frontiers::over(failing, kept);
         let dag = dag(&begun);
         let order = dag.linearise().expect("a store is closed under parents");
-        let store_tips = dag.tips();
         let mut since = Since::Nothing;
         for _ in 0..=order.len() {
-            let lacking = frontiers.answer(STORE, &since, &dag, &store_tips).expect("memory reads");
+            let lacking = frontiers.answer(STORE, &since, &dag).expect("memory reads");
             match lacking.record(1) {
                 Ok(answered) => since = Since::Frontier(answered.token),
                 Err(_) => since = Since::Nothing,
@@ -519,13 +516,13 @@ proptest! {
         }
         // One write fails in all, so a second try of the whole pull is answered.
         for _ in 0..2 {
-            let lacking = frontiers.answer(STORE, &since, &dag, &store_tips).expect("memory reads");
+            let lacking = frontiers.answer(STORE, &since, &dag).expect("memory reads");
             if let Ok(answered) = lacking.record(usize::MAX) {
                 since = Since::Frontier(answered.token);
                 break;
             }
         }
-        let lacking = frontiers.answer(STORE, &since, &dag, &store_tips).expect("memory reads");
+        let lacking = frontiers.answer(STORE, &since, &dag).expect("memory reads");
         prop_assert_eq!(lacking.reached(), &Reached::Everything);
         prop_assert!(lacking.lacking().is_empty());
         prop_assert_eq!(lacking.record(1).expect("memory keeps").count, order.len());
@@ -616,9 +613,8 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
     }));
     let frontiers = Frontiers::over(failing, NonZeroUsize::MIN);
     let dag = dag(&holding(&vec![genesis()]));
-    let tips = dag.tips();
     let token = frontiers
-        .answer(STORE, &Since::Nothing, &dag, &tips)
+        .answer(STORE, &Since::Nothing, &dag)
         .expect("memory reads")
         .record(1)
         .expect("memory keeps")
@@ -626,7 +622,7 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
     let since = Since::Frontier(token);
     let reached = |frontiers: &Frontiers| {
         frontiers
-            .answer(STORE, &since, &dag, &tips)
+            .answer(STORE, &since, &dag)
             .expect("memory reads")
             .reached()
             .clone()
@@ -645,7 +641,8 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
 
 /// Law 47 (d): a pull from a known token whose tips are the store's tips
 /// reaches everything, lacks nothing, and records the same token with the
-/// count of every object, however many objects the store holds.
+/// count of every object; over a DAG with one more object, the same token
+/// reaches only what it names.
 #[test]
 fn a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing() {
     use proptest::strategy::ValueTree as _;
@@ -662,17 +659,42 @@ fn a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing() {
     record.store = store;
     puller.pull(&mut record, usize::MAX).expect("the pull ends");
     let dag = dag(&record.store);
-    let tips = dag.tips();
     let Since::Frontier(token) = puller.since.clone() else {
         panic!("a pull names a token");
     };
     let lacking = record
         .frontiers
-        .answer(STORE, &puller.since, &dag, &tips)
+        .answer(STORE, &puller.since, &dag)
         .expect("memory reads");
     assert_eq!(lacking.reached(), &Reached::Everything);
     assert!(lacking.lacking().is_empty());
     let recorded = lacking.record(usize::MAX).expect("memory keeps");
     assert_eq!(recorded.token, token);
     assert_eq!(recorded.count, dag.objects().len());
+
+    // One object more than the token's tips: the same token reaches what
+    // it names, and lacks the new object.
+    let more = holding(&prints(&record.store));
+    let mut log = two_writers()
+        .new_tree(&mut proptest::test_runner::TestRunner::deterministic())
+        .expect("a history")
+        .current()
+        .1
+        .into_iter();
+    while objects(&more).len() == dag.objects().len() {
+        write(&more, &mut log);
+    }
+    let grown = self::dag(&more);
+    let lacking = record
+        .frontiers
+        .answer(STORE, &Since::Frontier(token), &grown)
+        .expect("memory reads");
+    assert_eq!(
+        lacking.reached(),
+        &Reached::Known(dag.objects().keys().cloned().collect())
+    );
+    assert_eq!(
+        lacking.lacking().len(),
+        grown.objects().len() - dag.objects().len()
+    );
 }

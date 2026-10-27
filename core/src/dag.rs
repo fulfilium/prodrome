@@ -4,6 +4,7 @@
 mod finding;
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
 
 pub use finding::{Excluded, Finding, Unread};
 
@@ -28,6 +29,19 @@ pub struct Dag<E> {
     objects: BTreeMap<Hash, Envelope<E>>,
     waiting: BTreeMap<Hash, Envelope<E>>,
     unread: BTreeMap<Hash, Unread>,
+    tips: Tips,
+}
+
+/// [`Dag::tips`] of the objects, derived on its first ask and kept until
+/// the objects change: every method that changes them clears it. A
+/// function of the objects, so it plays no part in equality.
+#[derive(Debug, Clone, Default)]
+struct Tips(OnceLock<BTreeSet<Hash>>);
+
+impl PartialEq for Tips {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
 }
 
 impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
@@ -36,6 +50,7 @@ impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
             objects: objects.into_iter().collect(),
             waiting: BTreeMap::new(),
             unread: BTreeMap::new(),
+            tips: Tips::default(),
         }
     }
 }
@@ -44,6 +59,7 @@ impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
 /// is held once, and a name it is held under is no longer unread.
 impl<E> Extend<(Hash, Envelope<E>)> for Dag<E> {
     fn extend<I: IntoIterator<Item = (Hash, Envelope<E>)>>(&mut self, objects: I) {
+        self.tips = Tips::default();
         for (name, object) in objects {
             self.unread.remove(&name);
             self.waiting.remove(&name);
@@ -92,6 +108,7 @@ impl<E> Dag<E> {
 
     /// Every print `name` was held as, an object or unread, let go.
     pub(crate) fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
+        self.tips = Tips::default();
         self.unread.remove(name);
         self.objects
             .remove(name)
@@ -146,6 +163,7 @@ impl<E> Dag<E> {
     /// joins the history or waits for what it rests on, and whatever
     /// arrives later that completes it brings it in.
     pub(crate) fn grow(&mut self, arrived: BTreeMap<Hash, Envelope<E>>) -> BTreeSet<Hash> {
+        self.tips = Tips::default();
         let mut waiting = std::mem::take(&mut self.waiting);
         for (name, object) in arrived {
             if !self.objects.contains_key(&name) {
@@ -214,18 +232,25 @@ impl<E> Dag<E> {
     }
 
     /// Every object no object rests on: the maximal objects of the causal
-    /// order ([`parents_of`]).
+    /// order ([`parents_of`]). Derived from the objects on the first ask
+    /// and kept until they change, so a DAG that a store of record keeps
+    /// answers it without a pass over its objects.
     pub fn tips(&self) -> BTreeSet<Hash> {
-        let graph: Vec<(&Hash, Vec<Hash>)> = self
-            .objects
-            .iter()
-            .map(|(name, object)| (name, parents_of(object)))
-            .collect();
-        tips_among(
-            graph
-                .iter()
-                .map(|(name, parents)| (*name, parents.as_slice())),
-        )
+        self.tips
+            .0
+            .get_or_init(|| {
+                let graph: Vec<(&Hash, Vec<Hash>)> = self
+                    .objects
+                    .iter()
+                    .map(|(name, object)| (name, parents_of(object)))
+                    .collect();
+                tips_among(
+                    graph
+                        .iter()
+                        .map(|(name, parents)| (*name, parents.as_slice())),
+                )
+            })
+            .clone()
     }
 
     /// `seeds` and everything they rest on; a name this DAG lacks is in it,
