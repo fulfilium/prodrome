@@ -4,4 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc 0a96d56263c9ec870907ad040f8acd2c5f820f634d79e63e2483fca76b0615e1 # shrinks to draw = Draw { events: [(Proposal { proposal: Id("p-1"), at: Datetime { year: 2026, month: 10, day: 1, hour: 12, minute: 0, second: 0, microsecond: 0 }, actor: Actor("ana"), says: Proposed("text 0") }, 0)], ranks: [0, 0, 0, 0, 0, 1, 498207374, 2924409738, 1616586167, 965049818, 105306877, 2702289098, 3987478954], twice: [], replica: 14243914381783631359 }, newer = false, damage = [(Index(2242242808188732122), Gone), (Index(16538895131152838361), Tampered), (Index(8889400905787964251), Tampered)], junk = 0
+cc 0a96d56263c9ec870907ad040f8acd2c5f820f634d79e63e2483fca76b0615e1
