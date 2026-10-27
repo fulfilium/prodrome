@@ -10,6 +10,19 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The wasm exports read a schema whose key has several fields.** A row
+  names its entity by every field of its key, each under its name, so
+  `schema!` takes a schema such as `tags::membership`, whose key is a pair
+  of a target and a tag. `Json::key_field` is now `Json::key_fields`, and
+  the new `Json::key_values` gives the key's values as JSON; the trait no
+  longer asks that a key be a string. The exports implement `Json` for
+  the two `tags` schemas: a membership row names its target and its tag,
+  and reads its `presence` as `"on"` or `"off"`, and an alias row reads
+  its `alias` as the tag the name stands for, or `null`.
+  `tags::membership::Membership::presence` is public again. The JSON of
+  every other schema does not change. A breaking change to `Json` under
+  this file's rule, for the exports crate alone. Tests in
+  `wasm/exports/src/tags.rs`, over reviews tagged with labels.
 - **The law kit (`prodrome::laws`), behind the `laws` feature, which is off
   by default.** The laws of SPEC §9 that ask nothing of a schema are
   functions an application runs over its own schemas and stores: `printed`
