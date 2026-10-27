@@ -5,6 +5,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod bodies;
 mod calibration;
 mod causal;
 mod chain;

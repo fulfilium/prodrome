@@ -4,15 +4,18 @@
 //! writes that no later write descends from. The register's type is a
 //! [`RegisterType`] that also implements [`Sole`], and [`One`] is then the
 //! schema's product. [`Whole`] is the register type whose value is the whole
-//! event, so its reading is the frontier's candidates.
+//! event, so its reading is the frontier's candidates. [`Bodies`] is the
+//! register type whose value is the body of an
+//! [`Event`](crate::schema::headed::Event), under the body's own order.
 
 #![warn(clippy::pedantic)]
 
 use std::marker::PhantomData;
 
-use crate::fold::{Discrete, Frontier, Product, Register as _, RegisterType};
+use crate::fold::{Discrete, Frontier, Order, Product, Register as _, RegisterType};
 use crate::literal::ProdromeError;
 use crate::registers::Stamp;
+use crate::schema::headed::{Body, Event};
 use crate::schema::Schema;
 
 /// The name of the one register.
@@ -115,4 +118,24 @@ impl<E: Schema<Register = Only>> RegisterType<E> for Whole<E> {
 
 impl<E: Schema<Register = Only>> Sole for Whole<E> {
     type Schema = E;
+}
+
+/// The register type whose value is the body of an `Event<B>` that writes
+/// [`Only`], under the body's own [`Order`]. Two writes whose bodies are
+/// equal under it are one value, named by the least write, whoever wrote
+/// them and whenever. An event whose body writes no register has no value,
+/// so it joins nothing.
+pub struct Bodies<B>(PhantomData<fn() -> B>);
+
+impl<B: Body<Register = Only> + Order> RegisterType<Event<B>> for Bodies<B> {
+    type Value<'e> = &'e B;
+
+    fn value(event: &Event<B>) -> Option<&B> {
+        let body = event.body();
+        body.writes().next().map(|Only| body)
+    }
+}
+
+impl<B: Body<Register = Only> + Order> Sole for Bodies<B> {
+    type Schema = Event<B>;
 }

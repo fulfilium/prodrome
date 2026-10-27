@@ -24,6 +24,13 @@ impl<T: PartialEq> Order for Discrete<T> {
     }
 }
 
+/// A value read by reference is ordered as the value.
+impl<T: Order + ?Sized> Order for &T {
+    fn le(&self, other: &Self) -> bool {
+        (**self).le(*other)
+    }
+}
+
 /// A total order: a register under it always reads one value, the greatest.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Total<T>(pub T);
