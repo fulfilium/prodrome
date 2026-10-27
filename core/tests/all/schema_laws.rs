@@ -6,7 +6,7 @@
 //! Stated once, generic over a schema, and run over the todo schema, the
 //! review schema of `review.rs` and the note schema of `note.rs`: the law
 //! asks nothing of a schema, so none may break it. The note schema is an
-//! application schema at the generic event (`schema::envelope`), so the law
+//! application schema at the generic event (`schema::headed`), so the law
 //! covers the envelope and `fold::sole::One` too.
 //!
 //! Law 5, VALUATION: a reading's price is `Least` over the terms its
@@ -26,6 +26,7 @@ use prodrome::event::{
     mk_cancelled, mk_completed, mk_created, mk_reopened, mk_spec_revised, mk_tended, Hash,
     TodoEvent,
 };
+use prodrome::fold::sole::{Only, Whole};
 use prodrome::fold::{price, read, Kind, Product, RegisterType};
 use prodrome::fpl::{self, mk_flat, Closed, Env};
 use prodrome::literal::Datetime;
@@ -40,7 +41,7 @@ use crate::common::draw::{a_draw, history, Draw};
 
 use prodrome::todo::{Content, Spec, State};
 
-use crate::note::{self, Note};
+use crate::note::{self, Entry, Note};
 use crate::review::{self, Field, Phase, PhaseRegister, Review, PHASES};
 
 /// Every register's frontier and its reading by name ([`Product::reading`]),
@@ -276,15 +277,16 @@ fn a_review_event() -> impl Strategy<Value = Review> {
         })
 }
 
-/// A note event by `ada`: one of two notes, one of three titles, at one of
-/// three instants, so that a draw holds equal events under different deps.
+/// A note event by `ada`: one of two notes, at one of three instants, a
+/// view or one of three titles, so that a draw holds equal events under
+/// different deps, and events that write no register.
 pub(crate) fn a_note_event() -> impl Strategy<Value = Note> {
-    (0..2usize, 0..3u32, 0..3u8).prop_map(|(name, minute, title)| {
-        note::by_ada(
-            ["n1", "n2"][name],
-            note::at(minute * 60),
-            &format!("t{title}"),
-        )
+    (0..2usize, 0..3u32, 0..4u8).prop_map(|(name, minute, title)| {
+        let entry = match title {
+            0 => Entry::Viewed,
+            _ => note::titled(&format!("t{title}")),
+        };
+        note::by_ada(["n1", "n2"][name], note::at(minute * 60), entry)
     })
 }
 
@@ -333,10 +335,11 @@ proptest! {
         prop_assert!(valued::<_, PhaseRegister>(&event, Field::Phase));
     }
 
-    /// Law 33, over the note schema: a write joins `Only`, the one register
-    /// it names.
+    /// Law 33, over the note schema: a title joins `Only`, a view joins no
+    /// register, and the register type `Whole` values exactly the titles.
     #[test]
     fn a_note_write_joins_the_registers_it_names(event in a_note_event()) {
         routed(&event)?;
+        prop_assert!(valued::<_, Whole<Note>>(&event, Only));
     }
 }

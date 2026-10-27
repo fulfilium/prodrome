@@ -29,7 +29,7 @@ use prodrome::schema::Schema;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
-use crate::note::Note;
+use crate::note::{Entry, Note};
 use common::{a_draft, moment, Draft, WINDOW};
 
 type Event = TodoEvent<Todo>;
@@ -65,8 +65,8 @@ fn stream<'f, E: Schema>(state: &'f Folded<E>, event: &E) -> &'f [Stamp<E>] {
         .map_or(&[], |(_, stream)| stream)
 }
 
-/// What a writer appends: an event of `E`, given its instant and a note
-/// that makes the event new.
+/// What a writer appends: an event of `E`, given its instant and a note.
+/// Each act has its own instant and note, so each event is new.
 trait Draws<E>: Clone + std::fmt::Debug {
     fn event(&self, at: Datetime, note: &str) -> E;
 }
@@ -77,19 +77,33 @@ impl Draws<Event> for Draft {
     }
 }
 
-/// A title for one of two notes, by `ada`. The note of the act makes the
-/// title new.
+/// A title or a view of one of two notes, by `ada`. A title is the act's
+/// note. A view writes no register.
 #[derive(Debug, Clone)]
-struct NoteDraft(&'static str);
+struct NoteDraft(&'static str, NoteAct);
+
+#[derive(Debug, Clone)]
+enum NoteAct {
+    Title,
+    View,
+}
 
 impl Draws<Note> for NoteDraft {
     fn event(&self, at: Datetime, note: &str) -> Note {
-        crate::note::by_ada(self.0, at, note)
+        let entry = match self.1 {
+            NoteAct::Title => crate::note::titled(note),
+            NoteAct::View => Entry::Viewed,
+        };
+        crate::note::by_ada(self.0, at, entry)
     }
 }
 
 fn a_note_draft() -> impl Strategy<Value = NoteDraft> {
-    prop::sample::select(vec!["n1", "n2"]).prop_map(NoteDraft)
+    (
+        prop::sample::select(vec!["n1", "n2"]),
+        prop_oneof![Just(NoteAct::Title), Just(NoteAct::View)],
+    )
+        .prop_map(|(note, act)| NoteDraft(note, act))
 }
 
 /// One thing that happens to the two writers.
@@ -140,7 +154,9 @@ where
         match act {
             Act::Append(side, draft, at) => {
                 let note = format!("{side}.{index}");
-                let event = draft.event(moment(*at), &note);
+                // The act's index in the low bits makes each instant its own.
+                let at = at - at % 64 + i64::try_from(index % 64).expect("small");
+                let event = draft.event(moment(at), &note);
                 let held: BTreeSet<Hash> = stream(&folded(&replicas[*side]), &event)
                     .iter()
                     .map(|stamp| stamp.name.clone())
@@ -234,8 +250,11 @@ proptest! {
         rests_on_what_was_seen::<Event, _>(&acts)?;
     }
 
-    /// Laws 36 and 37 over the note schema: an application schema at the
-    /// generic event, whose product is `fold::sole::One`.
+    /// Law 36 over the note schema: an application schema at the generic
+    /// event, whose product is `fold::sole::One`. The schema has one
+    /// register, so this test does not check law 37. The per-register check
+    /// still runs, and it fails if a view, which writes no register, enters
+    /// the register's frontier.
     #[test]
     fn a_note_change_rests_on_what_its_writer_saw(
         acts in prop::collection::vec(an_act(a_note_draft()), 1..40),

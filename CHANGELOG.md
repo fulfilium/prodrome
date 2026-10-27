@@ -152,24 +152,35 @@ misses once.
 
 ### Added
 
-- **A generic event for application schemas (`schema::envelope`), and a
-  product for a schema with one register (`fold::sole`).** `Event<S>`
-  holds a key, `at`, `actor` and a body `S`, and implements `Schema`. It
+- **A generic event type for application schemas (`schema::headed`), and
+  a product for a schema with one register (`fold::sole`).** `Event<B>`
+  holds a key, `at`, `actor` and a body `B`, and implements `Schema`. It
   prints as `Constructor(<key fields>, at, actor, <body fields>)` through
-  `literal::codec`. The trait `Says` gives the body: the key type, the
-  registers, the event constructors, the registers that a body writes, the
-  print of the body and the parse of a whole event. `Head` gives the
-  fields of a key, and every `Literal` key has one field. `Vocab<S>` is the
-  vocabulary of `Event<S>`. `fold::sole::One<R>` is the product of a schema
-  whose events write one register, `Only`. The trait `Sole` gives that
-  register's reading, its refusal of a write that falls below the reading,
-  and whether a frontier is a conflict. An application implements `Sole`
-  for its own body type, because Rust's orphan rule does not let it
-  implement a trait of this crate for `Event<Body>`. A MINOR change under
-  this file's rule: new API only, and no stored byte, vector or export
-  moves. The schema laws 31, 33, 36 and 37 also run over a note schema at
-  `Event` in the tests (`core/tests/schemas/note.rs`), and
-  `core/tests/all/note.rs` checks its print.
+  `literal::codec`. The trait `Body` gives the rest of the schema: the key
+  type, the registers, the event constructors, the registers that a body
+  writes, whether a policy is asked about it, the check of a key and a body
+  together (`Body::admits`, with a typed `Refusal`), the print of the body
+  and the parse of a whole event. `Event::new` asks `Body::admits` and is
+  the only way to build an event, so every event that exists passed the
+  check; a body whose `Refusal` is `Infallible` also gets the total
+  `Event::of`. `KeyFields` gives the fields of a key, and every `Literal`
+  key has one field. `Constructors<B>` is the vocabulary of `Event<B>`.
+  `fold::sole::One<R>` is the product of a schema whose events write one
+  register, `Only`. Its parameter is the register's type: a
+  `RegisterType` that also implements `Sole`, which names the schema and
+  can refuse an append that falls below the reading. `One` reads the
+  frontier under that type, and joins a write only where the type gives
+  the write a value, so an event that writes no register supersedes
+  nothing. `Whole<E>` is the register type whose value is the whole event,
+  so its reading is the frontier's candidates. A MINOR change under this
+  file's rule: new API only, and no stored byte, vector or export moves.
+  The tests add a note schema at `Event`, with a title that writes the
+  register and a view that writes none; the module documentation of
+  `schema::headed` shows it as its example. Law 31 (a register type's
+  reading) and laws 33 and 36 (schema laws) run over it, and
+  `core/tests/all/note.rs` checks its print, its parse, the refusal of an
+  empty name, a conflict that a third title settles across two replicas,
+  and a view that supersedes no title.
 - **A codec between Rust values and literals (`literal::codec`).** The
   trait `Literal` gives a type one stored form that reads back exactly,
   with `to_value` and `from_value`. `record` and `headed` build the call of

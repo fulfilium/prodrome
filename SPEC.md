@@ -1301,7 +1301,7 @@ byte as before is law 22 and every vector suite, unchanged.
 Law 33 is the design's law 1, over three schemas: the todo schema, a
 second one in the tests (`review.rs`), a machine priced by a flat term per
 phase and nothing else, and a third (`note.rs`), an application schema at
-the generic event of `schema::envelope` with one register, so the law is
+the generic event of `schema::headed` with one register, so the law is
 seen to ask nothing of a schema. The
 design's law 5 is law 34, over any `Price`, and law 24 is it for the todo
 through the entry; its law 6 is law 22.
@@ -1373,8 +1373,7 @@ replicas in memory sync in between and whose events are dated anywhere.
 37. **Supersession is per register.** Each register's frontier is its
     writes that no other write TO IT descends from: a write descending from
     a write in another register supersedes nothing there.
-    `causal.rs::a_change_rests_on_what_its_writer_saw`,
-    `causal.rs::a_note_change_rests_on_what_its_writer_saw`.
+    `causal.rs::a_change_rests_on_what_its_writer_saw`.
 
 Law 38 is §7's next change, over generated terms, environments, instants
 and observations.

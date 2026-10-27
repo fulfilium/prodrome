@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 4a9133fd81c2aae7d609e1f4c03fa91d11f8a20d7821c7416a6a9630b470abf5 # shrinks to draw = Draw { events: [(Event { key: "n1", at: Datetime { year: 2026, month: 10, day: 1, hour: 0, minute: 0, second: 0, microsecond: 0 }, actor: Actor("ada"), body: Viewed }, 0)], ranks: [0, 0, 0, 0, 0, 0, 2611179815, 2836727393, 2754168377, 3720013327, 3894055137, 1069561186, 3974523690], twice: [5, 11], replica: 2692560514380308122 }

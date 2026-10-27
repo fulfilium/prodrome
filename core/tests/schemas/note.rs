@@ -1,87 +1,96 @@
-//! A NOTE schema, in the tests only: a note has a title, and each event
-//! gives a note a new title. The schema is an application schema at the
-//! generic event (`schema::envelope::Event`), and its one register is read
-//! by `fold::sole::One` under the discrete order on events. So the schema
-//! laws that run over it cover the envelope and the one-register product.
-//!
-//! An event prints as `Titled(note='n1', at=datetime(…), actor='ada',
-//! title='…')`.
+// A NOTE schema: each note has a title, and a reader can record that they
+// viewed a note. A title writes the note's one register. A view writes no
+// register, so it never supersedes a title. The schema is an application
+// schema at `schema::headed::Event`, and its product is
+// `fold::sole::One` over the register type `Whole`. Its prints are
+// `Titled(note='n1', at=datetime(…), actor='ada', title='…')` and
+// `Viewed(note='n1', at=datetime(…), actor='ada')`.
+//
+// The crate's tests include this file, and the module documentation of
+// `schema::headed` shows it as its example.
 
 use prodrome::event::Actor;
-use prodrome::fold::sole::{One, Only, Sole};
-use prodrome::fold::Frontier;
+use prodrome::fold::sole::{One, Only, Whole};
 use prodrome::literal::codec::{Constructor, Fields, Literal};
 use prodrome::literal::{Datetime, ProdromeError, Value};
-use prodrome::registers::Stamp;
-use prodrome::schema::envelope::{Event, Says};
+use prodrome::schema::headed::{Body, Event};
 
-/// The one event constructor.
+/// `Titled(note, at, actor, title)`.
 pub const TITLED: Constructor = ("Titled", &["note", "at", "actor", "title"]);
+/// `Viewed(note, at, actor)`.
+pub const VIEWED: Constructor = ("Viewed", &["note", "at", "actor"]);
 
-/// The body of an event: the note's new title.
+/// What an event says of its note.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Title(String);
+pub enum Entry {
+    /// The note has a new title. It writes the note's register.
+    Titled(String),
+    /// A reader viewed the note. It writes no register.
+    Viewed,
+}
 
 /// The schema.
-pub type Note = Event<Title>;
+pub type Note = Event<Entry>;
 
-/// The event that gives `note` the title `title`, stamped `at` by `actor`.
-///
-/// # Errors
-///
-/// An empty note name.
-pub fn titled(
-    note: String,
-    at: Datetime,
-    actor: Actor,
-    title: String,
-) -> Result<Note, ProdromeError> {
-    if note.is_empty() {
-        return Err(ProdromeError::invalid("a note has a name"));
+/// A note's name is empty.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unnamed;
+
+impl std::fmt::Display for Unnamed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a note has a name")
     }
-    Ok(Event::of(note, at, actor, Title(title)))
 }
 
-/// The event by `ada` that gives `note` the title `title` at `at`.
-pub fn by_ada(note: &str, at: Datetime, title: &str) -> Note {
-    let ada = Actor::new("ada").expect("a valid actor");
-    titled(note.to_owned(), at, ada, title.to_owned()).expect("a named note")
-}
-
-impl Says for Title {
+impl Body for Entry {
     type Key = String;
     type Register = Only;
-    type Registers<'a> = One<'a, Title>;
+    type Registers<'a> = One<'a, Whole<Note>>;
+    type Refusal = Unnamed;
 
-    const EVENTS: &'static [Constructor] = &[TITLED];
-
-    fn registers() -> Vec<Only> {
-        vec![Only]
-    }
+    const EVENTS: &'static [Constructor] = &[TITLED, VIEWED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
-        std::iter::once(Only)
+        match self {
+            Entry::Titled(_) => Some(Only),
+            Entry::Viewed => None,
+        }
+        .into_iter()
     }
 
-    fn body(&self) -> (Constructor, Vec<Value>) {
-        (TITLED, vec![self.0.to_value()])
+    fn admits(note: &String, _: &Entry) -> Result<(), Unnamed> {
+        if note.is_empty() {
+            Err(Unnamed)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn fields(&self) -> (Constructor, Vec<Value>) {
+        match self {
+            Entry::Titled(title) => (TITLED, vec![title.to_value()]),
+            Entry::Viewed => (VIEWED, Vec::new()),
+        }
     }
 
     fn parse(fields: &Fields<'_>) -> Result<Note, ProdromeError> {
-        titled(
+        let entry = match fields.name() {
+            "Titled" => Entry::Titled(fields.get("title")?),
+            "Viewed" => Entry::Viewed,
+            other => return Err(prodrome::literal::codec::no_arm("a note event", other)),
+        };
+        Event::new(
             fields.get("note")?,
             fields.get("at")?,
             fields.get("actor")?,
-            fields.get("title")?,
+            entry,
         )
+        .map_err(|refused| ProdromeError::invalid(refused.to_string()))
     }
 }
 
-/// The title register reads its candidates: the discrete order on events.
-impl Sole for Title {
-    type Schema = Note;
-
-    fn reading<'a>(frontier: &Frontier<'a, Note>) -> Vec<&'a Stamp<Note>> {
-        frontier.candidates()
-    }
+/// The event by `ada` with `entry` about `note` at `at`.
+pub fn by_ada(note: &str, at: Datetime, entry: Entry) -> Note {
+    let ada = Actor::new("ada").expect("a valid actor");
+    Event::new(note.to_owned(), at, ada, entry).expect("a named note")
 }

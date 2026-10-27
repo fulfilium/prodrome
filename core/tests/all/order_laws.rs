@@ -23,16 +23,17 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use prodrome::dag::Dag;
 use prodrome::event::{mk_completed, seal_hash, Envelope, Hash, TodoEvent, TodoId};
-use prodrome::fold::sole::One;
-use prodrome::fold::{grows, maximal, read, Discrete, Frontier, Order, Total};
+use prodrome::fold::sole::{One, Only, Whole};
+use prodrome::fold::{grows, maximal, read, Discrete, Frontier, Order, Product, Total};
 use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::reference::Todo;
 use prodrome::registers::{fold, Folded, Node, Stamp};
+use prodrome::schema::Schema;
 use proptest::prelude::*;
 
 use crate::common::draw::{a_draw, history};
-use crate::note::{Note, Title};
+use crate::note::Note;
 use crate::review::{Phase, PHASES};
 use crate::schema_laws::a_note_event;
 
@@ -223,19 +224,25 @@ proptest! {
 proptest! {
     #![proptest_config(crate::common::cases::cases(256))]
 
-    /// Law 31, over the note schema: the reading of `fold::sole::One` is
-    /// the discrete reading of its writes that no other write to the note
-    /// descends from. The test states that frontier without the fold: the
-    /// distinct events in name order, each named by the least write that
-    /// carries it.
+    /// Law 31, over the note schema: the reading of `fold::sole::One` under
+    /// `fold::sole::Whole` is the discrete reading of the titles that no
+    /// other title of the note descends from. A view writes no register, so
+    /// it is not among them and supersedes nothing. The test states that
+    /// frontier without the fold: the distinct events in name order, each
+    /// named by the least write that carries it.
     #[test]
     fn a_note_reading_is_the_candidates(draw in a_draw(a_note_event())) {
         let objects: Dag<Note> = history(&draw.events).into_iter().collect();
         let folded = fold(&objects.nodes().expect("a DAG"));
         for (key, stream) in folded.entities() {
-            let mut frontier: Vec<&Stamp<Note>> = stream
+            let writes: Vec<&Stamp<Note>> = stream
                 .iter()
-                .filter(|write| !stream.iter().any(|later| later.descends(write)))
+                .filter(|stamp| stamp.event.writes().next().is_some())
+                .collect();
+            let mut frontier: Vec<&Stamp<Note>> = writes
+                .iter()
+                .copied()
+                .filter(|write| !writes.iter().any(|later| later.descends(write)))
                 .collect();
             frontier.sort_by(|a, b| a.name.cmp(&b.name));
             let mut twins_once: Vec<&Stamp<Note>> = Vec::new();
@@ -244,8 +251,8 @@ proptest! {
                     twins_once.push(stamp);
                 }
             }
-            let registers: One<'_, Title> = read(stream, None, &Everything);
-            prop_assert_eq!(registers.reading(), twins_once, "{:?}", key);
+            let registers: One<'_, Whole<Note>> = read(stream, None, &Everything);
+            prop_assert_eq!(registers.reading(Only), twins_once, "{:?}", key);
         }
     }
 }

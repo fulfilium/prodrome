@@ -1,16 +1,16 @@
 //! The product of a schema whose events write one register.
 //!
 //! The register is named [`Only`]. Its value is one [`Frontier`]: the
-//! writes that no later write descends from. A type that implements
-//! [`Sole`] says how the frontier reads and whether an append must grow it,
-//! and [`One`] is then the schema's product.
+//! writes that no later write descends from. The register's type is a
+//! [`RegisterType`] that also implements [`Sole`], and [`One`] is then the
+//! schema's product. [`Whole`] is the register type whose value is the whole
+//! event, so its reading is the frontier's candidates.
 
 #![warn(clippy::pedantic)]
 
-use std::collections::BTreeMap;
+use std::marker::PhantomData;
 
-use crate::event::Hash;
-use crate::fold::{Frontier, Product, Register as _};
+use crate::fold::{Discrete, Frontier, Product, Register as _, RegisterType};
 use crate::literal::ProdromeError;
 use crate::registers::Stamp;
 use crate::schema::Schema;
@@ -19,22 +19,18 @@ use crate::schema::Schema;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Only;
 
-/// The rules of the one register of [`Sole::Schema`].
+/// The type of the one register of [`Sole::Schema`].
 ///
-/// The implementing type is the schema itself, or, for a schema at
-/// [`crate::schema::envelope::Event`], the body type. The body type is local
-/// to the application's crate, so the application can implement this trait
-/// for it, and `Event<Body>` is the schema.
-pub trait Sole: 'static {
+/// The register reads its frontier under this [`RegisterType`], and a write
+/// joins it exactly when the type gives the write a value.
+pub trait Sole: RegisterType<Self::Schema> + 'static {
     /// The schema whose events write [`Only`].
     type Schema: Schema<Register = Only>;
 
-    /// The register's reading: one write, or the candidates of a conflict.
-    fn reading<'a>(frontier: &Frontier<'a, Self::Schema>) -> Vec<&'a Stamp<Self::Schema>>;
-
     /// The append's refusal of a write whose value falls below the reading.
-    /// A register that is not inflationary refuses nothing, which is the
-    /// default.
+    /// A register type that is not inflationary refuses nothing, which is
+    /// the default. An inflationary one answers
+    /// `frontier.grows::<Self>(event)`.
     ///
     /// # Errors
     ///
@@ -43,18 +39,10 @@ pub trait Sole: 'static {
     fn grows(_: &Frontier<'_, Self::Schema>, _: &Self::Schema) -> Result<(), ProdromeError> {
         Ok(())
     }
-
-    /// Is the frontier a conflict that a writer must settle? By default it
-    /// is when it holds more than one write. A register whose join is union
-    /// has no conflicts.
-    #[must_use]
-    fn conflict(frontier: &Frontier<'_, Self::Schema>) -> bool {
-        frontier.is_conflict()
-    }
 }
 
-/// The registers of one entity at the schema of `R`: the frontier of
-/// [`Only`].
+/// The registers of one entity at the schema of the register type `R`: the
+/// frontier of [`Only`].
 pub struct One<'a, R: Sole>(Frontier<'a, R::Schema>);
 
 impl<R: Sole> Default for One<'_, R> {
@@ -81,14 +69,6 @@ impl<R: Sole> std::fmt::Debug for One<'_, R> {
     }
 }
 
-impl<'a, R: Sole> One<'a, R> {
-    /// The reading of the register.
-    #[must_use]
-    pub fn reading(&self) -> Vec<&'a Stamp<R::Schema>> {
-        R::reading(&self.0)
-    }
-}
-
 impl<'a, R: Sole> Product<'a> for One<'a, R> {
     type Schema = R::Schema;
 
@@ -96,8 +76,11 @@ impl<'a, R: Sole> Product<'a> for One<'a, R> {
         vec![Only]
     }
 
+    /// Joins `stamp` where its event writes the register, and nowhere else.
     fn join(&mut self, stamp: &'a Stamp<R::Schema>) {
-        self.0.join(stamp);
+        if R::value(&stamp.event).is_some() {
+            self.0.join(stamp);
+        }
     }
 
     fn frontier(&self, _: Only) -> &Frontier<'a, R::Schema> {
@@ -109,18 +92,27 @@ impl<'a, R: Sole> Product<'a> for One<'a, R> {
     }
 
     fn reading(&self, _: Only) -> Vec<&'a Stamp<R::Schema>> {
-        R::reading(&self.0)
+        self.0.reading::<R>()
     }
 
     fn grows(&self, event: &R::Schema) -> Result<(), ProdromeError> {
         R::grows(&self.0, event)
     }
+}
 
-    fn conflicts(&self) -> BTreeMap<Only, Vec<Hash>> {
-        if R::conflict(&self.0) {
-            BTreeMap::from([(Only, self.0.names())])
-        } else {
-            BTreeMap::new()
-        }
+/// The register type whose value is the whole event that writes [`Only`],
+/// under the discrete order: the register reads the frontier's candidates.
+/// An event that writes no register has no value, so it joins nothing.
+pub struct Whole<E>(PhantomData<fn() -> E>);
+
+impl<E: Schema<Register = Only>> RegisterType<E> for Whole<E> {
+    type Value<'e> = Discrete<&'e E>;
+
+    fn value(event: &E) -> Option<Discrete<&E>> {
+        event.writes().next().map(|Only| Discrete(event))
     }
+}
+
+impl<E: Schema<Register = Only>> Sole for Whole<E> {
+    type Schema = E;
 }
