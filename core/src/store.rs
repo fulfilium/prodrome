@@ -33,6 +33,8 @@ mod memory_store;
 mod overlay;
 mod replica;
 
+pub mod frontier;
+
 use std::collections::hash_map::RandomState;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File};
