@@ -7,15 +7,16 @@ use crate::literal::ProdromeError;
 use crate::schema::Schema;
 
 /// The objects of a history of `events`: one genesis, and one change per
-/// event. Each event is paired with a bit mask: its change rests on the
-/// earlier changes to the same entity whose positions, modulo 64, have their
-/// bit set.
+/// event, each object once (an event drawn twice over the same changes is
+/// one object). Each event is paired with a bit mask: its change rests on
+/// the earlier changes to the same entity whose positions, modulo 64, have
+/// their bit set.
 ///
 /// # Errors
 ///
 /// A genesis or a change that its smart constructor refuses.
 pub fn history<E: Schema>(events: &[(E, u64)]) -> Result<Vec<(Hash, Envelope<E>)>, ProdromeError> {
-    let genesis = Envelope::Genesis(mk_genesis("laws", &"0".repeat(32))?);
+    let genesis = Envelope::Genesis(mk_genesis("law 1", &"0".repeat(32))?);
     let root = seal_hash(&genesis);
     let mut objects = vec![(root.clone(), genesis)];
     let mut changes: Vec<(Hash, &E)> = Vec::new();
@@ -33,7 +34,9 @@ pub fn history<E: Schema>(events: &[(E, u64)]) -> Result<Vec<(Hash, Envelope<E>)
         )?);
         let name = seal_hash(&object);
         changes.push((name.clone(), event));
-        objects.push((name, object));
+        if !objects.iter().any(|(held, _)| *held == name) {
+            objects.push((name, object));
+        }
     }
     Ok(objects)
 }

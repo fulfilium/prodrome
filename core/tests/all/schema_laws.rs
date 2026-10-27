@@ -3,7 +3,8 @@
 //! parents first, every duplication, and every partition into two replicas
 //! folded apart and then merged reads the same, register by register.
 //!
-//! Stated once, generic over a schema, and run over the todo schema, the
+//! Stated once, in the law kit (`prodrome::laws::free`, `routed` and
+//! `valued`, SPEC law 33), and run here over the todo schema, the
 //! review schema of `review.rs` and the note schema of `note.rs`: the law
 //! asks nothing of a schema, so none may break it. The note schema is an
 //! application schema at the generic event (`schema::headed`), so the law
@@ -186,11 +187,15 @@ pub(crate) fn a_note_event() -> impl Strategy<Value = Note> {
 proptest! {
     #![proptest_config(crate::common::cases::cases(128))]
 
+    /// Law 33, over the todo schema, by the kit: a reading is a function of
+    /// the object set.
     #[test]
     fn a_todo_reading_is_a_function_of_the_object_set(draw in a_draw(a_todo_event())) {
         free(&draw)?;
     }
 
+    /// Law 33, over the review schema, by the kit: a reading is a function
+    /// of the object set.
     #[test]
     fn a_review_reading_is_a_function_of_the_object_set(draw in a_draw(a_review_event())) {
         free(&draw)?;
@@ -214,6 +219,8 @@ proptest! {
         least(&draw)?;
     }
 
+    /// Law 33, over the todo schema, by the kit: a write joins the registers
+    /// it names, and each register type values exactly those writes.
     #[test]
     fn a_todo_write_joins_the_registers_it_names(event in a_todo_event()) {
         routed(&event)?;
@@ -222,6 +229,8 @@ proptest! {
         laws::valued::<_, Content>(&event, Kind::Content).map_err(failed)?;
     }
 
+    /// Law 33, over the review schema, by the kit: a write joins the
+    /// register it names, and the phase type values exactly those writes.
     #[test]
     fn a_review_write_joins_the_registers_it_names(event in a_review_event()) {
         routed(&event)?;

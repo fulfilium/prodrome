@@ -10,23 +10,27 @@ constructor's fields never change, in any release.
 
 ### Added
 
-- **The law kit (`prodrome::laws`), behind the `laws` feature, which is on
+- **The law kit (`prodrome::laws`), behind the `laws` feature, which is off
   by default.** The laws of SPEC §9 that ask nothing of a schema are
   functions an application runs over its own schemas and stores: `printed`
   (law 1: every print parses, prints back byte for byte and hashes to its
   name), `free`, `routed` and `valued` (law 33: a reading is a function of
-  the object set, folded in any parents-first order given by a `Shuffle`,
-  with objects folded twice, and split into two replicas; a write joins
-  exactly the registers it names; a register type values exactly those
-  writes), and `synced` (law 35: a sync into a fresh replica takes all,
-  a second takes nothing, and the copy reads as its source). `history`
-  builds a history from events. Each answers `Ok` or the law it found
-  `Broken`. The functions take data, not generators, so an application
-  can run them over the objects its stores hold. The crate's tests run
-  them over the todo, review and note schemas (`schema_laws.rs`,
-  `kit.rs`), and the tests' generator draws a `Shuffle`. A MINOR change
-  under this file's rule: new API only, and no stored byte, vector or
-  export moves.
+  the object set, folded in any parents-first order a `Shuffle` gives, with
+  objects folded twice, and split into two replicas; a write folds to its
+  entity and joins exactly the registers it names; a register type values
+  exactly those writes), and `synced` (law 35's join clauses, between
+  replicas of any two kinds: a cut sync takes nothing, a down-set then the
+  whole reads as the union, a second sync takes nothing, and either order
+  into a third replica reads the same). `history` builds a history,
+  `holding` a store in memory that holds one, `a_shuffle` draws a
+  `Shuffle`, and `Shuffle::halves` splits a history into two replicas.
+  Each law answers `Ok` or the law it found `Broken`, naming the first
+  entity and register that differ with both sides. The feature adds the
+  optional dependency `proptest`. The crate's tests enable it through a
+  dev-dependency on the crate itself, and run the kit over the todo, review
+  and note schemas (`schema_laws.rs`, `kit.rs`, `replica.rs`), with a
+  known-broken input for each law. A MINOR change under this file's rule:
+  new API only, and no stored byte, vector or export moves.
 - `store::frontier`, a frontier token for a pull over a wire (SPEC §3,
   law 47). `Token::of` names a set of tips by the sha256 of their sorted
   names, one on each line. `Frontiers::answer` reads a pull's token against

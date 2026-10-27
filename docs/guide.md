@@ -293,6 +293,16 @@ The `prodrome` command-line tool is one such program. It uses the reference
 payload, the reference policy, and the system clock. It is the only code in
 the workspace that reads the system clock.
 
+To check your schema with the laws that this crate checks its own schemas
+with, enable the `laws` feature in your tests' dependency on the crate.
+The module `prodrome::laws` gives each law of SPEC section 9 that asks
+nothing of a schema as a function. `printed` checks that each print parses
+and prints back. `free`, `routed` and `valued` check that a reading is a
+function of the object set. `synced` checks that a sync is a join. Each
+function takes data: drawn histories (`history`, `a_shuffle`) or the
+objects that your stores already hold. It answers `Ok`, or the law that it
+found broken, with what differs.
+
 ### 11. The Rust quick start
 
 The [quick start](../core/src/lib.rs) in the crate documentation is a

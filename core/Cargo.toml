@@ -19,14 +19,14 @@ autotests = false
 # it, which is why it ships rather than living in `tests/`. A host that
 # defines its own payload and wants none of these types compiles with
 # `default-features = false`.
-default = ["reference", "laws"]
+default = ["reference"]
 reference = []
-# THE LAW KIT, on by default. `prodrome::laws` holds the laws of SPEC §9 that
+# THE LAW KIT, off by default. `prodrome::laws` holds the laws of SPEC §9 that
 # ask nothing of a schema, as functions over a store's objects, an event or
-# two replicas. The crate's own tests run them over the reference schemas.
-# A host that turns the default features off enables it for its own tests,
-# to check its schemas with the same laws.
-laws = []
+# replicas, with proptest strategies to drive them. A host enables it for its
+# tests (`[dev-dependencies]`), to check its schemas with the same laws. The
+# crate's own tests enable it through the dev-dependency on this crate below.
+laws = ["dep:proptest"]
 
 [lib]
 name = "prodrome"
@@ -37,6 +37,8 @@ name = "all"
 path = "tests/all/main.rs"
 
 [dependencies]
+# The law kit's strategies, with the `laws` feature only.
+proptest = { version = "1", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 # SPEC §3's `Signed`: Ed25519, pure Rust, so the browser's build needs no C
 # toolchain, and over the same `sha2` the names are. No `rand_core`: a key
@@ -59,3 +61,7 @@ rustix = { version = "1", features = ["fs"] }
 
 [dev-dependencies]
 proptest = "1"
+# This crate with the law kit, so its own tests run the kit over the
+# reference schemas: a package may name itself as a dev-dependency to turn on
+# a feature for its tests.
+prodrome-core = { path = ".", features = ["laws"] }

@@ -35,6 +35,6 @@ sha2 = "0.10"
 
 [dev-dependencies]
 # The tests read the reference payload's records.
-prodrome-core = { path = "../../core" }
+prodrome-core = { path = "../../core", features = ["laws"] }
 # The core tests' generators, which the schemas the tests include carry.
 proptest = "1"

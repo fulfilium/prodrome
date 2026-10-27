@@ -118,6 +118,8 @@
 //! - `observe`  — §7: a view's precision, and when the value it shows next changes
 //! - `view`     — §6.7: the entry, the composition of the folds above
 //! - `reference`— the payload the vectors were taken with (feature `reference`)
+//! - `laws`     — §9: the laws that ask nothing of a schema, as functions a
+//!   program runs over its own schemas and stores (feature `laws`)
 
 pub mod breaks;
 /// §7.1 — the chain compiler: `After` erased against a snapshot, so a chain
