@@ -10,6 +10,27 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The law kit (`prodrome::laws`), behind the `laws` feature, which is off
+  by default.** The laws of SPEC §9 that ask nothing of a schema are
+  functions an application runs over its own schemas and stores: `printed`
+  (law 1: every print parses, prints back byte for byte and hashes to its
+  name), `free`, `routed` and `valued` (law 33: a reading is a function of
+  the object set, folded in any parents-first order a `Shuffle` gives, with
+  objects folded twice, and split into two replicas; a write folds to its
+  entity and joins exactly the registers it names; a register type values
+  exactly those writes), and `synced` (law 35's join clauses, between
+  replicas of any two kinds: a cut sync takes nothing, a down-set then the
+  whole reads as the union, a second sync takes nothing, and either order
+  into a third replica reads the same). `history` builds a history,
+  `holding` a store in memory that holds one, `a_shuffle` draws a
+  `Shuffle`, and `Shuffle::halves` splits a history into two replicas.
+  Each law answers `Ok` or the law it found `Broken`, naming the first
+  entity and register that differ with both sides. The feature adds the
+  optional dependency `proptest`. The crate's tests enable it through a
+  dev-dependency on the crate itself, and run the kit over the todo, review
+  and note schemas (`schema_laws.rs`, `kit.rs`, `replica.rs`), with a
+  known-broken input for each law. A MINOR change under this file's rule:
+  new API only, and no stored byte, vector or export moves.
 - **`tags`, mergeable tag sets (SPEC law 48).** A host implements
   `tags::Tagging`: the type of a target, the type of a tag (which can be
   the same type), and the field name of each. A compile-time check

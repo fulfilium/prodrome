@@ -24,6 +24,7 @@ mod fpl_laws;
 mod fpl_vectors;
 mod frontier;
 mod fuzz;
+mod kit;
 mod link_vectors;
 mod literals;
 mod memo;

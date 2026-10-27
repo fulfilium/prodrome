@@ -262,9 +262,7 @@ fn an_append_keeps_what_was_left_out() {
             (proposal(Says::Tagged(vec!["x".to_owned()]), 2), 0b1),
             (proposal(Says::Attempted(1), 3), 0b10),
         ],
-        ranks: vec![],
-        twice: vec![],
-        replica: 0,
+        shuffle: prodrome::laws::Shuffle::default(),
     };
     let objects = objects(&draw);
     let mut replica = replica(&objects.iter().collect::<Vec<_>>());

@@ -555,9 +555,7 @@ proptest! {
         let schema = declaration();
         let draw = Draw {
             events: draw.events.iter().map(|(e, bits)| (declared(&schema, e), *bits)).collect(),
-            ranks: draw.ranks,
-            twice: draw.twice,
-            replica: draw.replica,
+            shuffle: draw.shuffle,
         };
         free(&draw)?;
         for (event, _) in &draw.events {

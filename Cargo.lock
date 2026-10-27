@@ -489,6 +489,7 @@ version = "0.9.0"
 dependencies = [
  "chrono",
  "ed25519-dalek",
+ "prodrome-core",
  "proptest",
  "rustix",
  "sha2",
