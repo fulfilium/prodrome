@@ -9,6 +9,10 @@
 //! before another was written streams before it. And a register's frontier
 //! is still its writes that no other write TO IT descends from: descending
 //! from a write in another register supersedes nothing.
+//!
+//! The laws run over the todo schema and over the note schema of `note.rs`,
+//! an application schema at the generic event whose product is
+//! `fold::sole::One`.
 
 use crate::common;
 
@@ -17,6 +21,7 @@ use std::collections::BTreeSet;
 use prodrome::event::{canonical_envelope, mk_completed, seal_hash, Envelope, Hash, TodoEvent};
 use prodrome::fold::{self as folds, Kind, Product};
 use prodrome::genesis::mk_genesis;
+use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::reference::{mk_authored, Todo};
 use prodrome::registers::{Folded, Stamp};
@@ -24,19 +29,19 @@ use prodrome::schema::Schema;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
+use crate::note::{Entry, Note};
 use common::{a_draft, moment, Draft, WINDOW};
 
 type Event = TodoEvent<Todo>;
-type Memory = MemoryStore<Event>;
 
-/// Two replicas holding one genesis and nothing else.
-fn two_replicas() -> [Memory; 2] {
-    let genesis: Envelope<Event> =
+/// Two replicas of `E` holding one genesis and nothing else.
+fn two_replicas<E: Schema<Vocabulary: Default>>() -> [MemoryStore<E>; 2] {
+    let genesis: Envelope<E> =
         Envelope::Genesis(mk_genesis("causal", &"0".repeat(32)).expect("a genesis"));
     let name = seal_hash(&genesis);
     let print = canonical_envelope(&genesis).into_bytes();
     let begun = || {
-        let memory = Memory::default();
+        let memory = MemoryStore::default();
         memory
             .receive([name.clone()].into(), &|held| {
                 (*held == name).then(|| print.clone())
@@ -47,31 +52,72 @@ fn two_replicas() -> [Memory; 2] {
     [begun(), begun()]
 }
 
-fn folded(replica: &Memory) -> Folded<Event> {
+fn folded<E: Schema>(replica: &MemoryStore<E>) -> Folded<E> {
     let Held { folded, .. } = replica.held().expect("reads");
     (*folded).clone()
 }
 
 /// The stream of `event`'s entity, in the replica's one prodrome.
-fn stream<'f>(state: &'f Folded<Event>, event: &Event) -> &'f [Stamp<Event>] {
+fn stream<'f, E: Schema>(state: &'f Folded<E>, event: &E) -> &'f [Stamp<E>] {
     state
         .entities()
         .find(|(key, _)| *key == event.key())
         .map_or(&[], |(_, stream)| stream)
 }
 
+/// What a writer appends: an event of `E`, given its instant and a note.
+/// Each act has its own instant and note, so each event is new.
+trait Draws<E>: Clone + std::fmt::Debug {
+    fn event(&self, at: Datetime, note: &str) -> E;
+}
+
+impl Draws<Event> for Draft {
+    fn event(&self, at: Datetime, note: &str) -> Event {
+        self.at_with_note(at, note)
+    }
+}
+
+/// A title or a view of one of two notes, by `ada`. A title is the act's
+/// note. A view writes no register.
+#[derive(Debug, Clone)]
+struct NoteDraft(&'static str, NoteAct);
+
+#[derive(Debug, Clone)]
+enum NoteAct {
+    Title,
+    View,
+}
+
+impl Draws<Note> for NoteDraft {
+    fn event(&self, at: Datetime, note: &str) -> Note {
+        let entry = match self.1 {
+            NoteAct::Title => crate::note::titled(note),
+            NoteAct::View => Entry::Viewed,
+        };
+        crate::note::by_ada(self.0, at, entry)
+    }
+}
+
+fn a_note_draft() -> impl Strategy<Value = NoteDraft> {
+    (
+        prop::sample::select(vec!["n1", "n2"]),
+        prop_oneof![Just(NoteAct::Title), Just(NoteAct::View)],
+    )
+        .prop_map(|(note, act)| NoteDraft(note, act))
+}
+
 /// One thing that happens to the two writers.
 #[derive(Debug, Clone)]
-enum Act {
+enum Act<D> {
     /// A writer appends a draft, dated anywhere in the window.
-    Append(usize, Draft, i64),
+    Append(usize, D, i64),
     /// Everything one writer holds, received by the other.
     Sync(usize),
 }
 
-fn an_act() -> impl Strategy<Value = Act> {
+fn an_act<D: std::fmt::Debug>(draft: impl Strategy<Value = D>) -> impl Strategy<Value = Act<D>> {
     prop_oneof![
-        4 => (0usize..2, a_draft(), 0i64..WINDOW)
+        4 => (0usize..2, draft, 0i64..WINDOW)
             .prop_map(|(side, draft, at)| Act::Append(side, draft, at)),
         1 => (0usize..2).prop_map(Act::Sync),
     ]
@@ -79,8 +125,8 @@ fn an_act() -> impl Strategy<Value = Act> {
 
 /// The writes in `stream` to `register`, each kept unless another of them
 /// descends from it: supersession per register, stated without the fold.
-fn superseded_per_register(stream: &[Stamp<Event>], register: Kind) -> Vec<Hash> {
-    let writes: Vec<&Stamp<Event>> = stream
+fn superseded_per_register<E: Schema>(stream: &[Stamp<E>], register: E::Register) -> Vec<Hash> {
+    let writes: Vec<&Stamp<E>> = stream
         .iter()
         .filter(|stamp| stamp.event.writes().any(|r| r == register))
         .collect();
@@ -91,6 +137,95 @@ fn superseded_per_register(stream: &[Stamp<Event>], register: Kind) -> Vec<Hash>
         .collect();
     kept.sort();
     kept
+}
+
+/// Laws 36 and 37 over `acts`, at any schema.
+fn rests_on_what_was_seen<E, D>(acts: &[Act<D>]) -> Result<(), TestCaseError>
+where
+    E: Schema<Vocabulary: Default>,
+    D: Draws<E>,
+{
+    let replicas = two_replicas::<E>();
+    // Each side's writes, in the order it wrote them, with what of the
+    // entity it held when it wrote.
+    let mut written: [Vec<(E, Hash)>; 2] = [Vec::new(), Vec::new()];
+    let mut seen: Vec<(E, Hash, BTreeSet<Hash>)> = Vec::new();
+    for (index, act) in acts.iter().enumerate() {
+        match act {
+            Act::Append(side, draft, at) => {
+                let note = format!("{side}.{index}");
+                // The act's index in the low bits makes each instant its own.
+                let at = at - at % 64 + i64::try_from(index % 64).expect("small");
+                let event = draft.event(moment(at), &note);
+                let held: BTreeSet<Hash> = stream(&folded(&replicas[*side]), &event)
+                    .iter()
+                    .map(|stamp| stamp.name.clone())
+                    .collect();
+                let name = replicas[*side].append(event.clone()).expect("appends");
+                prop_assert!(!held.contains(&name), "every event here is new");
+                let state = folded(&replicas[*side]);
+                for earlier in &held {
+                    prop_assert!(
+                        state.descends(&name, earlier),
+                        "{:?} rests on {:?}, which its writer held",
+                        name,
+                        earlier
+                    );
+                }
+                written[*side].push((event.clone(), name.clone()));
+                seen.push((event, name, held));
+            }
+            Act::Sync(from) => {
+                sync(&replicas[*from], &replicas[1 - from]).expect("syncs");
+            }
+        }
+    }
+    sync(&replicas[0], &replicas[1]).expect("syncs");
+    sync(&replicas[1], &replicas[0]).expect("syncs");
+    let state = folded(&replicas[0]);
+    prop_assert_eq!(&state, &folded(&replicas[1]));
+
+    let place = |event: &E, name: &Hash| -> usize {
+        stream(&state, event)
+            .iter()
+            .position(|stamp| stamp.name == *name)
+            .expect("a write is in its entity's stream")
+    };
+    for side in &written {
+        for (i, (event, name)) in side.iter().enumerate() {
+            for (later, later_name) in &side[i + 1..] {
+                if later.key() == event.key() {
+                    prop_assert!(
+                        place(event, name) < place(later, later_name),
+                        "a writer's own writes stream in the order it wrote them"
+                    );
+                }
+            }
+        }
+    }
+    for (event, name, held) in &seen {
+        for other in stream(&state, event) {
+            prop_assert_eq!(
+                state.descends(name, &other.name),
+                held.contains(&other.name),
+                "{:?} descends from {:?} exactly when its writer held it",
+                name,
+                other.name
+            );
+        }
+    }
+    for (_, stream) in state.entities() {
+        let registers = folds::read(stream, None, &Everything);
+        for register in &E::registers(&Default::default()) {
+            prop_assert_eq!(
+                registers.frontier(*register).names(),
+                superseded_per_register(stream, *register),
+                "{:?}",
+                register
+            );
+        }
+    }
+    Ok(())
 }
 
 proptest! {
@@ -110,81 +245,21 @@ proptest! {
     /// nothing there.
     #[test]
     fn a_change_rests_on_what_its_writer_saw(
-        acts in prop::collection::vec(an_act(), 1..40),
+        acts in prop::collection::vec(an_act(a_draft()), 1..40),
     ) {
-        let replicas = two_replicas();
-        // Each side's writes, in the order it wrote them, with what of the
-        // entity it held when it wrote.
-        let mut written: [Vec<(Event, Hash)>; 2] = [Vec::new(), Vec::new()];
-        let mut seen: Vec<(Event, Hash, BTreeSet<Hash>)> = Vec::new();
-        for (index, act) in acts.iter().enumerate() {
-            match act {
-                Act::Append(side, draft, at) => {
-                    let note = format!("{side}.{index}");
-                    let event = draft.at_with_note(moment(*at), &note);
-                    let held: BTreeSet<Hash> = stream(&folded(&replicas[*side]), &event)
-                        .iter()
-                        .map(|stamp| stamp.name.clone())
-                        .collect();
-                    let name = replicas[*side].append(event.clone()).expect("appends");
-                    prop_assert!(!held.contains(&name), "every event here is new");
-                    let state = folded(&replicas[*side]);
-                    for earlier in &held {
-                        prop_assert!(
-                            state.descends(&name, earlier),
-                            "{:?} rests on {:?}, which its writer held", name, earlier
-                        );
-                    }
-                    written[*side].push((event.clone(), name.clone()));
-                    seen.push((event, name, held));
-                }
-                Act::Sync(from) => {
-                    sync(&replicas[*from], &replicas[1 - from]).expect("syncs");
-                }
-            }
-        }
-        sync(&replicas[0], &replicas[1]).expect("syncs");
-        sync(&replicas[1], &replicas[0]).expect("syncs");
-        let state = folded(&replicas[0]);
-        prop_assert_eq!(&state, &folded(&replicas[1]));
+        rests_on_what_was_seen::<Event, _>(&acts)?;
+    }
 
-        let place = |event: &Event, name: &Hash| -> usize {
-            stream(&state, event)
-                .iter()
-                .position(|stamp| stamp.name == *name)
-                .expect("a write is in its entity's stream")
-        };
-        for side in &written {
-            for (i, (event, name)) in side.iter().enumerate() {
-                for (later, later_name) in &side[i + 1..] {
-                    if later.key() == event.key() {
-                        prop_assert!(
-                            place(event, name) < place(later, later_name),
-                            "a writer's own writes stream in the order it wrote them"
-                        );
-                    }
-                }
-            }
-        }
-        for (event, name, held) in &seen {
-            for other in stream(&state, event) {
-                prop_assert_eq!(
-                    state.descends(name, &other.name),
-                    held.contains(&other.name),
-                    "{:?} descends from {:?} exactly when its writer held it", name, other.name
-                );
-            }
-        }
-        for (_, stream) in state.entities() {
-            let registers = folds::read(stream, None, &Everything);
-            for register in &<Event as Schema>::registers(&Default::default()) {
-                prop_assert_eq!(
-                    registers.frontier(*register).names(),
-                    superseded_per_register(stream, *register),
-                    "{:?}", register
-                );
-            }
-        }
+    /// Law 36 over the note schema: an application schema at the generic
+    /// event, whose product is `fold::sole::One`. The schema has one
+    /// register, so this test does not check law 37. The per-register check
+    /// still runs, and it fails if a view, which writes no register, enters
+    /// the register's frontier.
+    #[test]
+    fn a_note_change_rests_on_what_its_writer_saw(
+        acts in prop::collection::vec(an_act(a_note_draft()), 1..40),
+    ) {
+        rests_on_what_was_seen::<Note, _>(&acts)?;
     }
 }
 
@@ -195,7 +270,7 @@ proptest! {
 /// a state write supersedes nothing in the content register.
 #[test]
 fn an_add_then_a_complete_stream_in_the_order_written() {
-    let [replica, _] = two_replicas();
+    let [replica, _] = two_replicas::<Event>();
     let added = mk_authored(
         "alpha",
         moment(10),

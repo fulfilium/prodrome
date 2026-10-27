@@ -31,6 +31,7 @@ mod memo_fold;
 mod memory;
 mod nest;
 mod nest_histories;
+mod note;
 mod observe;
 mod order_laws;
 mod recur_vectors;

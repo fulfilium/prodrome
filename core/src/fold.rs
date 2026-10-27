@@ -11,6 +11,7 @@ mod frontier;
 mod order;
 mod product;
 mod register;
+pub mod sole;
 mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
