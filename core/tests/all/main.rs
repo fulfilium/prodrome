@@ -5,6 +5,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod bodies;
 mod calibration;
 mod causal;
 mod chain;
@@ -45,6 +46,7 @@ mod schema_laws;
 mod series_vectors;
 mod sets;
 mod signatures;
+mod tags;
 mod tips;
 mod unread;
 mod verify_findings;
