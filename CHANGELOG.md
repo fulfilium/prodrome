@@ -8,6 +8,13 @@ constructor's fields never change, in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- The repository moved to the `fulfilium` organization: it is
+  `github.com/fulfilium/prodrome`, and the viewer is at
+  `https://fulfilium.github.io/prodrome/`. The links, the package metadata and
+  the issue mirror's comments name the new home.
+
 The Prodrome in the browser, a read-only viewer of this crate's roadmap
 folded and typeset on the reader's machine, and GitHub issues mirrored onto
 that roadmap. Typst and GitHub enter the repository only as optional extras

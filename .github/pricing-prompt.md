@@ -24,7 +24,7 @@ The `/price` line uses one of these forms and nothing else:
 - `/price ref gh-7`: the item waits on another open item and is exactly as
   urgent as it. Use it only when the issue says it depends on that item.
 
-Link a suspected duplicate as `https://bmabsout.github.io/prodrome/#/todo/<id>`,
+Link a suspected duplicate as `https://fulfilium.github.io/prodrome/#/todo/<id>`,
 with `<id>` taken from the list of open items. Never propose `/price accept`:
 that word is a maintainer's.
 

@@ -1,6 +1,6 @@
 # The viewer: Prodrome in the browser
 
-The site <https://bmabsout.github.io/prodrome/> shows this crate's
+The site <https://fulfilium.github.io/prodrome/> shows this crate's
 [roadmap](roadmap.md). The site is read-only and static. The page downloads
 the objects of the `roadmap-data` branch, as they are on disk. The page
 computes each item's current value in the browser, with the Prodrome core

@@ -13,7 +13,7 @@ edition = "2021"
 # patent grant, at the user's option. LICENSE-MIT and LICENSE-APACHE are the
 # texts; README.md carries the contribution clause.
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/bmabsout/prodrome"
+repository = "https://github.com/fulfilium/prodrome"
 # The floor the LOCKED tree needs, which is proptest's (a dev-dependency) at
 # 1.85. The library's own dependencies want considerably less; this is the
 # version `cargo test` is known to pass on rather than a guess about the

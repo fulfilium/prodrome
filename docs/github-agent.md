@@ -32,7 +32,7 @@ issue opened ──► mirror.yml ──► prodrome-github ──► roadmap-da
 ### What each GitHub event becomes
 
 The item for issue `#N` is `gh-N`, and its page in the viewer is
-`https://bmabsout.github.io/prodrome/#/todo/gh-N`.
+`https://fulfilium.github.io/prodrome/#/todo/gh-N`.
 
 | GitHub event | What is appended | Written as |
 |---|---|---|

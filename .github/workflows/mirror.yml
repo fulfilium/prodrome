@@ -117,7 +117,7 @@ jobs:
           {
             echo "$marker"
             echo "This issue is on the roadmap as" \
-                 "[\`gh-$ISSUE\`](https://bmabsout.github.io/prodrome/#/todo/gh-$ISSUE)."
+                 "[\`gh-$ISSUE\`](https://fulfilium.github.io/prodrome/#/todo/gh-$ISSUE)."
             echo
             echo "Its price is a fulfillment from 0% to 100%, where low is urgent: it" \
                  "starts at a neutral 80%, a pricing bot may suggest another, and a" \
