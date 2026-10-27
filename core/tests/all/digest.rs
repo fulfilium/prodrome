@@ -771,3 +771,47 @@ fn a_cycle_is_refused() {
     let dangling = tree_of(&[line(0, &[9]), line(1, &[0])]);
     assert_eq!(dangling.lines(), 2);
 }
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(256))]
+
+    /// Law 50: a cover tiles exactly its span. The nodes are in order, each
+    /// lies within the span, they meet end to start, and together they
+    /// span it. No node of the tree that lies within the span holds one of
+    /// them. A span that is empty or that reaches past the last line has
+    /// no cover.
+    #[test]
+    fn a_cover_tiles_exactly_its_span(
+        log in a_log(300),
+        start in any::<prop::sample::Index>(),
+        length in any::<prop::sample::Index>(),
+    ) {
+        let tree = tree_of(&log);
+        let lines = tree.lines();
+        let start = start.index(lines);
+        let end = start + 1 + length.index(lines - start);
+        let span = start..end;
+        let cover = tree.cover(span.clone()).expect("a span within the log");
+        let mut at = start;
+        for node in &cover {
+            prop_assert_eq!(node.span().start, at, "the nodes meet end to start");
+            prop_assert!(node.span().end <= end, "each node lies within the span");
+            at = node.span().end;
+        }
+        prop_assert_eq!(at, end, "the nodes span it");
+        for node in nodes(&tree) {
+            let within = span.start <= node.span().start && node.span().end <= span.end;
+            if within {
+                prop_assert!(
+                    cover.iter().any(|covered| {
+                        covered.span().start <= node.span().start
+                            && node.span().end <= covered.span().end
+                    }),
+                    "every node within the span lies within a node of the cover"
+                );
+            }
+        }
+        prop_assert!(tree.cover(start..start).is_none(), "an empty span");
+        prop_assert!(tree.cover(start..lines + 1).is_none(), "a span past the last line");
+    }
+}

@@ -199,6 +199,30 @@ impl<M> Tree<M> {
     pub fn node(&self, name: &Hash) -> Option<&Node<M>> {
         self.root.find(name)
     }
+
+    /// The largest nodes that lie within the lines `span`, in order: the
+    /// one node that spans it where there is one, and otherwise the nodes
+    /// that tile it, each with no ancestor inside `span`. `None` for an
+    /// empty span, or one that reaches past the last line.
+    #[must_use]
+    pub fn cover(&self, span: Range<usize>) -> Option<Vec<&Node<M>>> {
+        fn within<'t, M>(node: &'t Node<M>, span: &Range<usize>, out: &mut Vec<&'t Node<M>>) {
+            let lines = node.span();
+            if span.start <= lines.start && lines.end <= span.end {
+                out.push(node);
+            } else if lines.start < span.end && span.start < lines.end {
+                for child in node.children() {
+                    within(child, span, out);
+                }
+            }
+        }
+        if span.is_empty() || span.end > self.lines() {
+            return None;
+        }
+        let mut out = Vec::new();
+        within(&self.root, &span, &mut out);
+        Some(out)
+    }
 }
 
 /// A log whose lines rest on one another in a cycle, which no order of

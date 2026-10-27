@@ -8,6 +8,21 @@ constructor's fields never change, in any release.
 
 ## [Unreleased]
 
+### Added
+
+- **`sign::Checks` and `Proof::through`, a table of signature checks
+  (SPEC law 49).** `Checks` keeps whether each `Signed` object verifies,
+  under the object's content name, at most its capacity of them, the least
+  recently used dropped first. It computes that name from the `Signed`
+  object it is given, so no caller can make a check of one object answer
+  for another. `Proof::through(dag, registrar, &checks)`
+  answers what `Proof::of` answers, and a history read again checks only
+  the signatures that the table does not hold.
+- **`digest::Tree::cover`, the nodes that tile a span of lines (SPEC law
+  50).** Over any `Measure`, it answers the largest nodes that lie within
+  the span, in order, or `None` for an empty span or one past the last
+  line.
+
 ### Changed
 
 - **A pull that lacks nothing walks no object (SPEC law 47 (d)).** When
