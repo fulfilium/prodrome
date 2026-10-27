@@ -1655,7 +1655,11 @@ an earlier post, and a replica can go back to an earlier state of its own.
     and with pieces of one object, a writer that posts one object between
     each two pieces keeps the number of lacking objects the same.
     (d) A pull from a known token whose closure is every object of the
-    store sends nothing and records the same token (quiet).
+    store sends nothing and records the same token (quiet). Its tips are
+    then the store's tips, so the store of record answers it from its
+    record and the store's tips alone: it reaches every object without a
+    walk of the objects, and records the token's tips with the count of
+    every object.
     (e) A store of record that stops between two writes of a record keeps
     only tokens that read as unknown or as the tips they name. It removes
     the tokens it lets go, then writes the list of the tokens it keeps,
@@ -1665,7 +1669,8 @@ an earlier post, and a replica can go back to an earlier state of its own.
     `frontier.rs::a_record_stopped_at_any_write_reads_as_unknown_or_as_recorded`,
     `frontier.rs::a_record_whose_tips_are_not_its_token_s_reads_as_unknown`,
     `frontier.rs::a_pull_whose_token_is_let_go_between_its_pieces_does_not_end`,
-    `frontier.rs::a_pull_whose_store_gains_a_piece_between_its_pieces_does_not_end`.
+    `frontier.rs::a_pull_whose_store_gains_a_piece_between_its_pieces_does_not_end`,
+    `frontier.rs::a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing`.
 
 Law 48 is a mergeable tag set (`tags`), over notes tagged with labels.
 Three replicas each hold a membership store and an alias store, each begun

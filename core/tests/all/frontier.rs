@@ -159,9 +159,23 @@ impl Record {
     ) -> Result<Option<BTreeSet<Hash>>, TestCaseError> {
         let expected = self.model.reached(since, dag);
         match (&expected, reached) {
-            (Some(model), Reached::Known(answer)) => prop_assert_eq!(model, answer),
+            (Some(model), Reached::Known(answer)) => {
+                prop_assert_ne!(
+                    model.len(),
+                    dag.objects().len(),
+                    "a token at the store's tips reaches everything, unwalked"
+                );
+                prop_assert_eq!(model, answer);
+            }
+            (Some(model), Reached::Everything) => {
+                prop_assert_eq!(
+                    model.len(),
+                    dag.objects().len(),
+                    "everything is every object"
+                );
+            }
             (None, Reached::Unknown) => {}
-            (Some(_), Reached::Unknown) | (None, Reached::Known(_)) => {
+            (Some(_), Reached::Unknown) | (None, Reached::Known(_) | Reached::Everything) => {
                 return Err(TestCaseError::fail(format!(
                     "the answer is {reached:?}, and the model says {expected:?}"
                 )))
@@ -509,8 +523,9 @@ proptest! {
             }
         }
         let lacking = frontiers.answer(STORE, &since, &dag).expect("memory reads");
-        prop_assert_eq!(lacking.reached(), &Reached::Known(order.iter().cloned().collect()));
+        prop_assert_eq!(lacking.reached(), &Reached::Everything);
         prop_assert!(lacking.lacking().is_empty());
+        prop_assert_eq!(lacking.record(1).expect("memory keeps").count, order.len());
     }
 }
 
@@ -612,7 +627,7 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
             .reached()
             .clone()
     };
-    assert!(matches!(reached(&frontiers), Reached::Known(_)));
+    assert_eq!(reached(&frontiers), Reached::Everything);
     for (_, tips) in failing
         .sets
         .lock()
@@ -622,4 +637,64 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
         tips.clear();
     }
     assert_eq!(reached(&frontiers), Reached::Unknown);
+}
+
+/// Law 47 (d): a pull from a known token whose tips are the store's tips
+/// reaches everything, lacks nothing, and records the same token with the
+/// count of every object; over a DAG with one more object, the same token
+/// reaches only what it names.
+#[test]
+fn a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing() {
+    use proptest::strategy::ValueTree as _;
+    let store = holding(&vec![genesis()]);
+    let mut puller = Puller::new(&vec![genesis()]);
+    let mut record = Record::new(&vec![genesis()], prodrome::store::frontier::KEPT);
+    let (shared, _, _) = two_writers()
+        .new_tree(&mut proptest::test_runner::TestRunner::deterministic())
+        .expect("a history")
+        .current();
+    for event in shared {
+        store.append(event).expect("the shared history appends");
+    }
+    record.store = store;
+    puller.pull(&mut record, usize::MAX).expect("the pull ends");
+    let dag = dag(&record.store);
+    let Since::Frontier(token) = puller.since.clone() else {
+        panic!("a pull names a token");
+    };
+    let lacking = record
+        .frontiers
+        .answer(STORE, &puller.since, &dag)
+        .expect("memory reads");
+    assert_eq!(lacking.reached(), &Reached::Everything);
+    assert!(lacking.lacking().is_empty());
+    let recorded = lacking.record(usize::MAX).expect("memory keeps");
+    assert_eq!(recorded.token, token);
+    assert_eq!(recorded.count, dag.objects().len());
+
+    // One object more than the token's tips: the same token reaches what
+    // it names, and lacks the new object.
+    let more = holding(&prints(&record.store));
+    let mut log = two_writers()
+        .new_tree(&mut proptest::test_runner::TestRunner::deterministic())
+        .expect("a history")
+        .current()
+        .1
+        .into_iter();
+    while objects(&more).len() == dag.objects().len() {
+        write(&more, &mut log);
+    }
+    let grown = self::dag(&more);
+    let lacking = record
+        .frontiers
+        .answer(STORE, &Since::Frontier(token), &grown)
+        .expect("memory reads");
+    assert_eq!(
+        lacking.reached(),
+        &Reached::Known(dag.objects().keys().cloned().collect())
+    );
+    assert_eq!(
+        lacking.lacking().len(),
+        grown.objects().len() - dag.objects().len()
+    );
 }
