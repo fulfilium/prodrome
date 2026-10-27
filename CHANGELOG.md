@@ -187,9 +187,10 @@ misses once.
   nothing. `Whole<E>` is the register type whose value is the whole event,
   so its reading is the frontier's candidates. A MINOR change under this
   file's rule: new API only, and no stored byte, vector or export moves.
-  The tests add a note schema at `Event`, with a title that writes the
-  register and a view that writes none; the module documentation of
-  `schema::headed` shows it as its example. Law 31 (a register type's
+  A note schema at `Event`, with a title that writes the register and a
+  view that writes none, is the example of `schema::headed`'s module
+  documentation (`core/src/schema/headed/example.rs`, inside every build's
+  source), and the tests include the same file. Law 31 (a register type's
   reading) and laws 33 and 36 (schema laws) run over it, and
   `core/tests/all/note.rs` checks its print, its parse, the refusal of an
   empty name, a conflict that a third title settles across two replicas,

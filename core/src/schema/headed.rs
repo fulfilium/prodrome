@@ -22,7 +22,7 @@
 //! A complete schema of notes with one register, as the crate's tests use
 //! it:
 //!
-#![doc = concat!("```\n", include_str!("../../tests/schemas/note.rs"), "```")]
+#![doc = concat!("```\n", include_str!("headed/example.rs"), "```")]
 #![warn(clippy::pedantic)]
 
 use std::convert::Infallible;
