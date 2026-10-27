@@ -8,6 +8,20 @@ constructor's fields never change, in any release.
 
 ## [Unreleased]
 
+### Changed
+
+- **A pull that lacks nothing walks no object (SPEC law 47 (d)).**
+  `store::frontier::Frontiers::answer` takes the store's tips beside its
+  DAG, which a store of record already holds. When the
+  tips recorded under a pull's token are those tips, it answers the new
+  `Reached::Everything`: no closure is built, the objects are not put in
+  their linear order, and `Lacking::record` records the same tips with
+  the count of every object. Before, each such pull walked and ordered the
+  whole store. A breaking change to `answer`'s arguments and to
+  `Reached`. Test `frontier.rs::a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing`;
+  the law's model accepts `Everything` exactly where the token's closure
+  is every object.
+
 ### Added
 
 - **The wasm exports read a schema whose key has several fields.** A row
