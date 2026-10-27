@@ -15,6 +15,8 @@
 //! categories. Those two are the whole subtlety of §2; see `print_float` and
 //! `push_str_repr`.
 
+pub mod codec;
+
 use std::fmt::Write as _;
 
 use thiserror::Error;
@@ -448,7 +450,7 @@ pub trait Vocabulary {
 
 /// A vocabulary over a static table — what `event` builds its own from.
 #[derive(Debug, Clone, Copy)]
-pub struct Table(pub &'static [(&'static str, &'static [&'static str])]);
+pub struct Table(pub &'static [codec::Constructor]);
 
 impl Table {
     /// The lookup, keeping the `'static` the table's own data has — so a
