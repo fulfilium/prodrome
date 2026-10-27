@@ -33,7 +33,7 @@ use crate::common::{a_log, far};
 type Event = TodoEvent<Todo>;
 type Object = Envelope<Event>;
 
-const ACTORS: [&str; 2] = ["bassel", "triage"];
+const ACTORS: [&str; 2] = ["ada", "triage"];
 
 /// The devices' keys, and the root's, which registers them.
 fn keys() -> [Secret; 3] {

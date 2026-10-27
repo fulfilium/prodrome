@@ -4,4 +4,4 @@
 #
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
-cc 4a6bb9f94f82cd6ef3e195847aebd8cdb6490d261d4b539c85c22a8e3a56e0a7 # shrinks to term = Term(Shift { delta: TimeDelta { secs: -460800, nanos: 0 }, term: Term(Decay { start: 0.3, end: 0.0, end_date: 2026-09-01T00:00:00, lead_up: TimeDelta { secs: 21600, nanos: 0 }, start_date: Some(2026-09-02T10:00:00) }) }), from = -22, span = 184
+cc 4a6bb9f94f82cd6ef3e195847aebd8cdb6490d261d4b539c85c22a8e3a56e0a7

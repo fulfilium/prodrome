@@ -8,6 +8,19 @@ constructor's fields never change, in any release.
 
 ## [Unreleased]
 
+### Added
+
+- `store::frontier`, a frontier token for a pull over a wire (SPEC §3,
+  law 47). `Token::of` names a set of tips by the sha256 of their sorted
+  names, one on each line. `Frontiers::answer` reads a pull's token against
+  a store's objects and answers a `Lacking`: what the token reaches, or
+  `Reached::Unknown` when the store of record does not hold the token or
+  the store no longer holds one of its tips, and the objects outside it in
+  linear order. `Lacking::record` and `Lacking::record_with` record the
+  tips of what the replica then holds, at most the kept number for each
+  store, through `Records`, an effect that the host supplies. No stored
+  byte changes.
+
 ### Changed
 
 - The repository moved to the `fulfilium` organization: it is

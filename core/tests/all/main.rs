@@ -21,6 +21,7 @@ mod fold_laws;
 mod folds;
 mod fpl_laws;
 mod fpl_vectors;
+mod frontier;
 mod fuzz;
 mod link_vectors;
 mod literals;
