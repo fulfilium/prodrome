@@ -22,7 +22,7 @@ use prodrome::event::{canonical_envelope, seal_hash, Actor, Envelope, Hash, Todo
 use prodrome::genesis::mk_genesis;
 use prodrome::policy::{Everything, Policy, Proven, Standing, Untrusted};
 use prodrome::reference::Todo;
-use prodrome::sign::{mk_key_revoked, KeyAdded, Proof, Registrar, Secret, Signed};
+use prodrome::sign::{mk_key_revoked, Checks, KeyAdded, Proof, Registrar, Secret, Signed};
 use prodrome::store::{sync, MemoryStore, Replica};
 use prodrome::todo::TodoVocabulary;
 use prodrome::view::{entries, Entry};
@@ -383,4 +383,89 @@ impl Policy<Event> for Except {
 /// Every entry of `dag`, as the view composes it, long after everything.
 fn read(dag: &Dag<Event>, policy: &impl Policy<Event>) -> Vec<Entry<Event>> {
     entries(&dag.nodes().expect("closed"), far(), policy).expect("reads")
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(64))]
+
+    /// Law 49: a table of signature checks means `Signed::verifies`. Over
+    /// any signed history, forged signatures among them, a proof read
+    /// through a table answers what the plain proof answers, under either
+    /// reading of the keys: through a table that keeps few checks and drops
+    /// the rest, through the same table read again, and through a cold
+    /// one. Each check through a table is the signature's own check.
+    #[test]
+    fn a_proof_through_a_table_of_checks_is_the_plain_proof(
+        history in a_signed_history(),
+        capacity in 1..8usize,
+    ) {
+        let dag = history.dag();
+        let small = Checks::new(capacity);
+        for registrar in [Registrar::Anyone, roots()] {
+            let plain = Proof::of(&dag, &registrar);
+            prop_assert_eq!(&Proof::through(&dag, &registrar, &small), &plain, "a small table");
+            prop_assert_eq!(&Proof::through(&dag, &registrar, &small), &plain, "read again");
+            prop_assert_eq!(
+                &Proof::through(&dag, &registrar, &Checks::new(1 << 16)),
+                &plain,
+                "a cold table"
+            );
+        }
+        for object in dag.objects().values() {
+            if let Envelope::Signed(signed) = object {
+                prop_assert_eq!(small.verifies(signed), signed.verifies());
+            }
+        }
+        let warm = Checks::new(1 << 16);
+        for object in dag.objects().values() {
+            if let Envelope::Signed(signed) = object {
+                if signed.verifies() {
+                    prop_assert!(warm.verifies(signed));
+                }
+            }
+        }
+        for registrar in [Registrar::Anyone, roots()] {
+            prop_assert_eq!(
+                &Proof::through(&dag, &registrar, &warm),
+                &Proof::of(&dag, &registrar),
+                "a table that holds every true check"
+            );
+        }
+    }
+}
+
+/// Law 49: a table that holds a true check for one `Signed` object answers
+/// false for a different one that does not verify: the same signature
+/// carried to another object, the same signature claimed for another key,
+/// and a signature of another key's over another object. The table names
+/// each check by the object it is given, so no check of one object answers
+/// for another.
+#[test]
+fn a_table_holding_a_true_check_answers_false_for_a_forged_signature() {
+    let [key, other, _] = keys();
+    let (object, another) = (
+        Hash::new("1".repeat(64)).expect("a name"),
+        Hash::new("2".repeat(64)).expect("a name"),
+    );
+    let honest = key.sign(&object);
+    let carried = Signed {
+        object: another.clone(),
+        ..honest.clone()
+    };
+    let claimed = Signed {
+        key: other.public(),
+        ..honest.clone()
+    };
+    let swapped = Signed {
+        object: object.clone(),
+        ..other.sign(&another)
+    };
+    let table = Checks::new(16);
+    assert!(table.verifies(&honest));
+    for forged in [&carried, &claimed, &swapped] {
+        assert!(!forged.verifies());
+        assert!(!table.verifies(forged), "{forged:?}");
+        assert!(!table.verifies(forged), "asked again: {forged:?}");
+    }
+    assert!(table.verifies(&honest));
 }

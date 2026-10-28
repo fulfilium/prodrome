@@ -12,6 +12,8 @@
 //! is a READING of the history, like every register, and [`Proof`] is that
 //! reading: a function of the object set, whatever order it arrived in.
 
+mod checks;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use ed25519_dalek::{Signer, SigningKey, VerifyingKey};
@@ -24,6 +26,8 @@ use crate::literal::{Call, ProdromeError, Value};
 use crate::payload::string_field;
 use crate::registers::Genesis;
 use crate::schema::Schema;
+
+pub use checks::Checks;
 
 crate::newtype_str! {
     /// An Ed25519 public key: its 32 bytes as 64 lowercase hex.
@@ -339,10 +343,26 @@ impl Proof {
     /// The proof `dag`'s objects give, its keys read as `registrar` says.
     #[must_use]
     pub fn of<E: Schema>(dag: &Dag<E>, registrar: &Registrar) -> Proof {
+        Proof::read(dag, registrar, Signed::verifies)
+    }
+
+    /// [`Proof::of`], each signature checked through `checks`, so a history
+    /// read again checks only the signatures that `checks` does not hold.
+    /// It answers what [`Proof::of`] answers (SPEC law 49).
+    #[must_use]
+    pub fn through<E: Schema>(dag: &Dag<E>, registrar: &Registrar, checks: &Checks) -> Proof {
+        Proof::read(dag, registrar, |signed| checks.verifies(signed))
+    }
+
+    fn read<E: Schema>(
+        dag: &Dag<E>,
+        registrar: &Registrar,
+        verifies: impl Fn(&Signed) -> bool,
+    ) -> Proof {
         let mut signatures: BTreeMap<&Hash, Vec<(&Hash, &PublicKey)>> = BTreeMap::new();
         for (name, object) in dag.objects() {
             if let Envelope::Signed(signed) = object {
-                if signed.verifies() {
+                if verifies(signed) {
                     signatures
                         .entry(&signed.object)
                         .or_default()

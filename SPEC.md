@@ -1735,6 +1735,34 @@ other's objects in any order.
     `tags.rs::two_renames_of_one_tag_apart_are_a_disagreement_every_replica_reads_alike`,
     `tags.rs::an_add_again_in_one_tick_is_the_first_add`.
 
+Law 49 is a table of signature checks (`sign::Checks`), over generated
+signed histories with forged signatures among them, read under either
+reading of the keys.
+
+49. **A table of signature checks means the check.** A table keeps
+    whether each `Signed` object verifies under that object's content
+    name, which covers the signed object's name, the key and the
+    signature. The table computes the name from the object it is given,
+    so a check of one object never answers for another. It keeps a
+    bounded number of checks and drops the least recently used. Each
+    check through the table answers what the object's own check answers:
+    a table that holds a true check for one object answers false for a
+    different object that does not verify. A proof read through a table,
+    small or large, warm or cold, read once or again, is the proof read
+    without one.
+    `signatures.rs::a_proof_through_a_table_of_checks_is_the_plain_proof`,
+    `signatures.rs::a_table_holding_a_true_check_answers_false_for_a_forged_signature`.
+
+Law 50 is the cover of a span of a digest's lines (`digest::Tree::cover`),
+over generated logs and spans.
+
+50. **A cover tiles exactly its span.** The cover of a span of lines is the
+    largest nodes of the tree that lie within the span, in order. They
+    meet end to start and together span it, and every node of the tree
+    that lies within the span lies within one of them. A span that is
+    empty or that reaches past the last line has no cover.
+    `digest.rs::a_cover_tiles_exactly_its_span`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;
