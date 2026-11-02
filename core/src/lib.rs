@@ -151,6 +151,7 @@ pub mod schedule;
 pub mod schema;
 pub mod sign;
 pub mod snapshot;
+mod spread;
 pub mod store;
 pub mod tags;
 pub mod term;

@@ -202,10 +202,10 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
                 seen.insert(name, at);
             }
         }
-        let read = Dag::from_prints(
-            &self.schema,
-            seen.keys().map(|name| (name.clone(), self.raw(name))),
-        );
+        let dir = self.objects_dir();
+        let read = Dag::read_prints(&self.schema, seen.keys().cloned().collect(), |name| {
+            read_object(&dir, name)
+        });
         memory.level(gone, read, &seen);
         Ok(())
     }
@@ -226,7 +226,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     fn object_path(&self, digest: &Hash) -> PathBuf {
-        self.objects_dir().join(format!("{}.py", digest.as_str()))
+        object_file(&self.objects_dir(), digest)
     }
 
     /// Every head: the objects of the history no object of it names as a
@@ -621,14 +621,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
 
     /// One object file's bytes, unchecked.
     fn raw(&self, digest: &Hash) -> Result<Vec<u8>, ProdromeError> {
-        let path = self.object_path(digest);
-        if !path.exists() {
-            return Err(ProdromeError::Store(format!(
-                "missing object {}",
-                digest.as_str()
-            )));
-        }
-        fs::read(&path).map_err(|e| io(&path, &e))
+        read_object(&self.objects_dir(), digest)
     }
 
     fn quarantine_dir(&self) -> PathBuf {
@@ -900,6 +893,23 @@ fn stat(entry: &fs::DirEntry) -> Option<fs::Metadata> {
         Ok(kind) if !kind.is_symlink() => entry.metadata().ok(),
         _ => fs::metadata(entry.path()).ok(),
     }
+}
+
+/// The file of the object `name` in the objects directory `dir`.
+fn object_file(dir: &Path, name: &Hash) -> PathBuf {
+    dir.join(format!("{}.py", name.as_str()))
+}
+
+/// The bytes of the object file named `name` in the objects directory
+/// `dir`, unchecked.
+fn read_object(dir: &Path, name: &Hash) -> Result<Vec<u8>, ProdromeError> {
+    let path = object_file(dir, name);
+    fs::read(&path).map_err(|error| match error.kind() {
+        std::io::ErrorKind::NotFound => {
+            ProdromeError::Store(format!("missing object {}", name.as_str()))
+        }
+        _ => io(&path, &error),
+    })
 }
 
 /// What a store writes as its own `.gitattributes`: its objects, and what

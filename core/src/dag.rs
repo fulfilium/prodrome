@@ -15,6 +15,7 @@ use crate::policy::Policy;
 use crate::registers::{Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
+use crate::spread::spread;
 use crate::topo;
 
 /// Named prints read at the schema `E`: each an object or, `unread`, a print
@@ -429,12 +430,40 @@ impl<E: Schema> Dag<E> {
         schema: &E::Vocabulary,
         prints: impl IntoIterator<Item = (Hash, Result<Vec<u8>, ProdromeError>)>,
     ) -> Dag<E> {
-        let mut dag: Dag<E> = Dag::from_iter([]);
-        for (name, bytes) in prints {
-            match bytes
+        Dag::decoded(prints.into_iter().collect(), |(name, bytes)| {
+            let read = bytes
                 .map_err(Unread::Io)
-                .and_then(|bytes| decode(schema, &name, &bytes))
-            {
+                .and_then(|bytes| decode(schema, &name, &bytes));
+            (name, read)
+        })
+    }
+
+    /// [`Dag::from_prints`] of the prints `read` answers for `names`. Each
+    /// print is read on the thread that decodes it, so the bytes of a print
+    /// are let go once it is decoded, and the reads of a large store run on
+    /// every core as the decoding does.
+    pub(crate) fn read_prints(
+        schema: &E::Vocabulary,
+        names: Vec<Hash>,
+        read: impl Fn(&Hash) -> Result<Vec<u8>, ProdromeError> + Sync,
+    ) -> Dag<E> {
+        Dag::decoded(names, |name| {
+            let read = read(&name)
+                .map_err(Unread::Io)
+                .and_then(|bytes| decode(schema, &name, &bytes));
+            (name, read)
+        })
+    }
+
+    /// Each item decoded by `decode` ([`spread`] over the cores), an object
+    /// held under its name and a print that is not one kept with why.
+    fn decoded<T: Send>(
+        items: Vec<T>,
+        decode: impl Fn(T) -> (Hash, Result<Envelope<E>, Unread>) + Sync,
+    ) -> Dag<E> {
+        let mut dag: Dag<E> = Dag::from_iter([]);
+        for (name, read) in spread(items, decode) {
+            match read {
                 Ok(object) => {
                     dag.objects.insert(name, object);
                 }
