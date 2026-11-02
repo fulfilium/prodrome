@@ -733,6 +733,12 @@ struct Parser<'a> {
     vocabulary: &'a dyn Vocabulary,
 }
 
+/// THE PARSER READS BYTES. Every character the grammar gives a meaning to
+/// is ASCII, and in UTF-8 no byte of a character outside ASCII is below
+/// 0x80, so a byte that equals an ASCII character IS that character, and a
+/// cut before such a byte is a character boundary. The parser decodes a
+/// character only where one outside ASCII can matter: whitespace, an escape,
+/// and the text of a refusal.
 impl<'a> Parser<'a> {
     fn rest(&self) -> &'a str {
         &self.input[self.pos..]
@@ -740,6 +746,10 @@ impl<'a> Parser<'a> {
 
     fn peek(&self) -> Option<char> {
         self.rest().chars().next()
+    }
+
+    fn peek_byte(&self) -> Option<u8> {
+        self.input.as_bytes().get(self.pos).copied()
     }
 
     fn at_end(&self) -> bool {
@@ -752,43 +762,54 @@ impl<'a> Parser<'a> {
         Some(c)
     }
 
+    /// Past the bytes from the cursor on that `take` accepts.
+    fn skip_while(&mut self, take: impl Fn(u8) -> bool) {
+        self.pos += self.input.as_bytes()[self.pos..]
+            .iter()
+            .take_while(|&&b| take(b))
+            .count();
+    }
+
     /// Whitespace and `#` comments, which CPython's tokenizer drops before the
     /// AST ever sees them — so a stored object may carry a comment line above
-    /// its expression and still parse.
+    /// its expression and still parse. Whitespace is [`char::is_whitespace`],
+    /// which outside ASCII is Unicode's `White_Space`.
     fn skip_trivia(&mut self) {
         loop {
-            match self.peek() {
-                Some(c) if c.is_whitespace() => {
-                    self.pos += c.len_utf8();
+            match self.peek_byte() {
+                Some(b' ' | b'\t'..=b'\r') => self.pos += 1,
+                Some(b'#') => {
+                    self.pos = memchr::memchr(b'\n', self.rest().as_bytes())
+                        .map_or(self.input.len(), |line| self.pos + line);
+                    // The newline that ends the comment, where there is one.
+                    self.eat(b'\n');
                 }
-                Some('#') => {
-                    while let Some(c) = self.peek() {
-                        self.pos += c.len_utf8();
-                        if c == '\n' {
-                            break;
-                        }
-                    }
-                }
+                Some(0x80..) => match self.peek() {
+                    Some(c) if c.is_whitespace() => self.pos += c.len_utf8(),
+                    _ => return,
+                },
                 _ => return,
             }
         }
     }
 
-    fn eat(&mut self, c: char) -> bool {
-        if self.peek() == Some(c) {
-            self.pos += c.len_utf8();
+    /// Past the ASCII character `c` if it is at the cursor.
+    fn eat(&mut self, c: u8) -> bool {
+        if self.peek_byte() == Some(c) {
+            self.pos += 1;
             true
         } else {
             false
         }
     }
 
-    fn expect(&mut self, c: char) -> Result<(), ProdromeError> {
+    fn expect(&mut self, c: u8) -> Result<(), ProdromeError> {
         if self.eat(c) {
             Ok(())
         } else {
             Err(ProdromeError::parse(format!(
-                "expected {c:?} at byte {}, got {:?}",
+                "expected {:?} at byte {}, got {:?}",
+                char::from(c),
                 self.pos,
                 self.peek()
             )))
@@ -817,7 +838,8 @@ impl<'a> Parser<'a> {
                     ))),
                 }
             }
-            Some('\'') | Some('"') => self.string(),
+            Some('\'') => self.string(b'\''),
+            Some('"') => self.string(b'"'),
             Some('(') => self.parenthesised(depth),
             Some('[') => self.bracketed(depth),
             Some(c) if c.is_ascii_digit() || c == '.' => self.number(),
@@ -832,26 +854,26 @@ impl<'a> Parser<'a> {
     /// `(a, b)` is a tuple, `(a,)` a one-tuple, `()` the empty one — and `(a)`
     /// is just `a`, exactly as CPython parses it.
     fn parenthesised(&mut self, depth: usize) -> Result<Value, ProdromeError> {
-        self.expect('(')?;
+        self.expect(b'(')?;
         self.skip_trivia();
-        if self.eat(')') {
+        if self.eat(b')') {
             return Ok(Value::Tuple(Vec::new()));
         }
         let first = self.expression(depth + 1)?;
         self.skip_trivia();
-        if self.eat(')') {
+        if self.eat(b')') {
             return Ok(first);
         }
         let mut items = vec![first];
         loop {
-            self.expect(',')?;
+            self.expect(b',')?;
             self.skip_trivia();
-            if self.eat(')') {
+            if self.eat(b')') {
                 break;
             }
             items.push(self.expression(depth + 1)?);
             self.skip_trivia();
-            if self.eat(')') {
+            if self.eat(b')') {
                 break;
             }
         }
@@ -861,21 +883,21 @@ impl<'a> Parser<'a> {
     /// CPython's walker maps a list display onto a tuple, so the grammar admits
     /// one and the print never produces one.
     fn bracketed(&mut self, depth: usize) -> Result<Value, ProdromeError> {
-        self.expect('[')?;
+        self.expect(b'[')?;
         let mut items = Vec::new();
         self.skip_trivia();
-        if self.eat(']') {
+        if self.eat(b']') {
             return Ok(Value::Tuple(items));
         }
         loop {
             items.push(self.expression(depth + 1)?);
             self.skip_trivia();
-            if self.eat(']') {
+            if self.eat(b']') {
                 break;
             }
-            self.expect(',')?;
+            self.expect(b',')?;
             self.skip_trivia();
-            if self.eat(']') {
+            if self.eat(b']') {
                 break;
             }
         }
@@ -885,25 +907,21 @@ impl<'a> Parser<'a> {
     fn number(&mut self) -> Result<Value, ProdromeError> {
         let start = self.pos;
         let mut is_float = false;
-        while let Some(c) = self.peek() {
-            match c {
-                '0'..='9' => {
-                    self.bump();
-                }
-                '.' => {
+        let bytes = self.input.as_bytes();
+        while let Some(&b) = bytes.get(self.pos) {
+            match b {
+                b'0'..=b'9' => self.pos += 1,
+                b'.' => {
                     is_float = true;
-                    self.bump();
+                    self.pos += 1;
                 }
-                'e' | 'E' => {
+                b'e' | b'E' => {
                     // An exponent, but only when a sign or digit follows: `1e`
                     // is not a number and neither is the `e` of a name.
-                    let mut lookahead = self.rest().chars();
-                    lookahead.next();
-                    match lookahead.next() {
-                        Some(next) if next.is_ascii_digit() || next == '+' || next == '-' => {
+                    match bytes.get(self.pos + 1) {
+                        Some(b'0'..=b'9' | b'+' | b'-') => {
                             is_float = true;
-                            self.bump();
-                            self.bump();
+                            self.pos += 2;
                         }
                         _ => break,
                     }
@@ -927,24 +945,31 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn string(&mut self) -> Result<Value, ProdromeError> {
-        let quote = self.bump().expect("caller peeked a quote");
+    /// A string between two `quote`s, the cursor on the first. The text
+    /// between one escape and the next is copied in one piece: of the bytes
+    /// that end a piece (the quote, a backslash, a newline), none is part of
+    /// a character outside ASCII.
+    fn string(&mut self, quote: u8) -> Result<Value, ProdromeError> {
+        self.pos += 1;
         let mut out = String::new();
         loop {
-            let c = self
-                .bump()
-                .ok_or_else(|| ProdromeError::parse("unterminated string literal"))?;
-            if c == quote {
-                return Ok(Value::Str(out));
-            }
-            if c == '\n' {
-                return Err(ProdromeError::parse(
-                    "newline in a single-quoted string literal",
-                ));
-            }
-            if c != '\\' {
-                out.push(c);
-                continue;
+            let start = self.pos;
+            self.pos = memchr::memchr3(quote, b'\\', b'\n', &self.input.as_bytes()[start..])
+                .map_or(self.input.len(), |run| start + run);
+            out.push_str(&self.input[start..self.pos]);
+            match self.peek_byte() {
+                None => return Err(ProdromeError::parse("unterminated string literal")),
+                Some(b'\n') => {
+                    return Err(ProdromeError::parse(
+                        "newline in a single-quoted string literal",
+                    ))
+                }
+                Some(b) if b == quote => {
+                    self.pos += 1;
+                    return Ok(Value::Str(out));
+                }
+                // The backslash.
+                Some(_) => self.pos += 1,
             }
             let escape = self
                 .bump()
@@ -992,13 +1017,7 @@ impl<'a> Parser<'a> {
 
     fn name_or_call(&mut self, depth: usize) -> Result<Value, ProdromeError> {
         let start = self.pos;
-        while let Some(c) = self.peek() {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                self.bump();
-            } else {
-                break;
-            }
-        }
+        self.skip_while(|b| b.is_ascii_alphanumeric() || b == b'_');
         let name = &self.input[start..self.pos];
         match name {
             "None" => return Ok(Value::None),
@@ -1007,14 +1026,13 @@ impl<'a> Parser<'a> {
             _ => {}
         }
         self.skip_trivia();
-        if self.peek() != Some('(') {
+        if self.peek_byte() != Some(b'(') {
             return Err(ProdromeError::parse(format!(
                 "disallowed bare name {name:?}"
             )));
         }
-        let name = name.to_owned();
         let (positional, keywords) = self.arguments(depth)?;
-        self.build_call(&name, positional, keywords)
+        self.build_call(name, positional, keywords)
     }
 
     #[allow(clippy::type_complexity)]
@@ -1022,16 +1040,16 @@ impl<'a> Parser<'a> {
         &mut self,
         depth: usize,
     ) -> Result<(Vec<Value>, Vec<(String, Value)>), ProdromeError> {
-        self.expect('(')?;
+        self.expect(b'(')?;
         let mut positional = Vec::new();
         let mut keywords: Vec<(String, Value)> = Vec::new();
         self.skip_trivia();
-        if self.eat(')') {
+        if self.eat(b')') {
             return Ok((positional, keywords));
         }
         loop {
             self.skip_trivia();
-            if self.peek() == Some('*') {
+            if self.peek_byte() == Some(b'*') {
                 return Err(ProdromeError::parse(
                     "*args/**kwargs are not allowed in a call",
                 ));
@@ -1053,12 +1071,12 @@ impl<'a> Parser<'a> {
                 }
             }
             self.skip_trivia();
-            if self.eat(')') {
+            if self.eat(b')') {
                 return Ok((positional, keywords));
             }
-            self.expect(',')?;
+            self.expect(b',')?;
             self.skip_trivia();
-            if self.eat(')') {
+            if self.eat(b')') {
                 return Ok((positional, keywords));
             }
         }
@@ -1068,19 +1086,16 @@ impl<'a> Parser<'a> {
     /// a keyword and not in the grammar either way.
     fn keyword_name(&mut self) -> Option<String> {
         let start = self.pos;
-        let mut end = self.pos;
-        let mut chars = self.rest().char_indices();
-        match chars.next() {
-            Some((_, c)) if c.is_ascii_alphabetic() || c == '_' => end += c.len_utf8(),
+        let bytes = self.rest().as_bytes();
+        match bytes.first() {
+            Some(&b) if b.is_ascii_alphabetic() || b == b'_' => {}
             _ => return None,
         }
-        for (_, c) in chars {
-            if c.is_ascii_alphanumeric() || c == '_' {
-                end += c.len_utf8();
-            } else {
-                break;
-            }
-        }
+        let end = start
+            + bytes
+                .iter()
+                .take_while(|&&b| b.is_ascii_alphanumeric() || b == b'_')
+                .count();
         let after = &self.input[end..];
         let trimmed = after.trim_start();
         let gap = after.len() - trimmed.len();

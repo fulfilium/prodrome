@@ -25,6 +25,25 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **A cold read of a store is several times faster.** On the new
+  `store_read` example (23,901 objects, 151 MB), a cold `EventStore::dag`
+  goes from about 2.95 s to about 0.69 s on four cores, from 3.07 s to
+  1.32 s on two, and from 3.14 s to 1.79 s on one, on an x86 machine
+  without the SHA instructions. The literal parser reads bytes and copies
+  a string's text between escapes in one piece, with `memchr`, a new
+  dependency of the core: it parses about 3x faster on one thread. A store
+  reads, hashes and decodes its files, and takes their metadata, on every
+  core that `std::thread::available_parallelism` reports, and on one
+  thread where it reports none, as in the browser. The history is built
+  over places instead of names, a memory that held nothing derives its
+  tips in one pass, and an object name (`Hash`) compares by the 32 bytes
+  of its digest, held in place beside its text. Every object reads to the
+  same value and the same name, and every refusal has the same words: the
+  tests of `literal_parser.rs` compare the parser with a frozen copy of
+  the one it replaced, and a new law in `events.rs` checks that a name
+  orders as its text does. Without the SHA instructions, the SHA-256 of
+  every file bounds the read: reading and hashing the files alone takes
+  about 0.40 s on four cores of that machine.
 - **A pull that lacks nothing walks no object (SPEC law 47 (d)).** When
   the tips recorded under a pull's token are the DAG's own tips,
   `store::frontier::Frontiers::answer` answers the new

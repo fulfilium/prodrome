@@ -26,8 +26,6 @@
 //! is NOT a shipped string — `Sealed.prev` at genesis, `Woven.event` — it is an
 //! `Option`, and the printer puts the `''`/`None` back.
 
-use std::collections::BTreeSet;
-
 use sha2::{Digest, Sha256};
 
 use crate::change::Change;
@@ -84,9 +82,73 @@ macro_rules! newtype_str {
 #[allow(unused_imports)]
 pub(crate) use newtype_str;
 
-newtype_str! {
-    /// An object's name: sha256 of its canonical print, 64 lowercase hex.
-    Hash
+/// An object's name: sha256 of its canonical print, 64 lowercase hex.
+///
+/// HELD TWICE: as the digest's 32 bytes in four big-endian words, which
+/// every comparison reads, and as its text, which every print reads. A word
+/// orders as its bytes do, and a byte as its two hex digits do, so a name
+/// orders as its text does, and two names are equal exactly when their
+/// texts are. A comparison is then four words in place, not a call that
+/// reads two strings through their pointers.
+#[derive(Clone)]
+pub struct Hash {
+    words: [u64; 4],
+    text: String,
+}
+
+impl Hash {
+    pub fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    pub fn into_string(self) -> String {
+        self.text
+    }
+}
+
+impl PartialEq for Hash {
+    fn eq(&self, other: &Self) -> bool {
+        self.words == other.words
+    }
+}
+
+impl Eq for Hash {}
+
+impl PartialOrd for Hash {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for Hash {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.words.cmp(&other.words)
+    }
+}
+
+impl std::hash::Hash for Hash {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.words.hash(state);
+    }
+}
+
+/// As a newtype of its text prints: `Hash("…")`.
+impl std::fmt::Debug for Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Hash").field(&self.text).finish()
+    }
+}
+
+impl AsRef<str> for Hash {
+    fn as_ref(&self) -> &str {
+        &self.text
+    }
+}
+
+impl std::fmt::Display for Hash {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.text)
+    }
 }
 
 newtype_str! {
@@ -113,6 +175,24 @@ pub(crate) fn lower_hex(text: &str, len: usize) -> bool {
         && text
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// The four big-endian words that 64 lowercase hex digits spell, or `None`
+/// for any other text.
+fn hex_words(text: &str) -> Option<[u64; 4]> {
+    if text.len() != 64 {
+        return None;
+    }
+    let mut words = [0_u64; 4];
+    for (at, digit) in text.bytes().enumerate() {
+        let value = match digit {
+            b'0'..=b'9' => digit - b'0',
+            b'a'..=b'f' => digit - b'a' + 10,
+            _ => return None,
+        };
+        words[at / 16] = words[at / 16] << 4 | u64::from(value);
+    }
+    Some(words)
 }
 
 fn matches_todo(text: &str) -> bool {
@@ -145,22 +225,24 @@ impl Hash {
     /// name, a ref filename, a `prev` — is a name and not a hope.
     pub fn new(text: impl Into<String>) -> Result<Hash, ProdromeError> {
         let text = text.into();
-        if lower_hex(&text, 64) {
-            Ok(Hash(text))
-        } else {
-            Err(ProdromeError::invalid(format!(
+        match hex_words(&text) {
+            Some(words) => Ok(Hash { words, text }),
+            None => Err(ProdromeError::invalid(format!(
                 "object name must be 64 lowercase hex, got {text:?}"
-            )))
+            ))),
         }
     }
 
     pub(crate) fn of_bytes(bytes: &[u8]) -> Hash {
-        Hash(
-            Sha256::digest(bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
-        )
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut words = [0_u64; 4];
+        let mut text = String::with_capacity(64);
+        for (at, byte) in Sha256::digest(bytes).into_iter().enumerate() {
+            words[at / 8] = words[at / 8] << 8 | u64::from(byte);
+            text.push(char::from(HEX[usize::from(byte >> 4)]));
+            text.push(char::from(HEX[usize::from(byte & 0xf)]));
+        }
+        Hash { words, text }
     }
 }
 
@@ -449,25 +531,25 @@ impl<E> Envelope<E> {
 /// replica's walk): a change rests on its genesis as on its deps, so no
 /// genesis is a head of a prodrome holding anything begun from it.
 pub fn parents_of<E>(envelope: &Envelope<E>) -> Vec<Hash> {
-    let edges = match envelope {
-        Envelope::Sealed { prev, .. } => prev.iter().cloned().collect(),
-        Envelope::Woven { parents, .. } => parents.clone(),
+    rests_on(envelope).into_iter().cloned().collect()
+}
+
+/// [`parents_of`], borrowed from the object: what a walk over many objects
+/// reads, so that it copies no name.
+pub(crate) fn rests_on<E>(envelope: &Envelope<E>) -> Vec<&Hash> {
+    let mut names: Vec<&Hash> = match envelope {
+        Envelope::Sealed { prev, .. } => prev.iter().collect(),
+        Envelope::Woven { parents, .. } => parents.iter().collect(),
         Envelope::Genesis(_) | Envelope::KeyAdded(_) => Vec::new(),
-        Envelope::Change(change) => change.deps.clone(),
-        Envelope::Snapshot(snapshot) => snapshot
-            .tips
-            .iter()
-            .chain(&snapshot.previous)
-            .cloned()
-            .collect(),
-        Envelope::Signed(signed) => vec![signed.object.clone()],
-        Envelope::KeyRevoked(revoked) => revoked.deps.clone(),
+        Envelope::Change(change) => change.deps.iter().collect(),
+        Envelope::Snapshot(snapshot) => snapshot.tips.iter().chain(&snapshot.previous).collect(),
+        Envelope::Signed(signed) => vec![&signed.object],
+        Envelope::KeyRevoked(revoked) => revoked.deps.iter().collect(),
     };
-    let parents: BTreeSet<Hash> = edges
-        .into_iter()
-        .chain(envelope.genesis().cloned())
-        .collect();
-    parents.into_iter().collect()
+    names.extend(envelope.genesis());
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 // --- smart constructors ------------------------------------------------------

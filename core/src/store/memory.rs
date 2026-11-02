@@ -9,8 +9,8 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::change::mk_change;
-use crate::dag::{decode, Dag, Unread};
-use crate::event::{canonical, canonical_envelope, parents_of, Envelope, Hash};
+use crate::dag::{decode, lacked_among, Dag, Unread};
+use crate::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope, Hash};
 use crate::literal::{Datetime, ProdromeError};
 use crate::registers::{deps_for, fold, Folded, Genesis};
 use crate::schema::Schema;
@@ -177,12 +177,7 @@ impl<E: Schema> Memory<E> {
         Memory {
             tips: dag.tips(),
             geneses: dag.geneses(),
-            wanted: dag
-                .objects()
-                .values()
-                .flat_map(parents_of)
-                .filter(|parent| dag.get(parent).is_none())
-                .collect(),
+            wanted: wanted(&dag),
             files: dag.held().map(|(name, _)| (name.clone(), None)).collect(),
             twins,
             folded: Some(folded),
@@ -372,7 +367,11 @@ impl<E: Schema> Memory<E> {
         if gone.is_empty() && fresh.is_empty() {
             return;
         }
+        // A memory that held nothing derives its tips and geneses from the
+        // history in one pass, which costs less than placing every object
+        // in turn.
         let extends = gone.is_empty()
+            && self.dag.held().next().is_some()
             && fresh
                 .iter()
                 .all(|(verified, _)| !self.wanted.contains(&verified.name));
@@ -402,18 +401,18 @@ impl<E: Schema> Memory<E> {
             // What rested on a gone object leaves the history with it.
             dag.settle();
         }
-        let order = match dag.order_among(&names.iter().collect()) {
-            Ok(order) if extends => order,
-            _ => {
+        let placed = if extends {
+            dag.order_among(&names.iter().collect()).ok()
+        } else {
+            None
+        };
+        let order = match placed {
+            Some(order) => order,
+            None => {
                 self.folded = None;
                 self.tips = dag.tips();
                 self.geneses = dag.geneses();
-                self.wanted = dag
-                    .objects()
-                    .values()
-                    .flat_map(parents_of)
-                    .filter(|parent| dag.get(parent).is_none())
-                    .collect();
+                self.wanted = wanted(dag);
                 return;
             }
         };
@@ -456,6 +455,16 @@ impl<E: Schema> Memory<E> {
             }
         }
     }
+}
+
+/// What an object of the history of `dag` names (a parent, a genesis)
+/// that the history does not hold.
+fn wanted<E>(dag: &Dag<E>) -> BTreeSet<Hash> {
+    lacked_among(
+        dag.objects()
+            .iter()
+            .map(|(name, object)| (name, rests_on(object))),
+    )
 }
 
 /// WHAT A REPLICA LACKS of what `seeds` rest on, VERIFIED ON RECEIPT: a

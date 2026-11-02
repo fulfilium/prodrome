@@ -26,6 +26,7 @@ mod frontier;
 mod fuzz;
 mod kit;
 mod link_vectors;
+mod literal_parser;
 mod literals;
 mod memo;
 mod memo_balance;
