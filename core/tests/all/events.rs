@@ -340,7 +340,7 @@ fn some_names(size: std::ops::Range<usize>) -> impl Strategy<Value = Vec<Hash>> 
     prop::collection::btree_set(a_name(), size).prop_map(|names| names.into_iter().rev().collect())
 }
 
-fn a_new_object() -> impl Strategy<Value = Envelope<TodoEvent<Todo>>> {
+pub(crate) fn a_new_object() -> impl Strategy<Value = Envelope<TodoEvent<Todo>>> {
     let events = common::events();
     prop_oneof![
         (".{0,12}", "[0-9a-f]{32}").prop_map(|(label, nonce)| Envelope::Genesis(
