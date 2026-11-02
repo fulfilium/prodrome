@@ -371,4 +371,25 @@ proptest! {
         prop_assert_eq!(canonical_envelope(&parsed), text);
         prop_assert_eq!(seal_hash(&parsed), seal_hash(&object));
     }
+
+    /// A name compares by the digest it holds, not by its text. Two names
+    /// are equal and ordered exactly as their texts are, and a name read
+    /// back from its text is the name: so every map keyed by names holds
+    /// them in the order of their texts.
+    #[test]
+    fn a_name_orders_as_its_text(a in a_name(), b in a_name()) {
+        prop_assert_eq!(a.cmp(&b), a.as_str().cmp(b.as_str()));
+        prop_assert_eq!(a == b, a.as_str() == b.as_str());
+        prop_assert_eq!(Hash::new(a.as_str()).expect("a name"), a.clone());
+        let near = Hash::new(format!("{}{}", &a.as_str()[..63], &b.as_str()[63..])).expect("a name");
+        prop_assert_eq!(a.cmp(&near), a.as_str().cmp(near.as_str()));
+    }
+
+    /// The name of an object, the hash of its print, reads back from its
+    /// own text as the same name.
+    #[test]
+    fn a_seal_reads_back_from_its_text(object in a_new_object()) {
+        let name = seal_hash(&object);
+        prop_assert_eq!(Hash::new(name.as_str()).expect("a name"), name);
+    }
 }
