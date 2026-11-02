@@ -336,9 +336,9 @@ impl<E> Dag<E> {
     /// refusal.
     pub fn linearise(&self) -> Result<Vec<Hash>, ProdromeError> {
         for (name, object) in &self.objects {
-            if let Some(parent) = parents_of(object)
+            if let Some(parent) = rests_on(object)
                 .into_iter()
-                .find(|parent| !self.objects.contains_key(parent))
+                .find(|parent| !self.objects.contains_key(*parent))
             {
                 return Err(ProdromeError::Store(format!(
                     "missing object {}, named as a parent by {}",
@@ -357,9 +357,9 @@ impl<E> Dag<E> {
             .iter()
             .filter_map(|name| self.objects.get_key_value(*name))
             .map(|(name, object)| {
-                let parents = parents_of(object)
+                let parents = rests_on(object)
                     .into_iter()
-                    .filter_map(|parent| among.get(&parent).copied())
+                    .filter_map(|parent| among.get(parent).copied())
                     .collect();
                 (name, parents)
             })

@@ -7,44 +7,41 @@ use std::collections::{BTreeMap, BinaryHeap};
 /// relation alone, not of the order it was given in. A key resting on one
 /// that is not among them is passed over; `Err` names the least key a
 /// cycle leaves unplaced.
+///
+/// The walk runs over each key's place among the keys, which a map holds
+/// in key order: a place orders as its key does, so the heap compares
+/// numbers, and an edge costs one binary search among the keys.
 pub fn linear<'k, K: Ord + ?Sized>(
     rests_on: &BTreeMap<&'k K, Vec<&'k K>>,
 ) -> Result<Vec<&'k K>, &'k K> {
-    let mut above: BTreeMap<&K, Vec<&K>> = BTreeMap::new();
-    let mut waiting: BTreeMap<&K, usize> = BTreeMap::new();
-    for (&key, below) in rests_on {
-        let count = waiting.entry(key).or_default();
-        for &under in below {
-            if rests_on.contains_key(under) {
-                above.entry(under).or_default().push(key);
-                *count += 1;
+    let keys: Vec<&'k K> = rests_on.keys().copied().collect();
+    let mut above: Vec<Vec<usize>> = vec![Vec::new(); keys.len()];
+    let mut waiting = vec![0_usize; keys.len()];
+    for (at, below) in rests_on.values().enumerate() {
+        for under in below {
+            if let Ok(under) = keys.binary_search(under) {
+                above[under].push(at);
+                waiting[at] += 1;
             }
         }
     }
-    let mut ready: BinaryHeap<Reverse<&K>> = waiting
-        .iter()
-        .filter(|(_, count)| **count == 0)
-        .map(|(key, _)| Reverse(*key))
+    let mut ready: BinaryHeap<Reverse<usize>> = (0..keys.len())
+        .filter(|&at| waiting[at] == 0)
+        .map(Reverse)
         .collect();
-    let mut order = Vec::with_capacity(waiting.len());
-    while let Some(Reverse(key)) = ready.pop() {
-        order.push(key);
-        for &over in above.get(key).into_iter().flatten() {
-            let count = waiting.get_mut(over).expect("every key is counted");
-            *count -= 1;
-            if *count == 0 {
+    let mut order = Vec::with_capacity(keys.len());
+    while let Some(Reverse(at)) = ready.pop() {
+        order.push(keys[at]);
+        for &over in &above[at] {
+            waiting[over] -= 1;
+            if waiting[over] == 0 {
                 ready.push(Reverse(over));
             }
         }
     }
-    if order.len() == waiting.len() {
-        Ok(order)
-    } else {
-        Err(waiting
-            .iter()
-            .find(|(_, count)| **count > 0)
-            .map(|(key, _)| *key)
-            .expect("a short order left a key waiting"))
+    match (0..keys.len()).find(|&at| waiting[at] > 0) {
+        Some(stuck) => Err(keys[stuck]),
+        None => Ok(order),
     }
 }
 
