@@ -155,7 +155,9 @@ pub fn read<'a, E: Schema>(stream: &'a [Stamp<E>], at: Option<Instant>, policy: 
 **Exception.** `core/src/store.rs` does file input and output, and it calls
 `SystemTime::now()` to decide when to look at a file again. The time does
 not affect any value that a read returns. The store also draws random bits
-for the names of temporary files and for a genesis nonce.
+for the names of temporary files and for a genesis nonce. `spread::spread`
+runs a map over a vector on several threads, for the store's reads and
+`Dag::from_prints`; its answer is the map's, whatever the number of threads.
 
 ### 7. Write generic functions, and one combinator with laws
 
