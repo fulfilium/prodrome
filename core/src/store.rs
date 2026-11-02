@@ -52,6 +52,7 @@ use crate::policy::{Policy, Untrusted};
 use crate::registers::{Folded, Node};
 use crate::schema::Schema;
 use crate::snapshot::mk_snapshot;
+use crate::spread::spread;
 
 pub use decision::Decision;
 use memory::{Memory, Printed, Seen, Verified};
@@ -196,8 +197,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
                 .collect()
         };
         let mut seen = BTreeMap::new();
-        for (name, entry) in listed {
-            let at = Seen::of(stat(&entry), now);
+        for (name, at) in spread(listed, |(name, entry)| (name, Seen::of(stat(&entry), now))) {
             if !matches!(memory.files().get(&name), Some(Some(was)) if at.as_ref() == Some(was)) {
                 seen.insert(name, at);
             }
