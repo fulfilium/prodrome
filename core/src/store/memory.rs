@@ -372,7 +372,11 @@ impl<E: Schema> Memory<E> {
         if gone.is_empty() && fresh.is_empty() {
             return;
         }
+        // A memory that held nothing derives its tips and geneses from the
+        // history in one pass, which costs less than placing every object
+        // in turn.
         let extends = gone.is_empty()
+            && self.dag.held().next().is_some()
             && fresh
                 .iter()
                 .all(|(verified, _)| !self.wanted.contains(&verified.name));
@@ -402,9 +406,14 @@ impl<E: Schema> Memory<E> {
             // What rested on a gone object leaves the history with it.
             dag.settle();
         }
-        let order = match dag.order_among(&names.iter().collect()) {
-            Ok(order) if extends => order,
-            _ => {
+        let placed = if extends {
+            dag.order_among(&names.iter().collect()).ok()
+        } else {
+            None
+        };
+        let order = match placed {
+            Some(order) => order,
+            None => {
                 self.folded = None;
                 self.tips = dag.tips();
                 self.geneses = dag.geneses();
