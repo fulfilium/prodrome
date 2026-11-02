@@ -155,12 +155,13 @@ impl Hash {
     }
 
     pub(crate) fn of_bytes(bytes: &[u8]) -> Hash {
-        Hash(
-            Sha256::digest(bytes)
-                .iter()
-                .map(|byte| format!("{byte:02x}"))
-                .collect(),
-        )
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut text = String::with_capacity(64);
+        for byte in Sha256::digest(bytes) {
+            text.push(char::from(HEX[usize::from(byte >> 4)]));
+            text.push(char::from(HEX[usize::from(byte & 0xf)]));
+        }
+        Hash(text)
     }
 }
 
