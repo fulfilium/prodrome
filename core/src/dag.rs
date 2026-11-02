@@ -9,7 +9,7 @@ use std::sync::OnceLock;
 pub use finding::{Excluded, Finding, Unread};
 
 use crate::change::Change;
-use crate::event::{parents_of, parse_envelope, Envelope, Hash};
+use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
 use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
 use crate::registers::{Genesis, Node};
@@ -163,51 +163,66 @@ impl<E> Dag<E> {
     /// [`Dag::interior`] and a store's memory share: what arrives either
     /// joins the history or waits for what it rests on, and whatever
     /// arrives later that completes it brings it in.
-    pub(crate) fn grow(&mut self, arrived: BTreeMap<Hash, Envelope<E>>) -> BTreeSet<Hash> {
+    ///
+    /// The names taken come in order. Maps are joined whole where that
+    /// costs less than an insert per object: a merge costs the sizes of
+    /// both maps, and an insert the logarithm of the larger.
+    pub(crate) fn grow(&mut self, mut arrived: BTreeMap<Hash, Envelope<E>>) -> Vec<Hash> {
         self.tips = Tips::default();
+        arrived.retain(|name, _| !self.objects.contains_key(name));
+        for name in arrived.keys() {
+            self.unread.remove(name);
+        }
         let mut waiting = std::mem::take(&mut self.waiting);
-        for (name, object) in arrived {
-            if !self.objects.contains_key(&name) {
-                self.unread.remove(&name);
-                waiting.insert(name, object);
-            }
+        waiting.append(&mut arrived);
+        let mut joins = self.joining(&waiting).into_iter();
+        let (joined, still): (Vec<_>, Vec<_>) = waiting
+            .into_iter()
+            .partition(|_| joins.next().unwrap_or(false));
+        self.waiting = still.into_iter().collect();
+        let taken = joined.iter().map(|(name, _)| name.clone()).collect();
+        if joined.len() < self.objects.len() {
+            self.objects.extend(joined);
+        } else {
+            self.objects.append(&mut joined.into_iter().collect());
         }
-        let mut children: BTreeMap<Hash, Vec<Hash>> = BTreeMap::new();
-        let mut short: BTreeMap<Hash, usize> = BTreeMap::new();
-        let mut ready: Vec<Hash> = Vec::new();
-        for (name, object) in &waiting {
-            let mut count = 0;
-            for parent in parents_of(object) {
-                if waiting.contains_key(&parent) {
-                    children.entry(parent).or_default().push(name.clone());
-                    count += 1;
-                } else if !self.objects.contains_key(&parent) {
-                    // Missing: this object waits until it arrives.
-                    count += 1;
-                }
-            }
-            if count == 0 {
-                ready.push(name.clone());
-            } else {
-                short.insert(name.clone(), count);
-            }
-        }
-        let mut taken = BTreeSet::new();
-        while let Some(name) = ready.pop() {
-            let object = waiting.remove(&name).expect("a ready object waits");
-            self.objects.insert(name.clone(), object);
-            for child in children.remove(&name).into_iter().flatten() {
-                let count = short.get_mut(&child).expect("a child waits");
-                *count -= 1;
-                if *count == 0 {
-                    short.remove(&child);
-                    ready.push(child);
-                }
-            }
-            taken.insert(name);
-        }
-        self.waiting = waiting;
         taken
+    }
+
+    /// Which of `waiting`, in its order, join the history: each object
+    /// that rests only on the history and on objects of `waiting` that
+    /// join. Kahn's walk over the objects' places in `waiting`, so that
+    /// an edge costs a binary search among the names and no name is
+    /// copied.
+    fn joining(&self, waiting: &BTreeMap<Hash, Envelope<E>>) -> Vec<bool> {
+        let names: Vec<&Hash> = waiting.keys().collect();
+        let mut short = vec![0_usize; names.len()];
+        let mut above: Vec<Vec<usize>> = vec![Vec::new(); names.len()];
+        for (at, object) in waiting.values().enumerate() {
+            for parent in rests_on(object) {
+                match names.binary_search(&parent) {
+                    Ok(under) => {
+                        above[under].push(at);
+                        short[at] += 1;
+                    }
+                    // Missing: the object waits until it arrives.
+                    Err(_) if !self.objects.contains_key(parent) => short[at] += 1,
+                    Err(_) => {}
+                }
+            }
+        }
+        let mut ready: Vec<usize> = (0..names.len()).filter(|&at| short[at] == 0).collect();
+        let mut joins = vec![false; names.len()];
+        while let Some(at) = ready.pop() {
+            joins[at] = true;
+            for &over in &above[at] {
+                short[over] -= 1;
+                if short[over] == 0 {
+                    ready.push(over);
+                }
+            }
+        }
+        joins
     }
 
     /// The DAG, where every print it holds is an object; or the refusal of
@@ -240,15 +255,10 @@ impl<E> Dag<E> {
         self.tips
             .0
             .get_or_init(|| {
-                let graph: Vec<(&Hash, Vec<Hash>)> = self
-                    .objects
-                    .iter()
-                    .map(|(name, object)| (name, parents_of(object)))
-                    .collect();
                 tips_among(
-                    graph
+                    self.objects
                         .iter()
-                        .map(|(name, parents)| (*name, parents.as_slice())),
+                        .map(|(name, object)| (name, rests_on(object))),
                 )
             })
             .clone()
@@ -671,21 +681,59 @@ impl<E: Schema> Dag<E> {
     }
 }
 
-/// The tips of a graph given as each name with the parents it names.
+/// The tips of a graph given as each name with the parents it names: the
+/// names no parent list names.
 pub(crate) fn tips_among<'a>(
-    graph: impl IntoIterator<Item = (&'a Hash, &'a [Hash])>,
+    graph: impl IntoIterator<Item = (&'a Hash, Vec<&'a Hash>)>,
 ) -> BTreeSet<Hash> {
+    apart(graph).0.into_iter().cloned().collect()
+}
+
+/// What a graph given as each name with the parents it names lacks: the
+/// names a parent list names that are not names of the graph.
+pub(crate) fn lacked_among<'a>(
+    graph: impl IntoIterator<Item = (&'a Hash, Vec<&'a Hash>)>,
+) -> BTreeSet<Hash> {
+    apart(graph).1.into_iter().cloned().collect()
+}
+
+/// The names of a graph that no parent list names, and the names the
+/// parent lists name that are not names of the graph, each in order. Both
+/// lists of names are sorted and merged once, so a parent costs no lookup.
+fn apart<'a>(
+    graph: impl IntoIterator<Item = (&'a Hash, Vec<&'a Hash>)>,
+) -> (Vec<&'a Hash>, Vec<&'a Hash>) {
     let mut names: Vec<&Hash> = Vec::new();
-    let mut named: BTreeSet<&Hash> = BTreeSet::new();
+    let mut named: Vec<&Hash> = Vec::new();
     for (name, parents) in graph {
         names.push(name);
         named.extend(parents);
     }
-    names
-        .into_iter()
-        .filter(|name| !named.contains(name))
-        .cloned()
-        .collect()
+    for list in [&mut names, &mut named] {
+        list.sort_unstable();
+        list.dedup();
+    }
+    let (mut unnamed, mut lacked) = (Vec::new(), Vec::new());
+    let (mut at, mut on) = (0, 0);
+    while let (Some(&name), Some(&parent)) = (names.get(at), named.get(on)) {
+        match name.cmp(parent) {
+            std::cmp::Ordering::Less => {
+                unnamed.push(name);
+                at += 1;
+            }
+            std::cmp::Ordering::Greater => {
+                lacked.push(parent);
+                on += 1;
+            }
+            std::cmp::Ordering::Equal => {
+                at += 1;
+                on += 1;
+            }
+        }
+    }
+    unnamed.extend(&names[at..]);
+    lacked.extend(&named[on..]);
+    (unnamed, lacked)
 }
 
 /// `seeds` and everything above them, through each name's `children`.

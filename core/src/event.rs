@@ -26,8 +26,6 @@
 //! is NOT a shipped string — `Sealed.prev` at genesis, `Woven.event` — it is an
 //! `Option`, and the printer puts the `''`/`None` back.
 
-use std::collections::BTreeSet;
-
 use sha2::{Digest, Sha256};
 
 use crate::change::Change;
@@ -450,25 +448,25 @@ impl<E> Envelope<E> {
 /// replica's walk): a change rests on its genesis as on its deps, so no
 /// genesis is a head of a prodrome holding anything begun from it.
 pub fn parents_of<E>(envelope: &Envelope<E>) -> Vec<Hash> {
-    let edges = match envelope {
-        Envelope::Sealed { prev, .. } => prev.iter().cloned().collect(),
-        Envelope::Woven { parents, .. } => parents.clone(),
+    rests_on(envelope).into_iter().cloned().collect()
+}
+
+/// [`parents_of`], borrowed from the object: what a walk over many objects
+/// reads, so that it copies no name.
+pub(crate) fn rests_on<E>(envelope: &Envelope<E>) -> Vec<&Hash> {
+    let mut names: Vec<&Hash> = match envelope {
+        Envelope::Sealed { prev, .. } => prev.iter().collect(),
+        Envelope::Woven { parents, .. } => parents.iter().collect(),
         Envelope::Genesis(_) | Envelope::KeyAdded(_) => Vec::new(),
-        Envelope::Change(change) => change.deps.clone(),
-        Envelope::Snapshot(snapshot) => snapshot
-            .tips
-            .iter()
-            .chain(&snapshot.previous)
-            .cloned()
-            .collect(),
-        Envelope::Signed(signed) => vec![signed.object.clone()],
-        Envelope::KeyRevoked(revoked) => revoked.deps.clone(),
+        Envelope::Change(change) => change.deps.iter().collect(),
+        Envelope::Snapshot(snapshot) => snapshot.tips.iter().chain(&snapshot.previous).collect(),
+        Envelope::Signed(signed) => vec![&signed.object],
+        Envelope::KeyRevoked(revoked) => revoked.deps.iter().collect(),
     };
-    let parents: BTreeSet<Hash> = edges
-        .into_iter()
-        .chain(envelope.genesis().cloned())
-        .collect();
-    parents.into_iter().collect()
+    names.extend(envelope.genesis());
+    names.sort_unstable();
+    names.dedup();
+    names
 }
 
 // --- smart constructors ------------------------------------------------------

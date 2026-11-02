@@ -32,7 +32,7 @@ use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use crate::dag::{tips_among, Dag};
-use crate::event::{parents_of, Envelope, Hash};
+use crate::event::{rests_on, Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
 
@@ -401,14 +401,9 @@ impl<E: Schema> Lacking<'_, E> {
     /// `held`, a set of the store's objects closed under parents, recorded
     /// by its tips.
     fn frontier(&self, held: &BTreeSet<Hash>) -> Result<Recorded, Unrecorded> {
-        let graph: Vec<(&Hash, Vec<Hash>)> = held
-            .iter()
-            .filter_map(|name| self.dag.get(name).map(|object| (name, parents_of(object))))
-            .collect();
         let tips = tips_among(
-            graph
-                .iter()
-                .map(|(name, parents)| (*name, parents.as_slice())),
+            held.iter()
+                .filter_map(|name| self.dag.get(name).map(|object| (name, rests_on(object)))),
         );
         Ok(Recorded {
             token: self.frontiers.record(self.store, &tips)?,
