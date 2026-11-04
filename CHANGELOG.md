@@ -25,6 +25,17 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`digest::view` no longer takes time quadratic in the log's length.**
+  The view tries a closing with two queries of a segment tree that it keeps
+  for each level of the tree. A segment tree is a binary tree over a
+  sequence that answers a range's sum and its largest prefix sum in
+  logarithmic time. The view keeps the nodes that may close and are not yet
+  refused, so it does not scan every open node after each line. The view's
+  answer is unchanged, and the new law `the_view_is_the_reference_view`
+  checks it against a copy of the earlier view. On the new `digest_view`
+  example (15,900 lines, a 16 KiB budget), one view at 3,000 of 3,938
+  summaries goes from about 2.9 s to about 6 ms. With every node
+  summarised, it goes from about 4.3 ms to about 5.5 ms.
 - **A cold read of a store is several times faster.** On the new
   `store_read` example (23,901 objects, 151 MB), a cold `EventStore::dag`
   goes from about 2.95 s to about 0.69 s on four cores, from 3.07 s to
