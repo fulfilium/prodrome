@@ -815,3 +815,56 @@ proptest! {
         prop_assert!(tree.cover(start..lines + 1).is_none(), "a span past the last line");
     }
 }
+
+/// The summaries a compactor writes first: the nodes `pending` offers, round
+/// after round, until `most` are summarised, each of a cost drawn from its
+/// name as `drawn` draws it. A parent then has a summary only when each of
+/// its children is a line or has one, as in a log that a compactor reads.
+fn compacted<M>(tree: &Tree<M>, drawn: Summaries, most: usize) -> BTreeSet<Hash> {
+    let summary = Summaries {
+        percent: 100,
+        ..drawn
+    };
+    let mut written = BTreeSet::new();
+    while written.len() < most {
+        let next = pending(tree, |name| {
+            written.contains(name).then(|| summary.of(name)).flatten()
+        });
+        if next.is_empty() {
+            break;
+        }
+        let room = most - written.len();
+        written.extend(next.into_iter().take(room));
+    }
+    written
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(512))]
+
+    /// Law 46, the view's cost: `digest::view` answers exactly what the
+    /// reference view in `digest_reference.rs` answers (the same parts,
+    /// bytes and waiting nodes), over summaries drawn at random and over
+    /// summaries that a compactor wrote first, partly or wholly.
+    #[test]
+    fn the_view_is_the_reference_view(
+        log in a_log(400),
+        summaries in summaries(),
+        most in prop_oneof![Just(usize::MAX), 0..400usize],
+        budget in a_budget(),
+    ) {
+        let tree = tree_of(&log);
+        let drawn = |name: &Hash| summaries.of(name);
+        prop_assert_eq!(
+            view(&tree, drawn, budget),
+            crate::digest_reference::view(&tree, drawn, budget)
+        );
+        let written = compacted(&tree, summaries, most);
+        let first = Summaries { percent: 100, ..summaries };
+        let compacted = |name: &Hash| written.contains(name).then(|| first.of(name)).flatten();
+        prop_assert_eq!(
+            view(&tree, compacted, budget),
+            crate::digest_reference::view(&tree, compacted, budget)
+        );
+    }
+}

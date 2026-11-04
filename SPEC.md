@@ -1595,7 +1595,10 @@ cost, parents and measure are functions of its name.
     nodes with no summary whose children are lines or summarised. The
     measure folded through `memo::fold` is the plain one, and
     `digest::read` is a sound key: reads of one name answer alike, and a
-    summary recorded or a line's cost changed moves it.
+    summary recorded or a line's cost changed moves it. `digest::view`
+    answers what a reference view answers that makes each closing as this
+    law states it, line by line, under summaries drawn at random and under
+    summaries that a compactor wrote first.
     `memo_balance.rs::an_append_renames_only_the_spine`,
     `digest.rs::a_view_tiles_the_log`,
     `digest.rs::a_view_fits_its_budget_unless_no_closing_lowers_it`,
@@ -1610,7 +1613,8 @@ cost, parents and measure are functions of its name.
     `digest.rs::pending_is_what_can_be_summarised`,
     `digest.rs::an_appended_line_only_coarsens_the_past`,
     `digest.rs::a_late_line_renames_a_logarithmic_spine`,
-    `digest.rs::a_digest_read_through_memo_is_the_plain_one`.
+    `digest.rs::a_digest_read_through_memo_is_the_plain_one`,
+    `digest.rs::the_view_is_the_reference_view`.
 
 Law 47 is a pull that names its replica by a frontier token (§3), over
 two writers' histories over one shared history. A store of record keeps
