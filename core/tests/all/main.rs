@@ -16,6 +16,7 @@ mod conformance_view;
 mod dag;
 mod declared;
 mod digest;
+mod digest_reference;
 mod down_set;
 mod events;
 mod fold_laws;
