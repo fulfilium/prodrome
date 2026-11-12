@@ -47,6 +47,15 @@ constructor's fields never change, in any release.
   and `Cache::keys` answers an iterator of owned keys.
   `Cache<V, E>` is `Cache<V, E, Memory<V>>`, so code that names a cache in
   memory does not change. `Evict` has a new method `learn`, with a default.
+- **The check of the examples' pictures compares pixels, not bytes.**
+  `checks.prodrome-typst` compared each committed picture of an example
+  with a fresh render byte for byte. The rasteriser does not give the same
+  bytes on every machine: two builds of the one derivation differed in a
+  few pixels (a normalised RMSE of 0.0004), so the check failed on any
+  machine that rendered again and passed only where the binary cache held
+  the first render. It now passes when the RMSE between the two pictures
+  is at most 0.002, which three wholly changed pixels exceed, and fails
+  when the two have different sizes.
 - **`digest::view` no longer takes time quadratic in the log's length.**
   The view tries a closing with two queries of a segment tree that it keeps
   for each level of the tree. A segment tree is a binary tree over a
