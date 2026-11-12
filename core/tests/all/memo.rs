@@ -40,15 +40,12 @@ fn pairs() -> impl Strategy<Value = Vec<(u8, u8, u8)>> {
 
 /// A cache as the set it is.
 fn graph(cache: &Cache<u8>) -> BTreeSet<(Key, u8)> {
-    cache
-        .pairs()
-        .map(|(key, value)| (key.clone(), *value))
-        .collect()
+    cache.clone().pairs().into_iter().collect()
 }
 
 fn joined(a: &Cache<u8>, b: &Cache<u8>) -> Cache<u8> {
     let mut a = a.clone();
-    let _ = a.join(b);
+    let _ = a.join(&mut b.clone());
     a
 }
 
@@ -76,14 +73,15 @@ proptest! {
     fn two_values_are_a_finding(a in pairs(), b in pairs()) {
         let (a, b) = (cache_of(&a), cache_of(&b));
         let mut both = a.clone();
-        let reported: BTreeSet<Key> = both.join(&b).into_iter().map(|f| f.key).collect();
+        let reported: BTreeSet<Key> =
+            both.join(&mut b.clone()).into_iter().map(|f| f.key).collect();
         let pairs = graph(&both);
-        for k in both.keys().cloned().collect::<Vec<_>>() {
+        for k in both.keys().collect::<Vec<_>>() {
             let values: BTreeSet<u8> =
                 pairs.iter().filter(|(at, _)| *at == k).map(|(_, v)| *v).collect();
-            let finding_before = a.findings().any(|f| f.key == k);
+            let finding_before = a.clone().findings().iter().any(|f| f.key == k);
             match both.get(&k) {
-                Lookup::Hit(value) => prop_assert_eq!(values, BTreeSet::from([*value])),
+                Lookup::Hit(value) => prop_assert_eq!(values, BTreeSet::from([value])),
                 Lookup::Finding(held) => {
                     prop_assert!(values.len() > 1);
                     prop_assert_eq!(values, held.iter().copied().collect::<BTreeSet<_>>());
@@ -116,7 +114,7 @@ fn a_second_value_is_reported_and_never_read() {
         "the same pair twice is one"
     );
     assert_eq!(cache.insert(key(0, 0), 2), Err(Finding { key: key(0, 0) }));
-    assert_eq!(cache.get(&key(0, 0)), Lookup::Finding(&[1, 2]));
+    assert_eq!(cache.get(&key(0, 0)), Lookup::Finding(vec![1, 2]));
     assert!(cache.remove(&key(0, 0)));
     assert_eq!(cache.get(&key(0, 0)), Lookup::Miss);
 }
@@ -126,9 +124,9 @@ fn lru_drops_the_least_recently_used() {
     let mut cache = Cache::new(Lru::new(2));
     cache.insert(key(0, 0), 0u8).expect("one value");
     cache.insert(key(0, 1), 1).expect("one value");
-    assert_eq!(cache.get(&key(0, 0)), Lookup::Hit(&0));
+    assert_eq!(cache.get(&key(0, 0)), Lookup::Hit(0));
     cache.insert(key(0, 2), 2).expect("one value");
     assert_eq!(cache.get(&key(0, 1)), Lookup::Miss);
-    assert_eq!(cache.get(&key(0, 0)), Lookup::Hit(&0));
-    assert_eq!(cache.get(&key(0, 2)), Lookup::Hit(&2));
+    assert_eq!(cache.get(&key(0, 0)), Lookup::Hit(0));
+    assert_eq!(cache.get(&key(0, 2)), Lookup::Hit(2));
 }

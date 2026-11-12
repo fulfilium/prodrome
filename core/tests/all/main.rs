@@ -31,6 +31,8 @@ mod literal_parser;
 mod literals;
 mod memo;
 mod memo_balance;
+mod memo_entities;
+mod memo_file;
 mod memo_fold;
 mod memory;
 mod nest;

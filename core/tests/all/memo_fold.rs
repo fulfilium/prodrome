@@ -17,10 +17,10 @@ use proptest::prelude::*;
 use proptest::sample::Index;
 
 #[derive(Debug, Clone)]
-struct Node {
-    name: Hash,
+pub(crate) struct Node {
+    pub(crate) name: Hash,
     label: u32,
-    kids: Vec<Node>,
+    pub(crate) kids: Vec<Node>,
 }
 
 impl Node {
@@ -32,11 +32,11 @@ impl Node {
         }
     }
 
-    fn size(&self) -> usize {
+    pub(crate) fn size(&self) -> usize {
         1 + self.kids.iter().map(Node::size).sum::<usize>()
     }
 
-    fn names(&self, into: &mut BTreeSet<Hash>) {
+    pub(crate) fn names(&self, into: &mut BTreeSet<Hash>) {
         into.insert(self.name.clone());
         self.kids.iter().for_each(|kid| kid.names(into));
     }
@@ -66,8 +66,8 @@ impl Tree for Node {
 
 /// Two algebras with one output type, so they share a cache and only their
 /// names keep their entries apart.
-struct Sum(Hash);
-struct Weigh(Hash);
+pub(crate) struct Sum(pub(crate) Hash);
+pub(crate) struct Weigh(pub(crate) Hash);
 
 impl Algebra<Node> for Sum {
     type Out = u64;
@@ -94,16 +94,16 @@ impl Algebra<Node> for Weigh {
     }
 }
 
-fn sum() -> Sum {
+pub(crate) fn sum() -> Sum {
     Sum(memo::name(b"sum", []))
 }
 
-fn weigh() -> Weigh {
+pub(crate) fn weigh() -> Weigh {
     Weigh(memo::name(b"weigh", []))
 }
 
 /// The plain fold, the meaning a cache must not change.
-fn cata<A: Algebra<Node>>(algebra: &A, node: &Node) -> A::Out {
+pub(crate) fn cata<A: Algebra<Node>>(algebra: &A, node: &Node) -> A::Out {
     let children = node.kids.iter().map(|kid| cata(algebra, kid)).collect();
     algebra.apply(node, children)
 }
@@ -112,7 +112,7 @@ fn cata<A: Algebra<Node>>(algebra: &A, node: &Node) -> A::Out {
 
 /// A tree's shape, its labels drawn when it is built.
 #[derive(Debug, Clone)]
-struct Shape(Vec<Shape>);
+pub(crate) struct Shape(Vec<Shape>);
 
 fn list() -> impl Strategy<Value = Shape> {
     (0..40usize).prop_map(|length| (0..length).fold(Shape(vec![]), |tail, _| Shape(vec![tail])))
@@ -130,26 +130,26 @@ fn rose() -> impl Strategy<Value = Shape> {
     })
 }
 
-fn shape() -> impl Strategy<Value = Shape> {
+pub(crate) fn shape() -> impl Strategy<Value = Shape> {
     prop_oneof![list(), binary(), rose()]
 }
 
 /// Labels for the nodes built: every one fresh, or drawn from three so that
 /// subtrees repeat and share names.
-struct Labels {
+pub(crate) struct Labels {
     next: u32,
     modulo: u32,
 }
 
 impl Labels {
-    fn unique() -> Labels {
+    pub(crate) fn unique() -> Labels {
         Labels {
             next: 0,
             modulo: u32::MAX,
         }
     }
 
-    fn shared() -> Labels {
+    pub(crate) fn shared() -> Labels {
         Labels { next: 0, modulo: 3 }
     }
 
@@ -159,7 +159,7 @@ impl Labels {
     }
 }
 
-fn build(shape: &Shape, labels: &mut Labels) -> Node {
+pub(crate) fn build(shape: &Shape, labels: &mut Labels) -> Node {
     let label = labels.draw();
     let kids = shape.0.iter().map(|kid| build(kid, labels)).collect();
     Node::new(label, kids)
@@ -167,12 +167,12 @@ fn build(shape: &Shape, labels: &mut Labels) -> Node {
 
 /// An edit at a node: relabelled, or replaced by a subtree of a new shape.
 #[derive(Debug, Clone)]
-enum Edit {
+pub(crate) enum Edit {
     Relabel,
     Graft(Shape),
 }
 
-fn edits() -> impl Strategy<Value = Vec<(Index, Edit)>> {
+pub(crate) fn edits() -> impl Strategy<Value = Vec<(Index, Edit)>> {
     let edit = prop_oneof![Just(Edit::Relabel), rose().prop_map(Edit::Graft)];
     prop::collection::vec((any::<Index>(), edit), 0..4)
 }
@@ -181,7 +181,7 @@ fn edits() -> impl Strategy<Value = Vec<(Index, Edit)>> {
 /// of every node of the result the edits changed: an edited node, every node
 /// of a grafted subtree, and every ancestor of one. Edits under a graft are
 /// grafted over.
-fn apply(
+pub(crate) fn apply(
     node: &Node,
     edits: &BTreeMap<usize, Edit>,
     labels: &mut Labels,
@@ -224,7 +224,7 @@ fn apply(
     (edited, changed)
 }
 
-fn positions(tree: &Node, edits: &[(Index, Edit)]) -> BTreeMap<usize, Edit> {
+pub(crate) fn positions(tree: &Node, edits: &[(Index, Edit)]) -> BTreeMap<usize, Edit> {
     edits
         .iter()
         .map(|(index, edit)| (index.index(tree.size()), edit.clone()))
@@ -233,7 +233,7 @@ fn positions(tree: &Node, edits: &[(Index, Edit)]) -> BTreeMap<usize, Edit> {
 
 /// Drops the cache's keys the draw picks, in key order.
 fn evict<E: Evict>(cache: &mut Cache<u64, E>, picks: &[bool]) {
-    let mut keys: Vec<_> = cache.keys().cloned().collect();
+    let mut keys: Vec<_> = cache.keys().collect();
     keys.sort();
     for (key, drop) in keys.iter().zip(picks.iter().cycle()) {
         if *drop {
@@ -295,7 +295,7 @@ proptest! {
             ] {
                 prop_assert_eq!(value, cata(&weigh(), &tree));
             }
-            prop_assert_eq!(dropped.findings().count(), 0);
+            prop_assert_eq!(dropped.findings().len(), 0);
             evict(&mut dropped, &picks);
             tree = apply(&tree, &positions(&tree, &edits), &mut labels).0;
         }
@@ -363,7 +363,7 @@ proptest! {
         evict(&mut left, &picks);
         evict(&mut right, &picks[1..]);
         let mut joined = left.clone();
-        prop_assert!(joined.join(&right).is_empty());
+        prop_assert!(joined.join(&mut right.clone()).is_empty());
         let tree = apply(&one, &positions(&one, &edits), &mut labels).0;
         for cache in [&mut left, &mut right, &mut joined] {
             prop_assert_eq!(fold(&sum(), &tree, cache).0, cata(&sum(), &tree));
@@ -382,17 +382,17 @@ proptest! {
         let forged = tree.at(at.index(tree.size())).name.clone();
         let key = memo::Key { function: sum().0, argument: forged.clone() };
         let held = match cache.get(&key) {
-            Lookup::Hit(value) => *value,
+            Lookup::Hit(value) => value,
             other => panic!("a folded node is held, got {other:?}"),
         };
         prop_assert!(cache.insert(key.clone(), held + 1).is_err());
-        let others: Vec<_> = cache.keys().filter(|other| **other != key).cloned().collect();
+        let others: Vec<_> = cache.keys().filter(|other| *other != key).collect();
         for other in &others {
             cache.remove(other);
         }
         let (value, report) = fold(&sum(), &tree, &mut cache);
         prop_assert_eq!(value, cata(&sum(), &tree));
         prop_assert!(report.names(Outcome::Finding).any(|name| *name == forged));
-        prop_assert_eq!(cache.get(&key), Lookup::Finding(&[held, held + 1]));
+        prop_assert_eq!(cache.get(&key), Lookup::Finding(vec![held, held + 1]));
     }
 }
