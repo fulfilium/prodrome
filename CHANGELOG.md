@@ -10,6 +10,20 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A cache held in a file: `memo::Holder`, `memo::File` and `memo::Front`
+  (SPEC §6, laws 51 to 58).** `Holder` is the one interface of a cache's
+  pairs. `memo::Memory` holds them in memory, and `File` holds them in one
+  file, so a new process reads what an earlier process computed. `Cache`
+  is a holder under an eviction policy, `Cache::held` puts a policy over
+  any holder, and `Front` reads a holder through a cache in memory.
+  `memo::fold` runs over any holder. `Cache::forget` drops a set of keys
+  and erases their values from the file. SPEC §6 gives the layout of a
+  cache file. A cache file is a new kind of file, and no object of a store
+  changes. On the new `memo_file` example (a generated store of 40,000
+  objects and a cache file of 5.6 MB), a new process opens the warm file
+  in about 25 ms and folds the store's tree with one hit. Without a cache
+  file, the same fold takes about 85 ms. After one object is appended, the
+  fold computes 10 to 14 of the tree's 50,000 nodes.
 - **`sign::Checks` and `Proof::through`, a table of signature checks
   (SPEC law 49).** `Checks` keeps whether each `Signed` object verifies,
   under the object's content name, at most its capacity of them, the least
@@ -25,6 +39,14 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`memo::Lookup` holds owned values, and `Cache::keys`, `Cache::pairs`,
+  `Cache::findings` and `Cache::join` work over any holder.** A value read
+  from a file is decoded, so a lookup owns it: `Lookup::Hit(V)` and
+  `Lookup::Finding(Vec<V>)`. `Cache::join` takes `&mut impl Holder<V>`,
+  `Cache::pairs` and `Cache::findings` take `&mut self` and answer a `Vec`,
+  and `Cache::keys` answers an iterator of owned keys.
+  `Cache<V, E>` is `Cache<V, E, Memory<V>>`, so code that names a cache in
+  memory does not change. `Evict` has a new method `learn`, with a default.
 - **The check of the examples' pictures compares pixels, not bytes.**
   `checks.prodrome-typst` compared each committed picture of an example
   with a fresh render byte for byte. The rasteriser does not give the same

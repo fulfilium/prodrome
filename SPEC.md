@@ -680,6 +680,67 @@ FPL, below. A content record joins whoever wrote it.
    `core/examples/generate_view_vectors.rs` regenerates them by hand; nothing
    under `cargo test` or CI ever does.
 
+**A cache is a tabulation of a pure function.** A CACHE is a set of pairs
+of a KEY and a value. A key is two names: the name of a function, which
+covers its code and every input that the code reads besides its argument,
+and the name of the argument. A program reads a key through a cache as a
+partial function: no value is a miss, one value is a hit, and two distinct
+values are a FINDING, which a reader never answers as either value. A
+reading through a cache equals the function, so a program may drop any
+pair at any time. A cache belongs to no history and to no checkpoint.
+
+A HOLDER keeps a cache's pairs, and every holder obeys the same laws (law
+57). A holder in memory keeps them in a map. A holder in a file keeps them
+in one file, so that a new process reads what an earlier process computed.
+Memory in front of a file is the file read through a cache in memory; it
+answers what the file answers, and it adds no pair. The JOIN of two caches
+is the union of their pairs (law 56). An eviction policy bounds the number
+of keys that a holder keeps, in memory or in a file (law 58). To FORGET a
+set of keys is to drop them and to erase every byte of their values from
+the holder's storage (law 55). A forget erases the values from the file. It
+does not erase copies that a file system, a backup or another process keeps.
+In particular, another process that holds a doomed pair in memory or in its
+buffer of new records can write it again after the forget. So an
+application with several processes makes every process forget the keys, or
+gives the cache sealed values. A program that must not keep a readable value
+gives the cache a value
+sealed under a key that it can destroy, with a deterministic encryption, so
+that two computations of one value store one value.
+
+**A cache file.** A cache file starts with a header of 16 bytes: the eight
+bytes `FF 70 72 6F 64 6D 63 31` (`FF` and `prodmc1`), and a generation, a
+64-bit big-endian count that a writer raises each time that it compacts the
+file. Records follow the header. A record is, in order: the mark
+`FF 6D 72 00`; the length `n` of the value, 32 bits big-endian, at most
+`2^26`; the 32 bytes of the digest of the function's name; the 32 bytes of
+the digest of the argument's name; the value, which is the canonical print
+(§2) of its literal; and the CHECK, the SHA-256 of every byte of the record
+before it. A reader reads only a record whose check holds and whose value
+parses as the type that it expects. A DEAD record keeps its mark and its
+length, and has zeros for the rest of its bytes. A reader skips it as a
+record of that length, so every reader agrees where the records end. Where
+no record starts, a reader goes on at the next mark: the mark never occurs
+inside a value, because a print is UTF-8 text without a NUL byte. So a
+record that a stop cut short, that a disk damaged, or that a program wrote
+in another form is no entry (laws 52 and 54). A file shorter than its
+header is a file whose creation stopped, and it reads as an empty cache. A
+file that begins with other bytes is not a cache file. A writer appends
+records under an exclusive `flock` on the file. First it checks that the
+record that it read last still ends where it ended, and otherwise it reads
+the whole file again. Then it reads the records that other writers
+appended, and truncates a record cut short at the end. A writer removes a
+key by making every record of that key dead, a copy that another writer
+appended included. A writer COMPACTS a file in place, under the exclusive
+lock: it raises the generation, writes the records that it keeps one after
+the other from the header, and truncates the rest. A reader that sees
+another generation reads the whole file again. A stop during a compaction
+can lose a live record: a record that moves toward the header by less than
+its own length is overwritten by the start of its own new copy. What the
+file then holds is still a subset of what was written. A holder reads the
+whole file into memory to read it again, and a compaction holds the old
+file and the new one at once. So a holder needs memory of at most twice the
+file's length, and about 100 bytes of index for each key.
+
 ## 7. FPL
 
 `Term` is the fixed point of `TermF a`:
@@ -1766,6 +1827,72 @@ over generated logs and spans.
     that lies within the span lies within one of them. A span that is
     empty or that reaches past the last line has no cover.
     `digest.rs::a_cover_tiles_exactly_its_span`.
+
+Laws 51 to 58 are the cache (`memo`), over the generated trees, edits and
+algebras of `core/tests/all/memo_fold.rs`, and over generated pairs. A second handle on one
+file stands for a second process, because `flock` locks an open file
+description.
+
+51. **Reading through a kept cache is computing the function.** For every
+    tree and algebra, a fold through an empty cache, a warm cache in
+    memory, a warm file, a file that a new handle opened, a file that a
+    second handle wrote while the first was open, and memory in front of a
+    file answers the plain fold. A warm file that a new handle opened hits
+    at the root. Two writers that fold, forget and settle at once leave a
+    file whose every pair is a value of the function.
+    `memo_file.rs::a_kept_cache_reads_as_the_function`,
+    `memo_file.rs::two_writers_at_once_leave_one_cache`,
+    `memo_entities.rs::a_map_of_entities_is_entries_of_the_one_cache`,
+    `memo_entities.rs::each_entity_reads_as_the_map_would`.
+52. **A dropped, cut short, damaged or foreign entry is a miss.** After a
+    file is cut short, has bytes flipped or put in, and holds records of
+    the same keys that another program wrote in another form, every key
+    reads as a miss or as its own value. It never reads as another value or
+    as a finding, and no read stops with an error. A file cut within its
+    header opens as an empty cache.
+    `memo_file.rs::a_bad_entry_is_a_miss`,
+    `memo_file.rs::a_header_cut_short_is_an_empty_cache`.
+53. **An entry under another name of the function is never a hit.** The
+    same code under a name that covers another input computes every node
+    of a tree, through a file that holds every node under the first name.
+    `memo_file.rs::another_name_is_never_a_hit`.
+54. **A stop leaves a subset.** After a stop at any point of an append, a
+    forget or a compaction, the file reads as a cache that holds a subset
+    of the pairs that were written. A stop leaves a prefix of the new bytes
+    over the old, or any mix of the two, at any length between theirs.
+    `memo_file.rs::a_stop_leaves_a_subset`.
+55. **After a forget, no byte of a forgotten value is in the file.** After a
+    forget through memory in front of a file, while a second handle holds
+    the same pairs, the file holds no forgotten value, and every other
+    value still reads. The forgotten keys miss through the front and
+    through the second handle. A forget writes no zeros past the next mark,
+    so a damaged length does not reach the record after it.
+    `memo_file.rs::a_forget_erases`,
+    `memo_file.rs::a_forget_reaches_no_record_after_the_next_mark`.
+56. **`join` on files is the union.** The join of two files holds the union
+    of their pairs, as the join of the same pairs in memory does, and the
+    joined file opened again holds it too.
+    `memo_file.rs::join_on_files_is_the_union`.
+57. **Every holder is one relation.** In memory, in a file, as a cache over
+    a file, and as memory in front of a file, a holder reads each key as
+    the pairs added and not removed or forgotten, also after the file is
+    opened again. `add` answers a finding exactly when a key comes to hold
+    a second value. The keys and their count are the relation's. Two
+    holders over one file add, remove, forget and open the file again. Each
+    writes at once and reads the other only at a sync. After every step, a
+    third holder reads the file as the model; after a sync, each of the two
+    reads every key as the model does. A removal reaches every record of
+    its key, a copy that the other holder wrote included. A holder that
+    kills its newest record cuts no record that another holder appends
+    after it.
+    `memo_file.rs::every_holder_is_one_relation`,
+    `memo_file.rs::two_holders_over_one_file_are_one_relation`,
+    `memo_file.rs::a_dead_tail_cuts_no_record_of_another_holder`.
+58. **A policy bounds the file.** Under a policy that keeps at most `c`
+    keys, a file holds at most `c` keys after every insert and after it is
+    opened again. It is never longer than its header, twice its live
+    records, 64 KiB of dead records and one buffer of 256 KiB of new
+    records. `memo_file.rs::a_policy_bounds_the_file`.
 
 ## 10. Non-goals
 

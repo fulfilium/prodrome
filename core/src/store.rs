@@ -265,11 +265,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
                 return Ok(Listing::default())
             }
-            Err(error) => return Err(io(&dir, &error)),
+            Err(error) => return Err(ProdromeError::io(&dir, &error)),
         };
         let mut listing = Listing::default();
         for entry in entries {
-            let entry = entry.map_err(|e| io(&dir, &e))?;
+            let entry = entry.map_err(|e| ProdromeError::io(&dir, &e))?;
             let file = entry.file_name().to_string_lossy().into_owned();
             match file.strip_suffix(".py").map(Hash::new) {
                 Some(Ok(name)) => listing.objects.push((name, entry)),
@@ -338,9 +338,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         use rustix::fs::{flock, FlockOperation};
         make_dir(&self.root)?;
         let path = self.lock_file();
-        let handle = File::create(&path).map_err(|e| io(&path, &e))?;
+        let handle = File::create(&path).map_err(|e| ProdromeError::io(&path, &e))?;
         flock(&handle, FlockOperation::LockExclusive)
-            .map_err(|e| io(&path, &std::io::Error::from(e)))?;
+            .map_err(|e| ProdromeError::io(&path, &std::io::Error::from(e)))?;
         Ok(Some(handle))
     }
 
@@ -590,7 +590,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             return Ok(digest);
         }
         if path.exists() {
-            let existing = fs::read(&path).map_err(|e| io(&path, &e))?;
+            let existing = fs::read(&path).map_err(|e| ProdromeError::io(&path, &e))?;
             if existing != text {
                 return Err(ProdromeError::Store(format!(
                     "object {} exists with different bytes — sha256 collision or corruption",
@@ -834,7 +834,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let entries = match fs::read_dir(&dir) {
             Ok(entries) => entries,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(io(&dir, &error)),
+            Err(error) => return Err(ProdromeError::io(&dir, &error)),
         };
         let mut files: Vec<String> = entries
             .filter_map(Result::ok)
@@ -908,7 +908,7 @@ fn read_object(dir: &Path, name: &Hash) -> Result<Vec<u8>, ProdromeError> {
         std::io::ErrorKind::NotFound => {
             ProdromeError::Store(format!("missing object {}", name.as_str()))
         }
-        _ => io(&path, &error),
+        _ => ProdromeError::io(&path, &error),
     })
 }
 
@@ -953,11 +953,11 @@ fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
             Ok(mut file) => {
                 file.write_all(bytes)
                     .and_then(|()| file.sync_all())
-                    .map_err(|e| io(&temp, &e))?;
+                    .map_err(|e| ProdromeError::io(&temp, &e))?;
                 return Ok(temp);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(io(&temp, &error)),
+            Err(error) => return Err(ProdromeError::io(&temp, &error)),
         }
     }
 }
@@ -965,7 +965,7 @@ fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
 /// `from` renamed to `to`, and `to`'s directory synced when it is not
 /// `from`'s, whose sync the caller owes (one per batch).
 fn rename_into(from: &Path, to: &Path) -> Result<(), ProdromeError> {
-    fs::rename(from, to).map_err(|e| io(from, &e))?;
+    fs::rename(from, to).map_err(|e| ProdromeError::io(from, &e))?;
     match to.parent() {
         Some(dir) if Some(dir) != from.parent() => sync_dir(dir),
         _ => Ok(()),
@@ -985,7 +985,7 @@ fn make_dir(dir: &Path) -> Result<(), ProdromeError> {
         made.push(at);
         missing = at.parent();
     }
-    fs::create_dir_all(dir).map_err(|e| io(dir, &e))?;
+    fs::create_dir_all(dir).map_err(|e| ProdromeError::io(dir, &e))?;
     for at in made.into_iter().rev() {
         if let Some(parent) = at.parent().filter(|parent| !parent.as_os_str().is_empty()) {
             sync_dir(parent)?;
@@ -1017,14 +1017,7 @@ fn random() -> u64 {
 fn sync_dir(dir: &Path) -> Result<(), ProdromeError> {
     File::open(dir)
         .and_then(|handle| handle.sync_all())
-        .map_err(|error| io(dir, &error))
-}
-
-fn io(path: &Path, error: &std::io::Error) -> ProdromeError {
-    ProdromeError::Io {
-        path: path.display().to_string(),
-        message: error.to_string(),
-    }
+        .map_err(|error| ProdromeError::io(dir, &error))
 }
 
 #[cfg(test)]

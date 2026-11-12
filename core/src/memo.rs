@@ -6,25 +6,42 @@
 //! store with one register per key in the flat order, joined by union, from
 //! which any entry may be dropped ([`cache`]).
 //!
-//! Hierarchical caching is then one combinator, the memoised fold over a
-//! content-addressed tree of any shape ([`fold()`]): a node's [`name`]
-//! covers its children's names, Merkle style, the algebra is memoised at
-//! every node, and what a fold looked at is a [`Report`]. A long sequence
-//! is given a balanced shape ([`balance()`]) so a change's spine through it
-//! is logarithmic.
+//! WHERE A CACHE HOLDS ITS PAIRS is a [`Holder`], the one interface of that
+//! relation, with one set of laws (SPEC law 57). A holder is an interpreter
+//! of the relation: [`Memory`] holds the pairs in a hash map, and [`File`]
+//! holds them in one file that a new process reads (SPEC §6, "A cache
+//! file"). [`Cache`] is a holder under an eviction policy, and is a holder
+//! itself. [`Front`] reads a holder through a cache in memory: its meaning
+//! is the holder's, and its memory is only a cost.
 //!
-//! The module depends on the hash type and on nothing else of the crate: no
-//! schema, no store and no FPL.
+//! Hierarchical caching is then one combinator, the memoised fold over a
+//! content-addressed tree of any shape ([`fold()`]), over any holder: a
+//! node's [`name`] covers its children's names, Merkle style, the algebra is
+//! memoised at every node, and what a fold looked at is a [`Report`]. A long
+//! sequence is given a balanced shape ([`balance()`]) so a change's spine
+//! through it is logarithmic.
+//!
+//! The module depends on the hash type, on the literal codec through which
+//! a file keeps a value, and on nothing else of the crate: no schema, no
+//! store and no FPL.
 
 #![warn(clippy::pedantic)]
 
 pub mod balance;
 pub mod cache;
+#[cfg(unix)]
+pub mod file;
 pub mod fold;
+pub mod front;
+pub mod holder;
 
 pub use balance::balance;
 pub use cache::{Cache, Evict, Finding, Keep, Key, Lookup, Lru};
+#[cfg(unix)]
+pub use file::File;
 pub use fold::{fold, Algebra, Counts, Outcome, Report, Tree, Visit};
+pub use front::Front;
+pub use holder::{Holder, Memory};
 
 use crate::event::Hash;
 

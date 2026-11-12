@@ -41,7 +41,7 @@ impl Checks {
             argument: Hash::of_bytes(print_literal(&signed.to_value()).as_bytes()),
         };
         if let Lookup::Hit(verifies) = self.held().get(&key) {
-            return *verifies;
+            return verifies;
         }
         let verifies = signed.verifies();
         // A second value under one key is the cache's finding; this answer

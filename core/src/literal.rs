@@ -51,6 +51,14 @@ impl ProdromeError {
     pub fn invalid(message: impl Into<String>) -> Self {
         ProdromeError::Invalid(message.into())
     }
+
+    /// The failure of an input or output on the file at `path`.
+    pub(crate) fn io(path: &std::path::Path, error: &std::io::Error) -> Self {
+        ProdromeError::Io {
+            path: path.display().to_string(),
+            message: error.to_string(),
+        }
+    }
 }
 
 /// An integer of the grammar. Every integer the chain stores fits an `i64`,

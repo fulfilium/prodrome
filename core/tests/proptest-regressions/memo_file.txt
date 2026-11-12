@@ -1,0 +1,9 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 9f68c86fe07e8bf72868f946d0387a02e3a0e235c5356fa6d74d16804a77ba22 # shrinks to shape = Shape([Shape([]), Shape([Shape([]), Shape([])])])
+cc 0f6a31acad58a97a1a0be713c5099185596872ee9e9c00cd484105a1b224309c # shrinks to ops = [Add(0, 0, 0), Reopen, Remove(0, 0), Add(0, 0, 1), Add(0, 0, 0), Reopen], front = 0
+cc e7a4176c8d22837ea9adf38c4fddb10c264ec20f4b9f7f606221dc6812039ed8 # shrinks to steps = [Add(true, 0, 0, 0), Remove(false, 0, 0), Remove(false, 0, 0), Add(false, 0, 0, 0), Sync]

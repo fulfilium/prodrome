@@ -1145,6 +1145,14 @@ In this repository, after stage 3:
    `memo_balance.rs`: a balanced sequence folds to the sequence and its
    measures index it, its shape is its elements, and an edit computes a
    logarithmic number of nodes where a list computes all before it.
+
+   BUILT LATER: a cache held in a file. `memo::Holder` is the one
+   interface of the pairs, with `memo::Memory` and `memo::File` as its two
+   interpreters, `Cache` as a holder under a policy, and `memo::Front` as
+   a holder read through memory. `memo::fold` runs over any holder, and
+   `Cache::forget` erases values from a file. SPEC §6 gives the file's
+   layout, and SPEC laws 51 to 58 state the laws, in
+   `core/tests/all/memo_file.rs` and `memo_entities.rs`.
 9. **Nesting** (§6.3). A register whose value is a history held by its heads;
    `join` flattening a nest into one history keyed by path, `unit` and
    `bind`; a restricted join that accepts chosen objects (the shape an
