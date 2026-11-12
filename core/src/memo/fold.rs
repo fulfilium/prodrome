@@ -13,7 +13,8 @@
 
 use crate::event::Hash;
 
-use super::cache::{Cache, Evict, Key, Lookup};
+use super::cache::{Key, Lookup};
+use super::holder::Holder;
 
 /// A node of a content-addressed tree: a fixed point of some functor, seen
 /// through its name and its recursive positions.
@@ -136,6 +137,8 @@ enum Frame<'t, T> {
 
 /// The algebra folded over `tree` bottom-up, memoised in `cache` at every
 /// node by (the algebra's name, the node's name), with what it looked at.
+/// The cache is any [`Holder`]: a [`super::Cache`] in memory or in a file,
+/// or a [`super::Front`] of memory before a file.
 ///
 /// Its value is the plain fold's (`memo f = f`) whatever entries were
 /// dropped, wherever the cache's entries were made by a pure algebra's
@@ -148,12 +151,12 @@ enum Frame<'t, T> {
 // Its one `expect` cannot fire: every node entered leaves exactly one value,
 // so the root's is the one left when the stack empties.
 #[allow(clippy::missing_panics_doc)]
-pub fn fold<T, A, E>(algebra: &A, tree: &T, cache: &mut Cache<A::Out, E>) -> (A::Out, Report)
+pub fn fold<T, A, H>(algebra: &A, tree: &T, cache: &mut H) -> (A::Out, Report)
 where
     T: Tree,
     A: Algebra<T>,
-    A::Out: Clone + Eq,
-    E: Evict,
+    A::Out: Clone,
+    H: Holder<A::Out>,
 {
     let key = |node: &T| Key {
         function: algebra.name().clone(),
@@ -167,7 +170,7 @@ where
             Frame::Enter(node, depth) => {
                 let finding = match cache.get(&key(node)) {
                     Lookup::Hit(value) => {
-                        results.push(value.clone());
+                        results.push(value);
                         report.visits.push(Visit {
                             name: node.name().clone(),
                             depth,
@@ -206,7 +209,7 @@ where
                     // The key missed when this node was entered, so a value
                     // there now came from this fold: its own, for a pure
                     // algebra, and a second one is reported where it lands.
-                    match cache.insert(key(node), value.clone()) {
+                    match cache.add(key(node), value.clone()) {
                         Ok(()) => Outcome::Computed,
                         Err(_) => Outcome::Finding,
                     }

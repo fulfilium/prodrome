@@ -234,15 +234,33 @@ impl Hash {
     }
 
     pub(crate) fn of_bytes(bytes: &[u8]) -> Hash {
+        Hash::of_digest(Sha256::digest(bytes).into())
+    }
+
+    /// The name whose digest is `digest`. Every 32 bytes are a digest, so
+    /// every 32 bytes are a name.
+    pub(crate) fn of_digest(digest: [u8; 32]) -> Hash {
         const HEX: &[u8; 16] = b"0123456789abcdef";
         let mut words = [0_u64; 4];
         let mut text = String::with_capacity(64);
-        for (at, byte) in Sha256::digest(bytes).into_iter().enumerate() {
+        for (at, byte) in digest.into_iter().enumerate() {
             words[at / 8] = words[at / 8] << 8 | u64::from(byte);
             text.push(char::from(HEX[usize::from(byte >> 4)]));
             text.push(char::from(HEX[usize::from(byte & 0xf)]));
         }
         Hash { words, text }
+    }
+
+    /// The 32 bytes of the digest that the name spells. A cache file
+    /// holds a name so ([`crate::memo::file`]), and there is no file off
+    /// unix.
+    #[cfg(unix)]
+    pub(crate) fn digest(&self) -> [u8; 32] {
+        let mut digest = [0_u8; 32];
+        for (at, word) in self.words.iter().enumerate() {
+            digest[at * 8..at * 8 + 8].copy_from_slice(&word.to_be_bytes());
+        }
+        digest
     }
 }
 
