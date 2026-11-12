@@ -28,6 +28,11 @@ pub(super) const MARK: [u8; 4] = [0xFF, b'm', b'r', 0x00];
 /// The bytes before the value: the mark, the length and the two names.
 const HEAD: usize = 4 + 4 + 32 + 32;
 
+/// The bytes of a record that a removal keeps: the mark and the length. A
+/// removal writes zeros over the rest, so a dead record still frames, and
+/// every reader agrees where the records of a file end.
+pub(super) const KEPT: usize = 4 + 4;
+
 /// The bytes after the value: the check.
 const CHECK: usize = 32;
 
@@ -41,6 +46,9 @@ pub(super) const LONGEST: usize = 1 << 26;
 enum Frame {
     /// A record's head, whose whole record lies within the bytes.
     Whole(Header),
+    /// A dead record of this length: its mark and its length, and zeros
+    /// for the rest of it.
+    Dead(usize),
     /// A record's head, whose record runs past the end of the bytes.
     Short,
     /// No record starts here.
@@ -124,12 +132,21 @@ fn frame(bytes: &[u8]) -> Frame {
     let Some(check) = rest.get(length..).and_then(<[u8]>::first_chunk::<CHECK>) else {
         return Frame::Short;
     };
+    let full = HEAD + length + CHECK;
+    // A print is never empty and holds no NUL, so a record whose value is
+    // zeros is dead.
+    if bytes
+        .get(KEPT..full)
+        .is_some_and(|rest| rest.iter().all(|byte| *byte == 0))
+    {
+        return Frame::Dead(full);
+    }
     Frame::Whole(Header {
         names: Names {
             function: *function,
             argument: *argument,
         },
-        length: HEAD + length + CHECK,
+        length: full,
         check: *check,
     })
 }
@@ -147,28 +164,60 @@ pub(super) fn value<'r>(record: &'r [u8], names: &Names) -> Option<&'r [u8]> {
     holds.then_some(body.get(HEAD..)?)
 }
 
-/// Every whole record in `bytes` with its offset, in order, and the end of
-/// the last one. A reader that finds no record where one should start goes
-/// on at the next mark.
-pub(super) fn records(bytes: &[u8]) -> (Vec<(usize, Header)>, usize) {
-    let mut found = Vec::new();
+/// What a reader found in a run of bytes.
+pub(super) struct Scan {
+    /// Every whole record, with its offset, in order.
+    pub found: Vec<(usize, Header)>,
+    /// The end of the last record, whole or dead, or 0 for none.
+    pub end: usize,
+    /// The start of that record, or 0 for none.
+    pub last: usize,
+}
+
+/// Every record in `bytes`. A reader that finds no record where one should
+/// start goes on at the next mark.
+pub(super) fn records(bytes: &[u8]) -> Scan {
+    let mut scan = Scan {
+        found: Vec::new(),
+        end: 0,
+        last: 0,
+    };
     let mut at = 0;
-    let mut end = 0;
     while at < bytes.len() {
-        match frame(&bytes[at..]) {
+        let length = match frame(&bytes[at..]) {
             Frame::Whole(header) => {
-                let length = header.length;
-                found.push((at, header));
-                at += length;
-                end = at;
+                scan.found.push((at, header));
+                header.length
             }
+            Frame::Dead(length) => length,
             Frame::Short | Frame::Not => match next_mark(bytes, at + 1) {
-                Some(next) => at = next,
+                Some(next) => {
+                    at = next;
+                    continue;
+                }
                 None => break,
             },
-        }
+        };
+        scan.last = at;
+        at += length;
+        scan.end = at;
     }
-    (found, end)
+    scan
+}
+
+/// Whether `bytes` are exactly one record, whole or dead.
+pub(super) fn one(bytes: &[u8]) -> bool {
+    match frame(bytes) {
+        Frame::Whole(Header { length, .. }) | Frame::Dead(length) => length == bytes.len(),
+        Frame::Short | Frame::Not => false,
+    }
+}
+
+/// Where zeros over the record of `length` that starts at `at` in `bytes`
+/// may end: the record's end, or the next mark before it, so that a length
+/// that was never checked reaches no record after it.
+pub(super) fn reach(bytes: &[u8], at: usize, length: usize) -> usize {
+    next_mark(bytes, at + 1).map_or(at + length, |next| next.min(at + length))
 }
 
 /// Where the next mark at or after `from` starts in `bytes`.

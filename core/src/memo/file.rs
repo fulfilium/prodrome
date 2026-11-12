@@ -8,41 +8,57 @@
 //! damaged, or that another program wrote in another form is not a value:
 //! its key misses (SPEC law 52).
 //!
+//! A DEAD RECORD keeps its mark and its length, and has zeros for the rest:
+//! its names, its value and its check. A dead record frames as a record of
+//! that length, so every holder agrees where the records of a file end,
+//! and no byte of its value is left.
+//!
 //! THE ORDER OF WRITES. A holder puts each new record in a buffer in memory.
 //! It writes the buffer when the buffer is full, at [`Holder::settle`], and
 //! when the holder is dropped. To write, it takes an exclusive `flock` on
-//! the file, reads the records that other holders appended, truncates a
-//! record cut short at the end, writes zeros over the records of the pairs
-//! it removed, and appends the buffer in one write. A stop before the
-//! append leaves the file as it was, with some removed records zeroed. A
-//! stop during the append leaves whole records and one record cut short at
-//! the end, which is no entry. A record that the disk did not keep, or kept
-//! in part, is no entry. So a stop at any point leaves a file that holds a
-//! subset of the pairs that were written (SPEC law 54).
+//! the file and reads the records that other holders appended. It first
+//! checks that the record that it read last still ends where it ended;
+//! otherwise it reads the whole file again. It truncates a record cut short
+//! at the end, kills every record of each key that it removed, and appends
+//! the buffer in one write. A stop before the append leaves the file as it
+//! was, with some removed records dead. A stop during the append leaves
+//! whole records and one record cut short at the end, which is no entry. A
+//! record that the disk did not keep, or kept in part, is no entry. So a
+//! stop at any point leaves a file that holds a subset of the pairs that
+//! were written (SPEC law 54).
 //!
 //! TWO PROCESSES that write one file each take the lock for each write. A
 //! holder reads a record without a lock and checks it instead. When a
 //! record that its index names does not check, the holder reads the file
-//! again under a shared lock.
+//! again under a shared lock. A removal kills every record of the key that
+//! the file holds when the holder writes, a copy that another holder wrote
+//! included (SPEC law 57).
 //!
-//! THE BOUND. A removed record is dead. When the dead bytes are more than
-//! the live bytes and more than [`SLACK`], the holder COMPACTS the file in
-//! place. Under the exclusive lock it raises the generation in the header,
-//! writes the live records that check one after the other from the header,
-//! truncates the rest, and syncs. So a file is at most twice its live
-//! records, the slack and one buffer long, and a policy that bounds the
-//! keys bounds the file ([`super::Cache`], SPEC law 58). Another process
-//! sees the new generation and reads the file again. The file keeps its
-//! inode, so every process that holds it open reads the compacted file.
+//! THE BOUND. When the dead bytes are more than the live bytes and more
+//! than [`SLACK`], the holder COMPACTS the file in place. Under the
+//! exclusive lock it raises the generation in the header, writes the live
+//! records that check one after the other from the header, truncates the
+//! rest, and syncs. So a file is at most twice its live records, the slack
+//! and one buffer long, and a policy that bounds the keys bounds the file
+//! ([`super::Cache`], SPEC law 58). Another process sees the new generation
+//! and reads the file again. The file keeps its inode, so every process that
+//! holds it open reads the compacted file. A stop during a compaction can
+//! lose a live record: a record that moves toward the header by less than
+//! its own length is overwritten by the start of its own new copy. What is
+//! left is still a subset of what was written.
 //!
-//! FORGETTING ([`Holder::forget`]) writes zeros over every record of each
-//! doomed key, syncs, and then compacts and syncs. Then no record of a
-//! doomed key, and no damaged remnant of any record, is left in the file
-//! (SPEC law 55).
+//! MEMORY. A holder reads the whole file into memory to read it again, and
+//! a compaction holds the old file and the new one at once: at most twice
+//! the file's length, with an index of about 100 bytes for each key.
+//!
+//! FORGETTING ([`Holder::forget`]) kills every record of each doomed key,
+//! no further than the next mark where a length was never checked, syncs,
+//! and then compacts and syncs. Then no record of a doomed key, and no
+//! damaged remnant of any record, is left in the file (SPEC law 55).
 
 mod record;
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::marker::PhantomData;
 use std::os::unix::fs::FileExt;
@@ -84,22 +100,23 @@ pub struct File<V> {
     pending: Vec<u8>,
     /// The keys of the records in `pending`, in order.
     waiting: Vec<Names>,
-    /// The pairs removed whose records are not yet zeroed, each with the
-    /// places of its records in the file.
-    removed: HashMap<Pair, Vec<(u64, usize)>>,
+    /// The start of the last record in `pending`.
+    last_pending: usize,
+    /// The keys removed whose records in the file are not yet dead.
+    removed: HashSet<Names>,
     /// The writes that failed since the last `settle`.
     failed: Vec<ProdromeError>,
     value: PhantomData<fn() -> V>,
 }
 
-/// A key and the check of one of its records, which together name one pair.
-type Pair = (Names, [u8; 32]);
-
 /// How far a holder read its file, and at which generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Seen {
-    /// The end of the last whole record read.
+    /// The end of the last record read, whole or dead.
     end: u64,
+    /// The start of that record. It equals `end` when no record was read,
+    /// and `end` is then the end of the header.
+    last: u64,
     generation: u64,
 }
 
@@ -154,12 +171,14 @@ impl<V> File<V> {
             index: HashMap::new(),
             seen: Seen {
                 end: HEADER,
+                last: HEADER,
                 generation: 0,
             },
             live: 0,
             pending: Vec::new(),
             waiting: Vec::new(),
-            removed: HashMap::new(),
+            last_pending: 0,
+            removed: HashSet::new(),
             failed: Vec::new(),
             value: PhantomData,
         };
@@ -185,26 +204,29 @@ impl<V> File<V> {
         done
     }
 
-    /// Writes the header of an empty file, and refuses a file with another
-    /// header. The caller holds the exclusive lock.
+    /// Writes the header of a file that has no whole header, and refuses a
+    /// file whose first bytes are not a cache file's. A file shorter than
+    /// the header is one whose creation stopped, and is an empty cache. The
+    /// caller holds the exclusive lock.
     fn begin(&mut self) -> Result<(), ProdromeError> {
-        if self.length()? == 0 {
-            let mut header = MAGIC.to_vec();
-            header.extend_from_slice(&0_u64.to_be_bytes());
-            return self
-                .handle
-                .write_all_at(&header, 0)
-                .and_then(|()| self.handle.sync_data())
-                .map_err(|error| ProdromeError::io(&self.path, &error));
-        }
-        let mut magic = [0; 8];
-        match self.handle.read_exact_at(&mut magic, 0) {
-            Ok(()) if magic == MAGIC => Ok(()),
-            Ok(()) | Err(_) => Err(ProdromeError::Store(format!(
+        let head = self.tail(0)?;
+        let magic = &head[..head.len().min(MAGIC.len())];
+        if !MAGIC.starts_with(magic) {
+            return Err(ProdromeError::Store(format!(
                 "{} is not a cache file",
                 self.path.display()
-            ))),
+            )));
         }
+        if head.len() as u64 >= HEADER {
+            return Ok(());
+        }
+        let mut header = MAGIC.to_vec();
+        header.extend_from_slice(&0_u64.to_be_bytes());
+        self.handle
+            .set_len(0)
+            .and_then(|()| self.handle.write_all_at(&header, 0))
+            .and_then(|()| self.handle.sync_data())
+            .map_err(|error| ProdromeError::io(&self.path, &error))
     }
 
     fn length(&self) -> Result<u64, ProdromeError> {
@@ -235,12 +257,31 @@ impl<V> File<V> {
 
     /// Reads what changed in the file since this holder last read it: the
     /// records appended after its end, or the whole file again when another
-    /// holder compacted it. The caller holds a lock.
+    /// holder compacted it, or when this holder cannot show that its end is
+    /// still the end of a record. The caller holds a lock.
     fn catch_up(&mut self) -> Result<(), ProdromeError> {
-        if self.generation()? != self.seen.generation || self.length()? < self.seen.end {
+        if self.generation()? != self.seen.generation
+            || self.length()? < self.seen.end
+            || !self.at_a_boundary()?
+        {
             return self.reread();
         }
         self.read_from(self.seen.end)
+    }
+
+    /// Whether the record that this holder read last still ends at its
+    /// end: then the next record starts there.
+    fn at_a_boundary(&self) -> Result<bool, ProdromeError> {
+        let length = usize::try_from(self.seen.end - self.seen.last)
+            .map_err(|_| ProdromeError::Store(format!("{} is too large", self.path.display())))?;
+        if length == 0 {
+            return Ok(true);
+        }
+        let mut bytes = vec![0; length];
+        self.handle
+            .read_exact_at(&mut bytes, self.seen.last)
+            .map_err(|error| ProdromeError::io(&self.path, &error))?;
+        Ok(record::one(&bytes))
     }
 
     /// Reads the whole file again. The pending records stay. The caller
@@ -251,40 +292,36 @@ impl<V> File<V> {
         }
         self.index.retain(|_, slots| !slots.is_empty());
         self.live = 0;
-        for places in self.removed.values_mut() {
-            places.clear();
-        }
+        self.seen.end = HEADER;
+        self.seen.last = HEADER;
         self.read_from(HEADER)
     }
 
-    /// Indexes every record from `from` to the end of the file, and moves
-    /// `seen` to the end of the last whole record and to the file's
-    /// generation. The caller holds a lock.
+    /// Indexes every record from `from`, which is the end of a record, to
+    /// the end of the file, and moves `seen` to the last record found and
+    /// to the file's generation. The caller holds a lock.
     fn read_from(&mut self, from: u64) -> Result<(), ProdromeError> {
-        let (found, end) = record::records(&self.tail(from)?);
-        for (at, header) in found {
+        let scan = record::records(&self.tail(from)?);
+        for (at, header) in scan.found {
             self.index_slot(header, from + at as u64);
         }
-        self.seen = Seen {
-            end: from + end as u64,
-            generation: self.generation()?,
-        };
+        if scan.end > 0 {
+            self.seen.end = from + scan.end as u64;
+            self.seen.last = from + scan.last as u64;
+        }
+        self.seen.generation = self.generation()?;
         Ok(())
     }
 
-    /// Indexes the record at `at`. A record of a removed pair is listed to
-    /// be zeroed, and a second record of one pair is dead.
+    /// Indexes the record at `at`. A record of a removed key is not
+    /// indexed: the next write kills it. A second copy of one pair is
+    /// indexed too, because another holder may kill the first.
     fn index_slot(&mut self, header: Header, at: u64) {
-        let pair = (header.names, header.check);
-        if let Some(places) = self.removed.get_mut(&pair) {
-            places.push((at, header.length));
+        let (names, check) = (header.names, header.check);
+        if self.removed.contains(&names) {
             return;
         }
-        let (names, check) = pair;
         let slots = self.index.entry(names).or_default();
-        if slots.iter().any(|slot| slot.check == check) {
-            return;
-        }
         self.live += header.length as u64;
         slots.push(Slot {
             place: Place::Written(at),
@@ -312,25 +349,24 @@ impl<V> File<V> {
         }
     }
 
-    /// Writes zeros over the records of the removed pairs, each after its
-    /// bytes check as that pair's record, and then writes the pending
-    /// records after the last whole record. The caller holds the exclusive
-    /// lock.
+    /// Kills every record of a removed key that the file holds and that
+    /// checks, and then writes the pending records after the last record.
+    /// A key leaves `removed` only when every one of its records is dead.
+    /// The caller holds the exclusive lock.
     fn write(&mut self) -> Result<(), ProdromeError> {
         self.catch_up()?;
-        for ((names, check), places) in std::mem::take(&mut self.removed) {
-            for (at, length) in places {
-                let bytes = self.bytes(Slot {
-                    place: Place::Written(at),
-                    length,
-                    check,
-                });
-                if record::value(&bytes, &names).is_some() && bytes.ends_with(&check) {
-                    self.handle
-                        .write_all_at(&vec![0; length], at)
-                        .map_err(|error| ProdromeError::io(&self.path, &error))?;
+        if !self.removed.is_empty() {
+            let bytes = self.tail(HEADER)?;
+            for (at, header) in record::records(&bytes).found {
+                let checks = bytes
+                    .get(at..at + header.length)
+                    .and_then(|record| record::value(record, &header.names))
+                    .is_some();
+                if checks && self.removed.contains(&header.names) {
+                    self.kill(HEADER + at as u64, header.length)?;
                 }
             }
+            self.removed.clear();
         }
         if self.pending.is_empty() {
             return Ok(());
@@ -357,16 +393,28 @@ impl<V> File<V> {
             }
         }
         if written.is_ok() {
+            self.seen.last = base + self.last_pending as u64;
             self.seen.end += self.pending.len() as u64;
         }
         self.pending.clear();
+        self.last_pending = 0;
         written
     }
 
-    /// Writes what is pending under the exclusive lock.
+    /// Writes zeros over the record of `length` bytes at `at`, all but its
+    /// mark and its length, so that it is dead and still frames.
+    fn kill(&self, at: u64, length: usize) -> Result<(), ProdromeError> {
+        let kept = record::KEPT as u64;
+        self.handle
+            .write_all_at(&vec![0; length.saturating_sub(record::KEPT)], at + kept)
+            .map_err(|error| ProdromeError::io(&self.path, &error))
+    }
+
+    /// Writes what is pending under the exclusive lock. With nothing
+    /// pending, reads what other holders wrote, under the shared lock.
     fn flush(&mut self) -> Result<(), ProdromeError> {
         if self.pending.is_empty() && self.removed.is_empty() {
-            return Ok(());
+            return self.locked(FlockOperation::LockShared, File::catch_up);
         }
         self.locked(FlockOperation::LockExclusive, File::write)
     }
@@ -393,17 +441,22 @@ impl<V> File<V> {
         }
         slots.sort_by_key(|(at, _, _)| *at);
         let mut new = Vec::with_capacity(old.len());
+        let mut last = 0;
         let mut index: HashMap<Names, Vec<Slot>> = HashMap::new();
         for (at, names, slot) in slots {
+            let copied = index
+                .get(&names)
+                .is_some_and(|held| held.iter().any(|copy| copy.check == slot.check));
             let bytes = usize::try_from(at - HEADER)
                 .ok()
                 .and_then(|start| old.get(start..start + slot.length))
-                .filter(|bytes| record::value(bytes, &names).is_some());
+                .filter(|bytes| !copied && record::value(bytes, &names).is_some());
             if let Some(bytes) = bytes {
                 index.entry(names).or_default().push(Slot {
                     place: Place::Written(HEADER + new.len() as u64),
                     ..slot
                 });
+                last = new.len();
                 new.extend_from_slice(bytes);
             }
         }
@@ -416,7 +469,11 @@ impl<V> File<V> {
         self.index = index;
         self.live = new.len() as u64;
         self.removed.clear();
-        self.seen = Seen { end, generation };
+        self.seen = Seen {
+            end,
+            last: HEADER + last as u64,
+            generation,
+        };
         Ok(())
     }
 
@@ -502,16 +559,23 @@ impl<V: Literal + Clone + Eq> Holder<V> for File<V> {
         let Some((record, check)) = record::encode(&names, print.as_bytes()) else {
             return Ok(());
         };
+        // Another holder may have killed a record that the index names, or
+        // written one of another type: read them before trusting them.
+        if self.index.contains_key(&names) {
+            let _held = self.read(names);
+        }
         let slots = self.index.entry(names).or_default();
         if slots.iter().any(|slot| slot.check == check) {
             return Ok(());
         }
-        let second = slots.len() == 1;
+        let checks: HashSet<[u8; 32]> = slots.iter().map(|slot| slot.check).collect();
+        let second = checks.len() == 1;
         slots.push(Slot {
             place: Place::Pending(self.pending.len()),
             length: record.len(),
             check,
         });
+        self.last_pending = self.pending.len();
         self.pending.extend_from_slice(&record);
         self.waiting.push(names);
         if self.pending.len() >= BATCH {
@@ -531,17 +595,14 @@ impl<V: Literal + Clone + Eq> Holder<V> for File<V> {
         let Some(slots) = self.index.remove(&names) else {
             return false;
         };
+        // The next write kills every record of the key that the file holds,
+        // a copy that another holder wrote included.
+        self.removed.insert(names);
         for slot in slots {
             match slot.place {
-                Place::Written(at) => {
-                    self.live -= slot.length as u64;
-                    self.removed
-                        .entry((names, slot.check))
-                        .or_default()
-                        .push((at, slot.length));
-                }
+                Place::Written(_) => self.live -= slot.length as u64,
                 Place::Pending(at) => {
-                    if let Some(bytes) = self.pending.get_mut(at..at + slot.length) {
+                    if let Some(bytes) = self.pending.get_mut(at + record::KEPT..at + slot.length) {
                         bytes.fill(0);
                     }
                 }
@@ -559,15 +620,15 @@ impl<V: Literal + Clone + Eq> Holder<V> for File<V> {
             file.write()?;
             // Zeros over every record of a doomed key that the file holds,
             // a record this holder never indexed included.
+            // A length that was never checked reaches no further than the
+            // next mark.
             let names: BTreeSet<Names> = doomed.iter().map(Names::of).collect();
-            let (found, _) = record::records(&file.tail(HEADER)?);
-            for (at, header) in found
-                .iter()
-                .filter(|(_, header)| names.contains(&header.names))
-            {
-                file.handle
-                    .write_all_at(&vec![0; header.length], HEADER + *at as u64)
-                    .map_err(|error| ProdromeError::io(&file.path, &error))?;
+            let bytes = file.tail(HEADER)?;
+            for (at, header) in record::records(&bytes).found {
+                if names.contains(&header.names) {
+                    let length = record::reach(&bytes, at, header.length) - at;
+                    file.kill(HEADER + at as u64, length)?;
+                }
             }
             file.handle
                 .sync_data()

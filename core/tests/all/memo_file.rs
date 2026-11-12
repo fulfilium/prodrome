@@ -234,6 +234,113 @@ proptest! {
     }
 }
 
+/// One step of two holders over one file. `true` names the second.
+#[derive(Debug, Clone)]
+enum Step {
+    /// The holder adds the pair and writes it.
+    Add(bool, u8, u8, u32),
+    /// The holder removes the key and writes the removal.
+    Remove(bool, u8, u8),
+    /// The holder forgets the keys.
+    Forget(bool, Vec<(u8, u8)>),
+    /// The holder is dropped and opened again.
+    Reopen(bool),
+    /// Both holders read what the other wrote.
+    Sync,
+}
+
+fn steps() -> impl Strategy<Value = Vec<Step>> {
+    let step = prop_oneof![
+        6 => (any::<bool>(), 0..2u8, 0..3u8, 0..3u32).prop_map(|(b, f, a, v)| Step::Add(b, f, a, v)),
+        3 => (any::<bool>(), 0..2u8, 0..3u8).prop_map(|(b, f, a)| Step::Remove(b, f, a)),
+        1 => (any::<bool>(), prop::collection::vec((0..2u8, 0..3u8), 0..3))
+            .prop_map(|(b, keys)| Step::Forget(b, keys)),
+        1 => any::<bool>().prop_map(Step::Reopen),
+        2 => Just(Step::Sync),
+    ];
+    prop::collection::vec(step, 0..32)
+}
+
+/// The pairs of a model, as a set.
+fn modelled(model: &Model) -> BTreeSet<(Key, u32)> {
+    model
+        .iter()
+        .flat_map(|(key, values)| values.iter().map(move |value| (key.clone(), *value)))
+        .collect()
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(128))]
+
+    /// Law 57, with two holders over one file, as two processes use it.
+    /// Each holder adds, removes and forgets, and writes each change at
+    /// once; the two read each other only at a sync. A removal reaches every
+    /// record of the key, a copy that the other holder wrote included. After
+    /// every step, a third holder that opens the file reads the model's
+    /// pairs; after every sync, each of the two reads every key as the
+    /// model does.
+    #[test]
+    fn two_holders_over_one_file_are_one_relation(steps in steps()) {
+        let (_scratch, path) = scratch("two-holders");
+        let mut holders = [open::<u32>(&path), open::<u32>(&path)];
+        let mut model = Model::new();
+        for step in &steps {
+            match step {
+                Step::Add(who, f, a, v) => {
+                    let values = model.entry(key(*f, *a)).or_default();
+                    if !values.contains(v) {
+                        values.push(*v);
+                    }
+                    let holder = &mut holders[usize::from(*who)];
+                    let _ = holder.add(key(*f, *a), *v);
+                    holder.settle().expect("settles");
+                }
+                Step::Remove(who, f, a) => {
+                    let holder = &mut holders[usize::from(*who)];
+                    // A holder removes what it holds: a key that it has not
+                    // read is not its to remove.
+                    if holder.remove(&key(*f, *a)) {
+                        model.remove(&key(*f, *a));
+                    }
+                    holder.settle().expect("settles");
+                }
+                Step::Forget(who, keys) => {
+                    let doomed: BTreeSet<Key> = keys.iter().map(|(f, a)| key(*f, *a)).collect();
+                    model.retain(|key, _| !doomed.contains(key));
+                    holders[usize::from(*who)].forget(&doomed).expect("forgets");
+                }
+                Step::Reopen(who) => {
+                    let at = usize::from(*who);
+                    holders[at].settle().expect("settles");
+                    holders[at] = open(&path);
+                }
+                Step::Sync => {
+                    for at in [0, 1, 0] {
+                        holders[at].settle().expect("settles");
+                    }
+                    for holder in &mut holders {
+                        for f in 0..2 {
+                            for a in 0..3 {
+                                let read: BTreeSet<u32> =
+                                    holder.get(&key(f, a)).values().into_iter().collect();
+                                let modelled: BTreeSet<u32> = model
+                                    .get(&key(f, a))
+                                    .into_iter()
+                                    .flatten()
+                                    .copied()
+                                    .collect();
+                                prop_assert_eq!(read, modelled);
+                            }
+                        }
+                    }
+                }
+            }
+            let mut third = open::<u32>(&path);
+            prop_assert_eq!(graph(&mut third), modelled(&model));
+        }
+    }
+}
+
 // --- law 51: reading through a kept cache is computing the function ------
 
 proptest! {
@@ -641,4 +748,88 @@ proptest! {
             prop_assert_eq!(fold(&sum(), tree, &mut file).0, cata(&sum(), tree));
         }
     }
+}
+
+/// Law 52, at the header: a file whose creation stopped before its header
+/// was whole opens as an empty cache, and a file that begins with other
+/// bytes is refused.
+#[test]
+fn a_header_cut_short_is_an_empty_cache() {
+    let (scratch, path) = scratch("header");
+    let mut file = open::<u64>(&path);
+    let _ = file.add(key(0, 0), 7);
+    file.settle().expect("settles");
+    drop(file);
+    let whole = fs::read(&path).expect("reads");
+    for cut in 1..16 {
+        fs::write(&path, &whole[..cut]).expect("writes");
+        let mut file = open::<u64>(&path);
+        assert!(file.is_empty(), "a header of {cut} bytes");
+        let _ = file.add(key(0, 0), 7);
+        file.settle().expect("settles");
+        drop(file);
+        assert_eq!(open::<u64>(&path).get(&key(0, 0)), Lookup::Hit(7));
+    }
+    let other = scratch.0.join("other");
+    fs::write(&other, b"not a cache").expect("writes");
+    assert!(File::<u64>::open(&other).is_err());
+}
+
+/// Law 55, over a damaged length: a forget of a key whose record's length
+/// field was changed to reach over the record after it writes no zeros past
+/// the next mark, so the record after it still reads.
+#[test]
+fn a_forget_reaches_no_record_after_the_next_mark() {
+    let (_scratch, path) = scratch("reach");
+    let mut file = open::<String>(&path);
+    let _ = file.add(key(0, 0), "doomed".to_string());
+    let _ = file.add(key(0, 1), "kept".to_string());
+    file.settle().expect("settles");
+    let mut bytes = fs::read(&path).expect("reads");
+    // The first record starts after the 16 bytes of the header; its length
+    // field is the four bytes after its mark. Make it cover both records.
+    let first = 16 + 104 + "'doomed'".len();
+    let second = bytes.len() - first;
+    let length = u32::try_from("'doomed'".len() + second).expect("small");
+    bytes[20..24].copy_from_slice(&length.to_be_bytes());
+    fs::write(&path, &bytes).expect("writes");
+    file.forget(&BTreeSet::from([key(0, 0)])).expect("forgets");
+    let after = fs::read(&path).expect("reads");
+    assert!(!holds(&after, b"doomed"));
+    assert_eq!(file.get(&key(0, 1)), Lookup::Hit("kept".to_string()));
+}
+
+/// Law 57, the sequence of review round 1: a holder kills its newest
+/// record, a second holder opens the file and appends a longer record, and
+/// the first appends again. Every holder frames a dead record as the
+/// others do, so no write cuts another's record, and a new holder reads
+/// every live pair.
+#[test]
+fn a_dead_tail_cuts_no_record_of_another_holder() {
+    let (_scratch, path) = scratch("dead-tail");
+    let mut first = open::<String>(&path);
+    let _ = first.add(key(0, 0), "kept".to_string());
+    let _ = first.add(key(0, 1), "removed".to_string());
+    first.settle().expect("settles");
+    assert!(first.remove(&key(0, 1)));
+    first.settle().expect("settles");
+    let mut second = open::<String>(&path);
+    let _ = second.add(key(0, 2), "a longer value than the removed one".to_string());
+    second.settle().expect("settles");
+    let _ = first.add(key(0, 3), "after".to_string());
+    first.settle().expect("settles");
+    let _ = second.add(key(1, 0), "last".to_string());
+    second.settle().expect("settles");
+    let mut third = open::<String>(&path);
+    let read: BTreeSet<(Key, String)> = graph(&mut third);
+    let expected: BTreeSet<(Key, String)> = [
+        (key(0, 0), "kept"),
+        (key(0, 2), "a longer value than the removed one"),
+        (key(0, 3), "after"),
+        (key(1, 0), "last"),
+    ]
+    .into_iter()
+    .map(|(key, value)| (key, value.to_string()))
+    .collect();
+    assert_eq!(read, expected);
 }
