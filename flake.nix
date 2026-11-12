@@ -356,9 +356,10 @@
 
         # THE EXAMPLES AS PICTURES (`nix build .#prodrome-typst-examples`):
         # each example's one page as a PNG. `typst/examples/*.png` are these
-        # bytes, committed so a reader sees the layouts without compiling,
-        # and `checks.prodrome-typst` recomputes them: a picture is a cache
-        # of a compilation, verified by compiling again (design §6.2).
+        # pictures, committed so a reader sees the layouts without
+        # compiling, and `checks.prodrome-typst` recomputes them: a picture
+        # is a cache of a compilation, verified by compiling again (design
+        # §6.2).
         prodrome-typst-examples = pkgs.runCommand "prodrome-typst-examples"
           { nativeBuildInputs = [ pkgs.typst ]; } ''
           mkdir -p $out
@@ -486,9 +487,13 @@
           # PDF and to HTML, so a layout that breaks either target fails here,
           # and compiles its laws (`tests/laws.typ`), which fail the compile
           # when an assert does not hold. The committed pictures of the
-          # examples must be what they render, byte for byte.
+          # examples must be what they render. The rasteriser's output is
+          # not the same bytes on every machine (two builds of one
+          # derivation differed in a few pixels, a normalised RMSE of
+          # 0.0004), so the pictures are compared as pixels: the RMSE must
+          # be at most 0.002, which three wholly changed pixels exceed.
           prodrome-typst = pkgs.runCommand "prodrome-typst-check"
-            { nativeBuildInputs = [ pkgs.typst ]; } ''
+            { nativeBuildInputs = [ pkgs.typst pkgs.imagemagick ]; } ''
             cp -r ${typstSrc} typst
             chmod -R u+w typst
             cd typst
@@ -497,8 +502,14 @@
             for doc in roadmap item; do
               ${typstCompile} "$doc.typ" "$doc.pdf"
               ${typstCompile} --features html --format html "$doc.typ" "$doc.html"
-              cmp ${prodrome-typst-examples}/$doc.png ${./typst/examples}/$doc.png || {
-                echo "typst/examples/$doc.png is not what $doc.typ renders:" >&2
+              # `compare` prints `<absolute> (<normalised>)` and exits 1 for
+              # any difference; no figure (two sizes, a file that is no
+              # picture) is a failure too.
+              far=$(compare -metric RMSE ${prodrome-typst-examples}/$doc.png \
+                ${./typst/examples}/$doc.png null: 2>&1 || true)
+              far=$(printf '%s\n' "$far" | sed -nE 's/^[0-9.e+-]+ \(([0-9.e+-]+)\)$/\1/p')
+              { [ -n "$far" ] && awk -v far="$far" 'BEGIN { exit !(far + 0 <= 0.002) }'; } || {
+                echo "typst/examples/$doc.png is not what $doc.typ renders (RMSE ''${far:-none}):" >&2
                 echo "  nix build .#prodrome-typst-examples && cp result/*.png typst/examples/" >&2
                 exit 1
               }
