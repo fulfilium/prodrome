@@ -20,9 +20,10 @@ constructor's fields never change, in any release.
   and erases their values from the file. SPEC §6 gives the layout of a
   cache file. A cache file is a new kind of file, and no object of a store
   changes. On the new `memo_file` example (a generated store of 40,000
-  objects), a new process opens a warm file in about 21 ms and folds the
-  store's tree with one hit, where the fold without a cache takes about
-  60 to 80 ms.
+  objects and a cache file of 5.6 MB), a new process opens the warm file
+  in about 25 ms and folds the store's tree with one hit. Without a cache
+  file, the same fold takes about 85 ms. After one object is appended, the
+  fold computes 10 to 14 of the tree's 50,000 nodes.
 - **`sign::Checks` and `Proof::through`, a table of signature checks
   (SPEC law 49).** `Checks` keeps whether each `Signed` object verifies,
   under the object's content name, at most its capacity of them, the least
