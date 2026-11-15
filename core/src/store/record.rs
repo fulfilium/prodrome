@@ -168,7 +168,7 @@ mod tests {
     use proptest::prelude::*;
 
     use super::{bracketed, read, Record, FILE};
-    use crate::dag::{Finding, Heads};
+    use crate::dag::{Dag, Finding, Heads};
     use crate::event::{mk_created, mk_reopened, mk_sealed, Hash, TodoEvent};
     use crate::literal::Datetime;
     use crate::policy::Untrusted;
@@ -235,6 +235,81 @@ mod tests {
         ]
     }
 
+    /// Two handles of one store, and a store elsewhere that shares its
+    /// genesis, which a script of [`Step`]s writes to.
+    struct Script {
+        root: PathBuf,
+        handles: [Store; 2],
+        elsewhere_root: PathBuf,
+        elsewhere: Store,
+        day: u32,
+    }
+
+    impl Script {
+        fn new() -> Script {
+            let root = scratch();
+            let handles = [store(&root), store(&root)];
+            handles[0].init("heads").expect("begins");
+            let elsewhere_root = scratch();
+            let elsewhere = store(&elsewhere_root);
+            sync(&handles[0], &elsewhere).expect("syncs");
+            Script {
+                root,
+                handles,
+                elsewhere_root,
+                elsewhere,
+                day: 0,
+            }
+        }
+
+        /// Run `step`. A refused write changes nothing.
+        fn run(&mut self, step: Step) {
+            self.day += 1;
+            let day = self.day;
+            match step {
+                Step::Append { by, entity } => {
+                    let _ = self.handles[usize::from(by)].append(reopened(entity, day));
+                }
+                Step::Batch { by, entities } => {
+                    if let Ok(mut decision) = self.handles[usize::from(by)].decide() {
+                        for (n, entity) in entities.into_iter().enumerate() {
+                            let day = day + u32::try_from(n).expect("a few");
+                            let _ = decision.append(reopened(entity, day));
+                        }
+                    }
+                }
+                Step::Receive { by, entity } => {
+                    let _ = self.elsewhere.append(reopened(entity + 10, day));
+                    let _ = sync(&self.elsewhere, &self.handles[usize::from(by)]);
+                }
+                Step::Quarantine { by, pick } => {
+                    let names: Vec<Hash> = store(&self.root)
+                        .dag()
+                        .expect("reads")
+                        .objects()
+                        .keys()
+                        .cloned()
+                        .collect();
+                    if let Some(name) = names.get(pick % names.len().max(1)) {
+                        let path = self
+                            .root
+                            .join("objects")
+                            .join(format!("{}.py", name.as_str()));
+                        std::fs::write(&path, b"damaged").expect("damages");
+                    }
+                    let _ = self.handles[usize::from(by)].fsck();
+                }
+            }
+        }
+    }
+
+    impl Drop for Script {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.root);
+            let _ = std::fs::remove_dir_all(&self.elsewhere_root);
+        }
+    }
+
     proptest! {
         #![proptest_config(crate::cases::cases(48))]
 
@@ -246,49 +321,34 @@ mod tests {
         fn the_recorded_heads_are_the_derived_ones(
             steps in prop::collection::vec(a_step(), 1..10),
         ) {
-            let root = scratch();
-            let handles = [store(&root), store(&root)];
-            handles[0].init("heads").expect("begins");
-            let elsewhere_root = scratch();
-            let elsewhere = store(&elsewhere_root);
-            sync(&handles[0], &elsewhere).expect("syncs");
-            let mut day = 0;
+            let mut script = Script::new();
             for step in steps {
-                day += 1;
-                // A refused write changes nothing; the record must still hold.
-                match step {
-                    Step::Append { by, entity } => {
-                        let _ = handles[usize::from(by)].append(reopened(entity, day));
-                    }
-                    Step::Batch { by, entities } => {
-                        if let Ok(mut decision) = handles[usize::from(by)].decide() {
-                            for (n, entity) in entities.into_iter().enumerate() {
-                                let day = day + u32::try_from(n).expect("a few");
-                                let _ = decision.append(reopened(entity, day));
-                            }
-                        }
-                    }
-                    Step::Receive { by, entity } => {
-                        let _ = elsewhere.append(reopened(entity + 10, day));
-                        let _ = sync(&elsewhere, &handles[usize::from(by)]);
-                    }
-                    Step::Quarantine { by, pick } => {
-                        let names: Vec<Hash> =
-                            derived(&root).tips().iter().cloned().collect();
-                        if let Some(name) = names.get(pick % names.len().max(1)) {
-                            let path = root.join("objects").join(format!("{}.py", name.as_str()));
-                            std::fs::write(&path, b"damaged").expect("damages");
-                        }
-                        let _ = handles[usize::from(by)].fsck();
-                    }
-                }
-                let derived = derived(&root);
-                prop_assert_eq!(read(&root), Some(derived.clone()), "the record is on disk");
-                prop_assert_eq!(handles[0].heads().expect("reads"), derived.clone());
-                prop_assert_eq!(handles[1].heads().expect("reads"), derived);
+                script.run(step);
+                let derived = derived(&script.root);
+                prop_assert_eq!(read(&script.root), Some(derived.clone()), "the record is on disk");
+                prop_assert_eq!(script.handles[0].heads().expect("reads"), derived.clone());
+                prop_assert_eq!(script.handles[1].heads().expect("reads"), derived);
             }
-            let _ = std::fs::remove_dir_all(&root);
-            let _ = std::fs::remove_dir_all(&elsewhere_root);
+        }
+
+        /// Law 65: after every write of the same scripts, the heads of the
+        /// store's history as a `Dag` derives them are the heads that the
+        /// store records and serves, also for a DAG that a host reads fresh
+        /// from exactly the objects of that history.
+        #[test]
+        fn a_dag_s_heads_are_what_its_store_records(
+            steps in prop::collection::vec(a_step(), 1..10),
+        ) {
+            let mut script = Script::new();
+            for step in steps {
+                script.run(step);
+                let dag = script.handles[0].dag().expect("reads");
+                let heads = dag.heads();
+                prop_assert_eq!(read(&script.root), Some(heads.clone()), "the record");
+                prop_assert_eq!(script.handles[1].heads().expect("reads"), heads.clone());
+                let fresh: Dag<Event> = dag.objects().clone().into_iter().collect();
+                prop_assert_eq!(fresh.heads(), heads);
+            }
         }
 
         /// Law 61: every state that a stop of the store's own write can

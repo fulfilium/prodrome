@@ -247,6 +247,15 @@ impl<E> Dag<E> {
         self.history.tips().clone()
     }
 
+    /// The heads of the history: its tips ([`Dag::tips`], kept once
+    /// derived) and the count of its objects. Of a DAG that a store holds,
+    /// this is what the store records and serves as its heads (SPEC law
+    /// 65), so a host that places its own files derives its record here.
+    #[must_use]
+    pub fn heads(&self) -> Heads {
+        Heads::new(self.tips(), self.objects().len())
+    }
+
     /// `seeds` and everything they rest on; a name this DAG lacks is in it,
     /// and not walked past.
     pub fn closure(&self, seeds: impl IntoIterator<Item = Hash>) -> BTreeSet<Hash> {

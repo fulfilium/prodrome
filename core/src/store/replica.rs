@@ -57,8 +57,7 @@ pub trait Replica<E: Schema> {
     ///
     /// [`Replica::held`]'s.
     fn heads(&self) -> Result<Heads, ProdromeError> {
-        let held = self.held()?;
-        Ok(Heads::new(held.tips, held.dag.objects().len()))
+        Ok(self.held()?.dag.heads())
     }
 
     /// The print it holds under `name`, the bytes that name is the hash of,
