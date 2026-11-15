@@ -217,8 +217,7 @@ the borrowed replica, as it does for every method.
 
 ## 7. The laws
 
-These laws go to SPEC section 9, after law 59 of the pull request that
-keeps the linear order. Each law gets a test in the store's tests, through
+These laws go to SPEC section 9 as laws 60 to 63, after law 59. Each law gets a test in the store's tests, through
 `cases.rs`. The record is a stored format, so it also gets a standing
 test of its bytes.
 
