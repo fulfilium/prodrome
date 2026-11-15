@@ -1,0 +1,19 @@
+# A program whose size in WebAssembly shows what the code of `Dag` costs for
+# each schema that a program uses it at. It is not part of the workspace and
+# is not shipped. See `src/main.rs`.
+[package]
+name = "dag-sizes"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+prodrome-core = { path = "../../.." }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[workspace]

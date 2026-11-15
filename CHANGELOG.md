@@ -66,11 +66,19 @@ constructor's fields never change, in any release.
 
 ### Changed
 
-- **`Reached::Known` holds a `Reach`, and `Reached` has a lifetime.** A
-  host that read the reach as a `BTreeSet<Hash>` reads it through
-  `Reach::len`, `Reach::contains` and `Reach::iter`, or collects
-  `iter()`. The reach borrows the DAG that the answer reads, as `Lacking`
-  already does.
+- **`Reached::Known` holds a `&Reach`, `Reached` has a lifetime, and
+  `Lacking::reached` returns it by value.** A host that read the reach as
+  a `BTreeSet<Hash>` reads it through `Reach::len`, `Reach::contains` and
+  `Reach::iter`, or collects `iter()`. The reach borrows the DAG that the
+  answer reads, as `Lacking` already does.
+- **The facts that a `Dag` keeps are compiled once, not once for each
+  schema.** The tips, the linear order and the order's index are functions
+  of the names and their parents alone, so their code no longer depends on
+  the schema. On the new fixture `core/tests/fixtures/dag-sizes` (a
+  program that uses `Dag` at three schemas, built for
+  `wasm32-unknown-unknown` and run through `wasm-opt -Oz`), the module is
+  89,664 bytes, against 103,838 bytes before the linear order was kept and
+  105,009 bytes after.
 - **`verify` reports a stale record of heads (`Finding::StaleHeads`).** A
   host that merges stores by their files (a union or copy of object files,
   a same-name move from a staging store, or a `git merge` or checkout of

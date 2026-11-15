@@ -85,7 +85,7 @@ pub enum Since {
 }
 
 /// What a [`Since`] reaches in the store's objects.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reached<'d> {
     /// Every object of the store: the frontier's tips are the store's tips.
     /// The answer builds no set of them and walks none, so a replica that
@@ -94,7 +94,7 @@ pub enum Reached<'d> {
     /// The objects that the frontier's tips rest on, the tips included,
     /// as positions in the store's linear order (SPEC law 64). The set is
     /// empty for [`Since::Nothing`].
-    Known(Reach<'d>),
+    Known(&'d Reach<'d>),
     /// The store of record does not hold the token, or the store no longer
     /// holds one of the frontier's tips. The answer starts from nothing.
     Unknown,
@@ -229,29 +229,24 @@ impl Frontiers {
         dag: &'a Dag<E>,
     ) -> Result<Lacking<'a, E>, Unanswered> {
         let tips = dag.tips();
-        let reached = match since {
-            Since::Nothing => Reached::Known(dag.reach().map_err(Unanswered::Unordered)?),
+        let held = match since {
+            Since::Nothing => Held::Known(dag.reach().map_err(Unanswered::Unordered)?),
             Since::Frontier(token) => match self.records.tips(store, token)? {
-                Some(named) if Token::of(&named) == *token && named == tips => Reached::Everything,
+                Some(named) if Token::of(&named) == *token && named == tips => Held::Everything,
                 Some(named)
                     if Token::of(&named) == *token
                         && named.iter().all(|tip| dag.get(tip).is_some()) =>
                 {
                     let mut reach = dag.reach().map_err(Unanswered::Unordered)?;
                     reach.close(&named);
-                    Reached::Known(reach)
+                    Held::Known(reach)
                 }
-                Some(_) | None => Reached::Unknown,
+                Some(_) | None => Held::Unknown(dag.reach().map_err(Unanswered::Unordered)?),
             },
-        };
-        let held = match &reached {
-            Reached::Everything => Held::Everything,
-            Reached::Known(reach) => Held::Part(reach.clone()),
-            Reached::Unknown => Held::Part(dag.reach().map_err(Unanswered::Unordered)?),
         };
         let (places, outside) = match &held {
             Held::Everything => (Vec::new(), Vec::new()),
-            Held::Part(reach) => reach
+            Held::Known(reach) | Held::Unknown(reach) => reach
                 .outside()
                 .filter_map(|(at, name)| Some((at, dag.objects().get_key_value(name)?)))
                 .unzip(),
@@ -261,7 +256,6 @@ impl Frontiers {
             store,
             dag,
             tips,
-            reached,
             held,
             places,
             outside,
@@ -301,11 +295,15 @@ impl Frontiers {
     }
 }
 
-/// What an answer's records start from: every object, or a reach, which
-/// is empty when the pull's [`Since`] reaches nothing that is known.
+/// What a pull's [`Since`] reaches, and what its records start from.
 enum Held<'a> {
+    /// Every object, as [`Reached::Everything`].
     Everything,
-    Part(Reach<'a>),
+    /// The reach of a known frontier, as [`Reached::Known`].
+    Known(Reach<'a>),
+    /// Nothing, for a frontier that is not known ([`Reached::Unknown`]):
+    /// the empty reach over the store's order, which the records fill.
+    Unknown(Reach<'a>),
 }
 
 /// A pull read against a store's objects: what its [`Since`] reaches, and
@@ -315,7 +313,6 @@ pub struct Lacking<'a, E: Schema> {
     store: &'a str,
     dag: &'a Dag<E>,
     tips: BTreeSet<Hash>,
-    reached: Reached<'a>,
     held: Held<'a>,
     /// The positions in the store's linear order of the objects outside
     /// `held`, one for each object of `outside`.
@@ -333,11 +330,15 @@ pub struct Recorded {
     pub count: usize,
 }
 
-impl<'a, E: Schema> Lacking<'a, E> {
+impl<E: Schema> Lacking<'_, E> {
     /// What the pull's [`Since`] reaches.
     #[must_use]
-    pub fn reached(&self) -> &Reached<'a> {
-        &self.reached
+    pub fn reached(&self) -> Reached<'_> {
+        match &self.held {
+            Held::Everything => Reached::Everything,
+            Held::Known(reach) => Reached::Known(reach),
+            Held::Unknown(_) => Reached::Unknown,
+        }
     }
 
     /// The objects that the pull lacks, each with its name, in the store's
@@ -357,7 +358,7 @@ impl<'a, E: Schema> Lacking<'a, E> {
     pub fn record(self, sent: usize) -> Result<Recorded, Unrecorded> {
         match &self.held {
             Held::Everything => self.everything(),
-            Held::Part(reach) => {
+            Held::Known(reach) | Held::Unknown(reach) => {
                 let mut held = reach.clone();
                 for &at in self.places.iter().take(sent) {
                     held.insert(at);
@@ -380,7 +381,7 @@ impl<'a, E: Schema> Lacking<'a, E> {
     ) -> Result<Recorded, Unrecorded> {
         match &self.held {
             Held::Everything => self.everything(),
-            Held::Part(reach) => {
+            Held::Known(reach) | Held::Unknown(reach) => {
                 let mut held = reach.clone();
                 let taken: Vec<Hash> = taken.into_iter().collect();
                 held.close(&taken);

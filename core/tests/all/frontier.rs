@@ -242,7 +242,7 @@ impl Puller {
             .frontiers
             .answer(STORE, &self.since, &dag)
             .expect("memory reads");
-        let reached = record.read(&self.since, &dag, lacking.reached(), lacking.lacking())?;
+        let reached = record.read(&self.since, &dag, &lacking.reached(), lacking.lacking())?;
         let sent: Vec<Hash> = lacking
             .lacking()
             .iter()
@@ -272,7 +272,7 @@ impl Puller {
             .frontiers
             .answer(STORE, &self.since, &dag)
             .expect("memory reads");
-        let reached = record.read(&self.since, &dag, lacking.reached(), lacking.lacking())?;
+        let reached = record.read(&self.since, &dag, &lacking.reached(), lacking.lacking())?;
         let posted = objects(&self.replica);
         let answered = lacking
             .record_with(posted.iter().cloned())
@@ -525,7 +525,7 @@ proptest! {
             }
         }
         let lacking = frontiers.answer(STORE, &since, &dag).expect("memory reads");
-        prop_assert_eq!(lacking.reached(), &Reached::Everything);
+        prop_assert_eq!(lacking.reached(), Reached::Everything);
         prop_assert!(lacking.lacking().is_empty());
         prop_assert_eq!(lacking.record(1).expect("memory keeps").count, order.len());
     }
@@ -670,7 +670,7 @@ fn a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing() {
         .frontiers
         .answer(STORE, &puller.since, &dag)
         .expect("memory reads");
-    assert_eq!(lacking.reached(), &Reached::Everything);
+    assert_eq!(lacking.reached(), Reached::Everything);
     assert!(lacking.lacking().is_empty());
     let recorded = lacking.record(usize::MAX).expect("memory keeps");
     assert_eq!(recorded.token, token);

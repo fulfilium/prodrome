@@ -1,9 +1,7 @@
 //! The kept order as integers: each object's parents as positions in the
 //! order, and a search from a name to its position.
 
-use std::collections::BTreeMap;
-
-use crate::event::{rests_on, Envelope, Hash};
+use crate::event::Hash;
 
 /// An index of a DAG's linear order. A reach is a set of positions in the
 /// order ([`super::Reach`]), and this index lets a walk over a reach work
@@ -24,38 +22,24 @@ pub(crate) struct Index {
 }
 
 impl Index {
-    /// The index of `order`, a linear order of `objects`: every object of
-    /// `objects` once, parents first.
-    pub(super) fn of<E>(order: &[Hash], objects: &BTreeMap<Hash, Envelope<E>>) -> Index {
-        let names: Vec<&Hash> = objects.keys().collect();
-        let rank = |name: &Hash| names.binary_search(&name).ok();
-        let mut by_name = vec![0; names.len()];
-        let mut rank_at = vec![0; order.len()];
-        for (at, name) in order.iter().enumerate() {
-            if let Some(rank) = rank(name) {
-                by_name[rank] = at;
-                rank_at[at] = rank;
-            }
+    /// The index of an order given as ranks, where `parents[rank]` names the
+    /// parents of the object of that rank, as ranks. Every rank is in
+    /// `order` once.
+    pub(super) fn of(order: &[usize], parents: &[Vec<usize>]) -> Index {
+        let mut by_name = vec![0; order.len()];
+        for (at, &rank) in order.iter().enumerate() {
+            by_name[rank] = at;
         }
-        let by_rank: Vec<Vec<usize>> = objects
-            .values()
-            .map(|object| {
-                rests_on(object)
-                    .into_iter()
-                    .filter_map(|parent| rank(parent).map(|rank| by_name[rank]))
-                    .collect()
-            })
-            .collect();
         let mut starts = Vec::with_capacity(order.len() + 1);
-        let mut parents = Vec::new();
-        for &rank in &rank_at {
-            starts.push(parents.len());
-            parents.extend(&by_rank[rank]);
+        let mut flat = Vec::new();
+        for &rank in order {
+            starts.push(flat.len());
+            flat.extend(parents[rank].iter().map(|&parent| by_name[parent]));
         }
-        starts.push(parents.len());
+        starts.push(flat.len());
         Index {
             starts,
-            parents,
+            parents: flat,
             by_name,
         }
     }

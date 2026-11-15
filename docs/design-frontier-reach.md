@@ -55,8 +55,11 @@ each object a position, so a reach can be a set of positions, with one
 bit for each object of the order. For 30,000 objects that is under 4 KB.
 
 **What the DAG derives beside its order.** `History` derives an index of
-the order once, when a reader first asks for it, and lets it go with the
-order through `History::edit`. The index holds:
+the order in the same pass as the order, and lets it go with the order
+through `History::edit`. The tips, the order and the index are one value
+that is not generic over the schema, derived from one small generic
+function that lists each object's name with the names it rests on. The
+index holds:
 
 - each object's parents, as positions: one flat array of positions, and
   for each position the start of its parents in that array;

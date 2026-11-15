@@ -1,6 +1,7 @@
 //! §3 — the DAG as a value: named objects, their tips, closure, order and
 //! findings, with no files. [`crate::store`] is the files around one.
 
+mod facts;
 mod finding;
 mod heads;
 mod history;
