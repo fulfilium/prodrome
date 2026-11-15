@@ -4,12 +4,15 @@
 mod finding;
 mod heads;
 mod history;
+mod index;
+mod reach;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use finding::{Excluded, Finding, Unread};
 pub use heads::Heads;
 use history::History;
+pub use reach::Reach;
 
 use crate::change::Change;
 use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
@@ -321,6 +324,19 @@ impl<E> Dag<E> {
     /// A parent that no object of the history is, or a cycle.
     pub fn linearise(&self) -> Result<&[Hash], ProdromeError> {
         self.history.order()
+    }
+
+    /// The empty [`Reach`] over this DAG's linear order: a set of objects
+    /// held as positions in the order, which [`Dag::linearise`] derives,
+    /// with an index of the order that the DAG keeps beside it (SPEC law
+    /// 64).
+    ///
+    /// # Errors
+    ///
+    /// [`Dag::linearise`]'s: the DAG has no linear order.
+    pub fn reach(&self) -> Result<Reach<'_>, ProdromeError> {
+        let (order, index) = self.history.indexed()?;
+        Ok(Reach::empty(order, index))
     }
 
     /// `among`, parents first, by Kahn's walk over them alone: a parent

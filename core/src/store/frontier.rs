@@ -31,8 +31,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::dag::{tips_among, Dag};
-use crate::event::{rests_on, Envelope, Hash};
+use crate::dag::{Dag, Reach};
+use crate::event::{Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
 
@@ -86,14 +86,15 @@ pub enum Since {
 
 /// What a [`Since`] reaches in the store's objects.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reached {
+pub enum Reached<'d> {
     /// Every object of the store: the frontier's tips are the store's tips.
     /// The answer builds no set of them and walks none, so a replica that
     /// lacks nothing costs the store of record a read of its record alone.
     Everything,
-    /// The objects that the frontier's tips rest on, the tips included.
-    /// The set is empty for [`Since::Nothing`].
-    Known(BTreeSet<Hash>),
+    /// The objects that the frontier's tips rest on, the tips included,
+    /// as positions in the store's linear order (SPEC law 64). The set is
+    /// empty for [`Since::Nothing`].
+    Known(Reach<'d>),
     /// The store of record does not hold the token, or the store no longer
     /// holds one of the frontier's tips. The answer starts from nothing.
     Unknown,
@@ -229,22 +230,31 @@ impl Frontiers {
     ) -> Result<Lacking<'a, E>, Unanswered> {
         let tips = dag.tips();
         let reached = match since {
-            Since::Nothing => Reached::Known(BTreeSet::new()),
+            Since::Nothing => Reached::Known(dag.reach().map_err(Unanswered::Unordered)?),
             Since::Frontier(token) => match self.records.tips(store, token)? {
                 Some(named) if Token::of(&named) == *token && named == tips => Reached::Everything,
                 Some(named)
                     if Token::of(&named) == *token
                         && named.iter().all(|tip| dag.get(tip).is_some()) =>
                 {
-                    Reached::Known(dag.closure(named))
+                    let mut reach = dag.reach().map_err(Unanswered::Unordered)?;
+                    reach.close(&named);
+                    Reached::Known(reach)
                 }
                 Some(_) | None => Reached::Unknown,
             },
         };
-        let outside = match &reached {
-            Reached::Everything => Vec::new(),
-            Reached::Known(reached) => outside(dag, reached)?,
-            Reached::Unknown => outside(dag, &BTreeSet::new())?,
+        let held = match &reached {
+            Reached::Everything => Held::Everything,
+            Reached::Known(reach) => Held::Part(reach.clone()),
+            Reached::Unknown => Held::Part(dag.reach().map_err(Unanswered::Unordered)?),
+        };
+        let (places, outside) = match &held {
+            Held::Everything => (Vec::new(), Vec::new()),
+            Held::Part(reach) => reach
+                .outside()
+                .filter_map(|(at, name)| Some((at, dag.objects().get_key_value(name)?)))
+                .unzip(),
         };
         Ok(Lacking {
             frontiers: self,
@@ -252,6 +262,8 @@ impl Frontiers {
             dag,
             tips,
             reached,
+            held,
+            places,
             outside,
         })
     }
@@ -289,17 +301,11 @@ impl Frontiers {
     }
 }
 
-/// The objects of `dag` outside `reached`, in `dag`'s linear order.
-fn outside<'a, E: Schema>(
-    dag: &'a Dag<E>,
-    reached: &BTreeSet<Hash>,
-) -> Result<Vec<(&'a Hash, &'a Envelope<E>)>, Unanswered> {
-    let order = dag.linearise().map_err(Unanswered::Unordered)?;
-    Ok(order
-        .iter()
-        .filter(|name| !reached.contains(*name))
-        .filter_map(|name| dag.objects().get_key_value(name))
-        .collect())
+/// What an answer's records start from: every object, or a reach, which
+/// is empty when the pull's [`Since`] reaches nothing that is known.
+enum Held<'a> {
+    Everything,
+    Part(Reach<'a>),
 }
 
 /// A pull read against a store's objects: what its [`Since`] reaches, and
@@ -309,7 +315,11 @@ pub struct Lacking<'a, E: Schema> {
     store: &'a str,
     dag: &'a Dag<E>,
     tips: BTreeSet<Hash>,
-    reached: Reached,
+    reached: Reached<'a>,
+    held: Held<'a>,
+    /// The positions in the store's linear order of the objects outside
+    /// `held`, one for each object of `outside`.
+    places: Vec<usize>,
     outside: Vec<(&'a Hash, &'a Envelope<E>)>,
 }
 
@@ -323,10 +333,10 @@ pub struct Recorded {
     pub count: usize,
 }
 
-impl<E: Schema> Lacking<'_, E> {
+impl<'a, E: Schema> Lacking<'a, E> {
     /// What the pull's [`Since`] reaches.
     #[must_use]
-    pub fn reached(&self) -> &Reached {
+    pub fn reached(&self) -> &Reached<'a> {
         &self.reached
     }
 
@@ -345,17 +355,16 @@ impl<E: Schema> Lacking<'_, E> {
     ///
     /// [`Unrecorded`] when the records cannot be read or written.
     pub fn record(self, sent: usize) -> Result<Recorded, Unrecorded> {
-        if matches!(self.reached, Reached::Everything) {
-            return self.everything();
+        match &self.held {
+            Held::Everything => self.everything(),
+            Held::Part(reach) => {
+                let mut held = reach.clone();
+                for &at in self.places.iter().take(sent) {
+                    held.insert(at);
+                }
+                self.frontier(&held)
+            }
         }
-        let mut held = self.held();
-        held.extend(
-            self.outside
-                .iter()
-                .take(sent)
-                .map(|(name, _)| (*name).clone()),
-        );
-        self.frontier(&held)
     }
 
     /// Record the frontier of a post: what the pull's [`Since`] reaches,
@@ -369,18 +378,15 @@ impl<E: Schema> Lacking<'_, E> {
         self,
         taken: impl IntoIterator<Item = Hash>,
     ) -> Result<Recorded, Unrecorded> {
-        if matches!(self.reached, Reached::Everything) {
-            return self.everything();
+        match &self.held {
+            Held::Everything => self.everything(),
+            Held::Part(reach) => {
+                let mut held = reach.clone();
+                let taken: Vec<Hash> = taken.into_iter().collect();
+                held.close(&taken);
+                self.frontier(&held)
+            }
         }
-        let mut held = self.held();
-        held.extend(
-            self.dag.closure(
-                taken
-                    .into_iter()
-                    .filter(|name| self.dag.get(name).is_some()),
-            ),
-        );
-        self.frontier(&held)
     }
 
     /// The frontier of a replica that holds every object: the store's
@@ -392,22 +398,11 @@ impl<E: Schema> Lacking<'_, E> {
         })
     }
 
-    fn held(&self) -> BTreeSet<Hash> {
-        match &self.reached {
-            Reached::Known(reached) => reached.clone(),
-            Reached::Everything | Reached::Unknown => BTreeSet::new(),
-        }
-    }
-
     /// `held`, a set of the store's objects closed under parents, recorded
     /// by its tips.
-    fn frontier(&self, held: &BTreeSet<Hash>) -> Result<Recorded, Unrecorded> {
-        let tips = tips_among(
-            held.iter()
-                .filter_map(|name| self.dag.get(name).map(|object| (name, rests_on(object)))),
-        );
+    fn frontier(&self, held: &Reach<'_>) -> Result<Recorded, Unrecorded> {
         Ok(Recorded {
-            token: self.frontiers.record(self.store, &tips)?,
+            token: self.frontiers.record(self.store, &held.tips())?,
             count: held.len(),
         })
     }

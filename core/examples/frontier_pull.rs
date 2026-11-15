@@ -16,7 +16,7 @@
 //!   the store's order.
 //!
 //! For each pull it prints the total time of the answers and the records,
-//! and the time of the last answer and the last record.
+//! the time of the first and the last answer, and of the last record.
 
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
@@ -111,9 +111,11 @@ impl Pull {
     fn print(&self, what: &str) {
         let total: Duration = self.answers.iter().chain(&self.records).sum();
         println!(
-            "{what}: {} pieces, total {:.1} ms; last answer {:.2} ms, last record {:.2} ms",
+            "{what}: {} pieces, total {:.1} ms; first answer {:.2} ms, last answer {:.2} ms, \
+             last record {:.2} ms",
             self.records.len(),
             ms(total),
+            ms(self.answers[0]),
             ms(self.answers[self.records.len() - 1]),
             ms(self.records[self.records.len() - 1]),
         );

@@ -1979,6 +1979,20 @@ scripts of writes by two handles of one store on disk.
     conflicted text, unknown field or other print of a value reads:
     `record.rs::tests::the_record_is_its_canonical_print_and_nothing_else_reads`.
 
+Law 64 is law 47's reach, read as positions in the store's linear order,
+over the generated two-writer histories, with pieces in the store's order,
+posts of any names, and a store that grows between two pieces.
+
+64. **A reach in positions is the reach in names.** For any token whose
+    tips the store holds, the answer reaches the closure of those tips: the
+    reach contains exactly those names, and its length is their count. The
+    answer lacks the other objects, in the store's linear order. Each
+    `record` and each `record_with` records the tips of what the answer
+    reaches joined to what was sent (for `record_with`, with what that
+    rests on), and the count of that set. The specification is the walk
+    over names.
+    `frontier_reach.rs::a_reach_in_positions_is_the_reach_in_names`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;

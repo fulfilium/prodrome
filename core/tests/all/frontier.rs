@@ -165,7 +165,8 @@ impl Record {
                     dag.objects().len(),
                     "a token at the store's tips reaches everything, unwalked"
                 );
-                prop_assert_eq!(model, answer);
+                prop_assert_eq!(answer.len(), model.len());
+                prop_assert_eq!(model, &answer.iter().cloned().collect::<BTreeSet<Hash>>());
             }
             (Some(model), Reached::Everything) => {
                 prop_assert_eq!(
@@ -621,14 +622,16 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
         .expect("memory keeps")
         .token;
     let since = Since::Frontier(token);
-    let reached = |frontiers: &Frontiers| {
-        frontiers
-            .answer(STORE, &since, &dag)
-            .expect("memory reads")
-            .reached()
-            .clone()
+    let reached = |frontiers: &Frontiers| match frontiers
+        .answer(STORE, &since, &dag)
+        .expect("memory reads")
+        .reached()
+    {
+        Reached::Everything => "everything",
+        Reached::Known(_) => "known",
+        Reached::Unknown => "unknown",
     };
-    assert_eq!(reached(&frontiers), Reached::Everything);
+    assert_eq!(reached(&frontiers), "everything");
     for (_, tips) in failing
         .sets
         .lock()
@@ -637,7 +640,7 @@ fn a_record_whose_tips_are_not_its_token_s_reads_as_unknown() {
     {
         tips.clear();
     }
-    assert_eq!(reached(&frontiers), Reached::Unknown);
+    assert_eq!(reached(&frontiers), "unknown");
 }
 
 /// Law 47 (d): a pull from a known token whose tips are the store's tips
@@ -690,9 +693,12 @@ fn a_token_at_the_store_s_tips_reaches_everything_and_lacks_nothing() {
         .frontiers
         .answer(STORE, &Since::Frontier(token), &grown)
         .expect("memory reads");
+    let Reached::Known(reach) = lacking.reached() else {
+        panic!("the token's tips are held, so it reaches what they rest on");
+    };
     assert_eq!(
-        lacking.reached(),
-        &Reached::Known(dag.objects().keys().cloned().collect())
+        reach.iter().cloned().collect::<BTreeSet<Hash>>(),
+        dag.objects().keys().cloned().collect::<BTreeSet<Hash>>()
     );
     assert_eq!(
         lacking.lacking().len(),

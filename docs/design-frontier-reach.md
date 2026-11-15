@@ -146,11 +146,27 @@ reach through the `Reach` API in place of the set.
 
 ## 4. Measurement
 
-The measurement program reports today and the index-space reach for both
-pulls, and the pull request puts both in a table beside B's prototype. If
-the walk over positions still shows in an answer at 30,000 objects, the
-pull request says so with the number, and only then says whether a reach
-kept for each token (as bits) would be worth its state.
+The measurement program, before and after the change, from three runs on
+one machine. B is the prototype of the first version of this note: about
+40 ms for the store-order pull, and today's cost for the host-order pull,
+on which its check fails for every frontier.
+
+| pull | today | B | positions |
+|---|---|---|---|
+| store order, total | 518 to 614 ms | about 40 ms | 84 to 88 ms |
+| store order, last answer | 20 to 21 ms | about 0.1 ms | 0.35 to 2.2 ms |
+| host order, total | 837 to 1,047 ms | as today | 77 to 87 ms |
+| host order, last answer | 22 to 29 ms | as today | 0.41 to 0.65 ms |
+| host order, last record | 37 to 48 ms | as today | 0.47 to 0.64 ms |
+
+The walk over positions no longer shows in an answer: the answer to the
+last piece takes under 1 ms in most runs. Two costs remain. The first
+answer of the store-order pull takes 21 to 25 ms, because it derives the
+index once. The rest of a pull's time is the list of the objects that
+each answer lacks: `lacking()` gives each one with its object, which costs
+a map lookup for each object listed, and an early answer lists nearly the
+whole store. A reach kept for each token would save none of that, so this
+change keeps nothing for each token.
 
 ## 5. The clone in `Dag::tips`
 

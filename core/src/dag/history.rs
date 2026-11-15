@@ -1,9 +1,10 @@
 //! The objects of a DAG's history, and the facts that a DAG derives from
-//! them: its tips and its linear order.
+//! them: its tips, its linear order, and the order's index.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
+use super::index::Index;
 use crate::event::{rests_on, Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::topo;
@@ -25,6 +26,7 @@ pub(super) struct History<E> {
     objects: BTreeMap<Hash, Envelope<E>>,
     tips: OnceLock<BTreeSet<Hash>>,
     order: OnceLock<Result<Vec<Hash>, ProdromeError>>,
+    index: OnceLock<Index>,
 }
 
 impl<E> PartialEq for History<E>
@@ -42,6 +44,7 @@ impl<E> History<E> {
             objects,
             tips: OnceLock::new(),
             order: OnceLock::new(),
+            index: OnceLock::new(),
         }
     }
 
@@ -57,6 +60,7 @@ impl<E> History<E> {
     pub(super) fn edit(&mut self) -> &mut BTreeMap<Hash, Envelope<E>> {
         self.tips = OnceLock::new();
         self.order = OnceLock::new();
+        self.index = OnceLock::new();
         &mut self.objects
     }
 
@@ -92,6 +96,16 @@ impl<E> History<E> {
             })
             .as_deref()
             .map_err(Clone::clone)
+    }
+
+    /// The order, and its [`Index`]: each object's parents as positions in
+    /// the order.
+    pub(super) fn indexed(&self) -> Result<(&[Hash], &Index), ProdromeError> {
+        let order = self.order()?;
+        Ok((
+            order,
+            self.index.get_or_init(|| Index::of(order, &self.objects)),
+        ))
     }
 
     /// `among`, parents first, by Kahn's walk over them alone: a parent

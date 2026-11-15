@@ -10,6 +10,18 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`dag::Reach` and `Dag::reach`: a set of a DAG's objects as positions in
+  its linear order (SPEC law 64).** A DAG keeps an index of its order
+  beside the order: each object's parents as positions, and a search from
+  a name to its position. A reach holds one bit for each object, so its
+  closure, what lies outside it and its tips are walks over integers.
+  `Frontiers::answer` and its records read a frontier's reach this way,
+  for any token. On the new `frontier_pull` example (a generated DAG of
+  30,000 objects, pulled in pieces of 1,000), a pull in the store's order
+  takes about 80 to 110 ms in place of about 520 to 610 ms, and a pull in a
+  host's own order with `record_with` takes about 75 ms in place of about
+  840 to 1,050 ms. The answer to the last piece takes about 0.4 ms in place
+  of about 21 ms. No answer's bytes change.
 - **A store on disk records its heads: `EventStore::heads`,
   `EventStore::record_heads`, `Replica::heads` and `dag::Heads` (SPEC §3,
   laws 60 to 63).** The store keeps a file, `root/.heads`, that holds the
@@ -54,6 +66,11 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`Reached::Known` holds a `Reach`, and `Reached` has a lifetime.** A
+  host that read the reach as a `BTreeSet<Hash>` reads it through
+  `Reach::len`, `Reach::contains` and `Reach::iter`, or collects
+  `iter()`. The reach borrows the DAG that the answer reads, as `Lacking`
+  already does.
 - **`verify` reports a stale record of heads (`Finding::StaleHeads`).** A
   host that merges stores by their files (a union or copy of object files,
   a same-name move from a staging store, or a `git merge` or checkout of
