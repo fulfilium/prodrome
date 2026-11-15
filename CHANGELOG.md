@@ -10,6 +10,21 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A store on disk records its heads: `EventStore::heads`,
+  `EventStore::record_heads`, `Replica::heads` and `dag::Heads` (SPEC §3,
+  laws 60 to 63).** The store keeps a file, `root/.heads`, that holds the
+  tips of its history and the count of its objects. `heads()` reads that
+  file, and one `stat` for each recorded tip, in place of a listing of
+  `objects/`. A write removes the record, durably, before it places
+  objects, and writes it once when it releases the lock, so no stop of a
+  write leaves a served record that is not the derived heads. The record
+  is derived and local, and the store writes a `.gitignore` with the line
+  `/.heads` where the root has none. No object and no stored constructor
+  changes. On the new `store_heads` example (a generated store of 30,000
+  objects), `heads()` takes about 0.2 to 0.4 ms, and `tips()` takes about
+  70 ms on a handle that has read the store and about 340 ms on a new
+  handle in a new process. An append takes 66 to 73 ms, against 59 to
+  71 ms before the change.
 - **A cache held in a file: `memo::Holder`, `memo::File` and `memo::Front`
   (SPEC §6, laws 51 to 58).** `Holder` is the one interface of a cache's
   pairs. `memo::Memory` holds them in memory, and `File` holds them in one
@@ -39,6 +54,16 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`verify` reports a stale record of heads (`Finding::StaleHeads`).** A
+  host that merges stores by their files (a union or copy of object files,
+  a same-name move from a staging store, or a `git merge` or checkout of
+  the directory) changes `objects/` without the store. After such a step,
+  `verify` reports that the record of heads is older than the objects,
+  until a write, a `decide`, a call of `EventStore::record_heads` or a
+  deletion of `.heads`. A host that never calls `heads()` needs nothing
+  else for correctness, because `tips()` and every decision derive. A host
+  that expects a clean `verify` after such a step calls `record_heads` or
+  deletes `.heads`. `Decision` now writes the record when it is dropped.
 - **A DAG keeps its linear order, and `Dag::linearise` returns a borrowed
   slice (SPEC law 59).** A `Dag` derives its order on the first ask and
   keeps it until its objects change, as it keeps its tips.

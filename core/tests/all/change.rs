@@ -360,8 +360,9 @@ proptest! {
 
     /// Law 29 — PLACEMENT IS NOT IDENTITY. Changes written in a staging store
     /// that holds the base are accepted by moving their files into the base:
-    /// every name stands, the base verifies clean, and they are the objects
-    /// the base would have written itself.
+    /// every name stands, the base verifies clean once the host records its
+    /// heads (a move is a door the store does not own, SPEC §3), and they
+    /// are the objects the base would have written itself.
     #[test]
     fn accept_is_a_same_name_move((shared, mine, _) in two_writers()) {
         let scratch = Scratch::new();
@@ -375,12 +376,23 @@ proptest! {
             fs::rename(file(&own, name), file(&base, name)).expect("moves");
         }
         prop_assert_eq!(names(&base), held.union(&moved).cloned().collect::<BTreeSet<_>>());
+        let lagging = base
+            .verify()
+            .iter()
+            .all(|finding| matches!(finding, Finding::StaleHeads { .. }));
+        prop_assert!(lagging, "the record lags the moved files, and nothing else is reported");
+        base.record_heads().expect("records");
         prop_assert_eq!(findings(&base), Vec::<String>::new());
 
         let direct = scratch.store("direct", "one");
         append(&direct, &shared);
         prop_assert_eq!(append(&direct, &mine), staged);
         prop_assert_eq!(names(&direct), names(&base));
+        prop_assert_eq!(
+            base.heads().expect("reads the record"),
+            direct.heads().expect("reads the record"),
+            "the recorded heads after the move are the heads the base would have written"
+        );
     }
 
     /// Law 29 — A RE-PROPOSAL IS RECOGNISED. Rejected, a proposal leaves the

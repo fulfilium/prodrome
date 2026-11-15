@@ -57,9 +57,9 @@ use crate::spread::spread;
 
 pub use decision::Decision;
 use memory::{Memory, Seen, Verified};
-use record::Record;
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
+use record::Record;
 pub use replica::{accept, sync, Held, Replica};
 
 /// A chain rooted at `root`, of the schema `E`, read under one host

@@ -110,6 +110,7 @@ fn main() {
         let store = Store::new(root, Untrusted::none());
         let took = match phase.as_str() {
             "tips" => timed(|| store.tips().expect("lists")),
+            "heads" => timed(|| store.heads().expect("reads")),
             other => panic!("no phase {other}"),
         };
         println!("{}", took.as_nanos());
@@ -142,11 +143,25 @@ fn main() {
             .map(|_| timed(|| warm.tips().expect("lists")))
             .collect(),
     );
+    let cold_heads = median((0..ROUNDS).map(|_| cold(&root, "heads")).collect());
+    warm.heads().expect("reads");
+    let warm_heads = median(
+        (0..ROUNDS)
+            .map(|_| timed(|| warm.heads().expect("reads")))
+            .collect(),
+    );
+    assert_eq!(
+        warm.heads().expect("reads").tips(),
+        &warm.tips().expect("lists"),
+        "the record is served, and it is the derived heads"
+    );
 
     println!("a store of {OBJECTS} objects over {ENTITIES} entities");
     for (what, took) in [
         ("cold tips", cold_tips),
+        ("cold heads", cold_heads),
         ("warm tips", warm_tips),
+        ("warm heads", warm_heads),
         ("append", append),
     ] {
         println!("{what:>11}: {:9.3} ms", took.as_secs_f64() * 1e3);

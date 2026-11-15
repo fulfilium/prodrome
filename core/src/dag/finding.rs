@@ -67,7 +67,10 @@ pub enum Finding {
     },
     /// The store's record of its heads, `.heads`, which parses and differs
     /// from the heads that the store derives (SPEC §3).
-    StaleHeads { recorded: Heads, derived: Heads },
+    StaleHeads {
+        recorded: Heads,
+        derived: Heads,
+    },
 }
 
 /// A name the history of a set of prints lacks, and what it leaves out with

@@ -333,6 +333,8 @@ list in `core/src/lib.rs` gives the SPEC section of each module.
 <root>/
   objects/<sha256>.py     one object, as its canonical text
   .gitattributes          written by the store if the file does not exist
+  .gitignore              written by the store if the file does not exist
+  .heads                  the record of the heads, derived and local
   .lock                   held while a program appends
   quarantine/<sha256>.py  a file that fsck moved because its hash is wrong
 ```
@@ -341,10 +343,21 @@ The canonical text of an object is an expression in a small grammar that
 uses Python literal syntax (SPEC section 2). The parser accepts only that
 grammar, and it does not evaluate anything.
 
-No file records the heads. Prodrome computes the TIPS of a store: the
-objects that no other object names as a parent. So you can keep a store in
-git and merge it with `git merge`. Two clones that each appended objects
-only added files, so the merge cannot conflict. A store from before version
+Prodrome computes the TIPS of a store: the objects that no other object
+names as a parent. So you can keep a store in git and merge it with `git
+merge`. Two clones that each appended objects only added files, so the
+merge cannot conflict.
+
+The file `.heads` records the heads and the count of objects, so that
+`EventStore::heads` can answer without a listing of `objects/`. The store
+writes it when a program releases the store's lock, and the store's own
+`.gitignore` keeps it out of git. No decision reads it. If you change
+`objects/` without the store, for example with `git merge`, `git checkout`
+or a copy of files, call `EventStore::record_heads` or delete `.heads`.
+Until you do, `heads()` answers the older heads, and `prodrome verify`
+reports the record as stale. If your program never calls `heads()`, it
+needs nothing else, but `verify` reports the stale record until the next
+write. A store from before version
 0.9 has a file `HEAD`, and a directory `refs/` if it had several heads.
 `prodrome verify` asks you to delete them.
 
