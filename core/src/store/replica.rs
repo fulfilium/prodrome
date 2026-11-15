@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::dag::Dag;
+use crate::dag::{Dag, Heads};
 use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::registers::Folded;
@@ -49,6 +49,18 @@ pub trait Replica<E: Schema> {
     /// [`Replica::held`]'s.
     fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError>;
 
+    /// Its tips and the count of the objects of its history. A replica in
+    /// memory answers them from what it holds. A store on disk reads its
+    /// record of them ([`super::EventStore::heads`]).
+    ///
+    /// # Errors
+    ///
+    /// [`Replica::held`]'s.
+    fn heads(&self) -> Result<Heads, ProdromeError> {
+        let held = self.held()?;
+        Ok(Heads::new(held.tips, held.dag.objects().len()))
+    }
+
     /// The print it holds under `name`, the bytes that name is the hash of,
     /// unchecked: whoever receives it verifies it.
     fn print(&self, name: &Hash) -> Option<Vec<u8>>;
@@ -91,6 +103,10 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 
     fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError> {
         (**self).tips()
+    }
+
+    fn heads(&self) -> Result<Heads, ProdromeError> {
+        (**self).heads()
     }
 
     fn print(&self, name: &Hash) -> Option<Vec<u8>> {

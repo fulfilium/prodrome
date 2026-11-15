@@ -10,6 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use prodrome::dag::Finding;
 use prodrome::event::{mk_created, parse_envelope, Hash, TodoEvent};
 use prodrome::fold::{maximal, read};
 use prodrome::policy::Everything;
@@ -155,7 +156,9 @@ proptest! {
 
     /// Law 4, the homomorphism: two replicas that each only grew, merged by
     /// putting their objects in one directory, read the join of their
-    /// readings, the maximal phases of both.
+    /// readings, the maximal phases of both. The copy is a door the store
+    /// does not own, so the store verifies clean once the host records its
+    /// heads (SPEC §3).
     #[test]
     fn the_reading_of_a_union_is_the_join_of_the_readings(
         shared in prop::collection::vec(a_phase(), 0..3),
@@ -180,6 +183,19 @@ proptest! {
         let both: Vec<Phase> = a.iter().chain(&b).copied().collect();
         let joined: HashSet<Phase> = maximal(&both, |phase| phase).into_iter().collect();
         prop_assert_eq!(phases(&here.0, "pr-1"), joined);
+        let lagging = here
+            .0
+            .verify()
+            .iter()
+            .all(|finding| matches!(finding, Finding::StaleHeads { .. }));
+        prop_assert!(lagging);
+        here.0.record_heads().expect("records");
         prop_assert!(here.0.verify().is_empty());
+        let recorded = here.0.heads().expect("reads the record");
+        prop_assert_eq!(
+            recorded.tips(),
+            &here.0.tips().expect("derive"),
+            "the recorded heads are the union's"
+        );
     }
 }

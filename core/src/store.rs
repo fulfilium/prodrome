@@ -31,6 +31,7 @@ mod decision;
 mod memory;
 mod memory_store;
 mod overlay;
+mod record;
 mod replica;
 
 pub mod frontier;
@@ -44,7 +45,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use crate::dag::{decode, Dag, Finding, Unread};
+use crate::dag::{decode, Dag, Finding, Heads, Unread};
 use crate::event::{mk_woven, parents_of, Envelope, Hash};
 use crate::genesis::mk_genesis;
 use crate::literal::ProdromeError;
@@ -55,9 +56,10 @@ use crate::snapshot::mk_snapshot;
 use crate::spread::spread;
 
 pub use decision::Decision;
-use memory::{Memory, Printed, Seen, Verified};
+use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
+use record::Record;
 pub use replica::{accept, sync, Held, Replica};
 
 /// A chain rooted at `root`, of the schema `E`, read under one host
@@ -169,6 +171,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(Decision {
             store: self,
             memory,
+            record: Record::Untouched,
             _locked: locked,
         })
     }
@@ -247,6 +250,62 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let mut memory = self.memory();
         self.look(&mut memory)?;
         Ok(memory.tips().clone())
+    }
+
+    /// The heads of the store's history and the count of its objects, read
+    /// from the store's record (`root/.heads`, SPEC §3) without a listing
+    /// of `objects/`: one small file, and one `stat` for each recorded tip.
+    ///
+    /// The record holds what the last holder of the store's lock saw when
+    /// it let the lock go, and no write of the store leaves an older record
+    /// (SPEC law 61). A program that adds objects by another door, such as
+    /// a checkout, a copy or an older binary, leaves the record older than
+    /// the objects until it calls [`EventStore::record_heads`] or deletes
+    /// the record (law 62). Where the record is absent, does not parse, or
+    /// names a tip whose file is absent (law 63), the heads are derived as
+    /// [`EventStore::tips`] derives them. Such a fallback writes no record,
+    /// so a store with no record pays the listing on every call until the
+    /// next hold of its lock (a write, a `decide`, or `record_heads`).
+    ///
+    /// # Errors
+    ///
+    /// The record is not served and `objects/` cannot be listed.
+    pub fn heads(&self) -> Result<Heads, ProdromeError> {
+        match record::read(&self.root) {
+            Some(recorded)
+                if recorded
+                    .tips()
+                    .iter()
+                    .all(|tip| self.object_path(tip).exists()) =>
+            {
+                Ok(recorded)
+            }
+            Some(_) | None => {
+                let mut memory = self.memory();
+                self.look(&mut memory)?;
+                Ok(memory.heads())
+            }
+        }
+    }
+
+    /// Derive the heads under the store's lock, record them, and answer
+    /// them. A host that changes `objects/` without the store calls this,
+    /// or deletes `root/.heads`, so that [`EventStore::heads`] reads the
+    /// objects that it brought in (SPEC §3). Unlike a write, it records
+    /// while a file is unread, since the record holds the heads of the
+    /// history that every read of the store reads.
+    ///
+    /// # Errors
+    ///
+    /// The lock not taken, `objects/` not listed, or the record not
+    /// written.
+    pub fn record_heads(&self) -> Result<Heads, ProdromeError> {
+        let _locked = self.lock()?;
+        let mut memory = self.memory();
+        self.look(&mut memory)?;
+        let heads = memory.heads();
+        Record::Untouched.finish(&self.root, &heads)?;
+        Ok(heads)
     }
 
     /// What `objects/` holds, SPLIT BY NAME: an entry named `<name>.py` for a
@@ -374,7 +433,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
         let nonce = format!("{:016x}{:016x}", random(), random());
         let genesis = Envelope::Genesis(mk_genesis(label, &nonce)?);
-        self.write(&mut decision.memory, Verified::sealed(genesis))
+        decision.write(Verified::sealed(genesis))
     }
 
     /// Write `event` as a `Change` over its entity's heads (every write to
@@ -414,10 +473,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
                 previous => mk_snapshot(genesis, tips, previous.cloned())?,
             }
         };
-        self.write(
-            &mut decision.memory,
-            Verified::sealed(Envelope::Snapshot(snapshot)),
-        )
+        decision.write(Verified::sealed(Envelope::Snapshot(snapshot)))
     }
 
     /// Join two or more tips into one `Woven`, which becomes a tip in their
@@ -434,7 +490,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             None => decision.memory.dag().tips_in(&None).into_iter().collect(),
         };
         self.require_present(&on)?;
-        self.write(&mut decision.memory, Verified::sealed(mk_woven(on, event)?))
+        decision.write(Verified::sealed(mk_woven(on, event)?))
     }
 
     /// Take in everything another replica's `digest` rests on, verified.
@@ -516,29 +572,22 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         print_of: impl Fn(&Hash) -> Option<Vec<u8>>,
     ) -> Result<Vec<Hash>, ProdromeError> {
         let mut decision = self.decision()?;
-        let memory = &mut decision.memory;
+        let memory = &decision.memory;
         let taken = memory::receive(&self.schema, |name| memory.holds(name), seeds, print_of)?;
-        // A waiting object is walked through, to what it waits for, and its
-        // file, already here, is not written again.
-        self.place(
-            taken
-                .iter()
-                .filter(|(verified, _)| !memory.files().contains_key(verified.name()))
-                .map(|(verified, print)| (verified.name(), print.as_slice())),
-        )?;
-        let now = SystemTime::now();
         let names = taken
             .iter()
             .map(|(verified, _)| verified.name().clone())
             .collect();
-        let seen = taken
+        // A waiting object is walked through, to what it waits for, and its
+        // file, already here, is not written again.
+        let taken = taken
             .into_iter()
-            .map(|(verified, _)| {
-                let seen = Seen::of(fs::metadata(self.object_path(verified.name())).ok(), now);
-                (verified, seen)
+            .map(|(verified, print)| {
+                let held = memory.files().contains_key(verified.name());
+                (verified, (!held).then_some(print))
             })
             .collect();
-        memory.admit(&[], seen);
+        decision.place(taken)?;
         Ok(names)
     }
 
@@ -570,39 +619,6 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             return Ok(());
         }
         put_durably(&path, GITATTRIBUTES.as_bytes())
-    }
-
-    /// One object onto disk, content-addressed and idempotent, and into
-    /// `memory`, which has just looked: an object it holds is a no-op while
-    /// its file is there, since the look found it holding its bytes;
-    /// DIFFERENT bytes already at
-    /// the name are a sha256 collision or a corrupt store, and we stop rather
-    /// than clobber. The object is verified because it was sealed here, so
-    /// nothing written is read back.
-    fn write(
-        &self,
-        memory: &mut Memory<E>,
-        (verified, text): Printed<E>,
-    ) -> Result<Hash, ProdromeError> {
-        let digest = verified.name().clone();
-        let path = self.object_path(&digest);
-        if memory.holds(&digest) && path.exists() {
-            return Ok(digest);
-        }
-        if path.exists() {
-            let existing = fs::read(&path).map_err(|e| ProdromeError::io(&path, &e))?;
-            if existing != text {
-                return Err(ProdromeError::Store(format!(
-                    "object {} exists with different bytes — sha256 collision or corruption",
-                    digest.as_str()
-                )));
-            }
-        } else {
-            self.place([(&digest, text.as_slice())])?;
-        }
-        let seen = Seen::of(fs::metadata(&path).ok(), SystemTime::now());
-        memory.admit(&[], vec![(verified, seen)]);
-        Ok(digest)
     }
 
     /// Load and REVERIFY one object: hash the STORED BYTES against the
@@ -700,14 +716,23 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
                 _ => None,
             })
             .collect();
-        if tampered.is_empty() {
-            return Ok(());
-        }
-        make_dir(&self.quarantine_dir())?;
-        for (name, computed) in tampered {
-            rename_into(&self.object_path(name), &self.aside_path(name, computed))?;
-        }
-        sync_dir(&self.objects_dir())
+        let record = if tampered.is_empty() {
+            Record::Untouched
+        } else {
+            let removal = Record::Untouched.remove(&self.root)?;
+            make_dir(&self.quarantine_dir())?;
+            for (name, computed) in tampered {
+                rename_into(&self.object_path(name), &self.aside_path(name, computed))?;
+            }
+            sync_dir(&self.objects_dir())?;
+            removal.placed()
+        };
+        let mut memory = self.memory();
+        self.look(&mut memory)?;
+        // The files are set aside: a record that cannot be written is
+        // absent, which every reader reads as "derive".
+        let _ = record.finish(&self.root, &memory.heads());
+        Ok(())
     }
 
     /// Everything `digest` transitively rests on — STRICTLY: an object is not
@@ -769,11 +794,19 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// left from before the tips were derived, and a receipt for each file in
     /// `quarantine/`, which stands in for the missing parent it would be.
     /// Asked under the store's policy at what it read ([`Policy::at`]).
+    ///
+    /// The record of heads is reported when it parses and is not the heads
+    /// of the cold look ([`Finding::StaleHeads`]). `verify` takes no lock,
+    /// so it reads the record before the look and after it, and compares
+    /// only a record that both reads found: a write of the store between
+    /// the two changes the record, and a stale finding would then not be
+    /// true. A change by another door in that window is reported.
     pub fn verify(&self) -> Vec<Finding> {
-        let (garbage, read) = match self
-            .listing()
-            .and_then(|listing| Ok((listing, self.cold()?)))
-        {
+        let (recorded, looked) = record::bracketed(&self.root, || {
+            self.listing()
+                .and_then(|listing| Ok((listing, self.cold()?)))
+        });
+        let (garbage, read) = match looked {
             Ok((Listing { garbage, .. }, read)) => (garbage, read),
             Err(error) => return vec![Finding::Io(error)],
         };
@@ -810,6 +843,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         findings.extend(graph.into_iter().filter(|finding| {
             !matches!(finding, Finding::Broken { at, .. } if receipts.contains(at.as_str()))
         }));
+        let derived = read.heads();
+        findings.extend(
+            recorded
+                .filter(|recorded| *recorded != derived)
+                .map(|recorded| Finding::StaleHeads { recorded, derived }),
+        );
         findings
     }
 
@@ -867,6 +906,10 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
 
     fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError> {
         EventStore::tips(self)
+    }
+
+    fn heads(&self) -> Result<Heads, ProdromeError> {
+        EventStore::heads(self)
     }
 
     fn print(&self, name: &Hash) -> Option<Vec<u8>> {
@@ -1080,12 +1123,10 @@ mod tests {
         put(store, object).expect("writes")
     }
 
-    /// One object written as the writers above write theirs: into a memory
-    /// that has just looked.
+    /// One object written as the writers above write theirs: under a
+    /// decision, into a memory that has just looked.
     fn put(store: &Store, object: Envelope<TodoEvent<Todo>>) -> Result<Hash, ProdromeError> {
-        let mut memory = store.memory();
-        store.look(&mut memory)?;
-        store.write(&mut memory, Verified::sealed(object))
+        store.decision()?.write(Verified::sealed(object))
     }
 
     fn change(store: &Store, name: &Hash) -> Change<TodoEvent<Todo>> {
@@ -1130,10 +1171,11 @@ mod tests {
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .filter(|name| name != ".lock")
                 .collect::<BTreeSet<_>>(),
-            [".gitattributes".to_owned(), "objects".to_owned()]
+            [".gitattributes", ".gitignore", ".heads", "objects"]
                 .into_iter()
+                .map(str::to_owned)
                 .collect(),
-            "the objects are the whole store: no file names a head"
+            "the objects are the whole store, beside the derived record of its heads"
         );
         assert_eq!(
             fs::read_to_string(store.root().join(".gitattributes")).expect("written"),
@@ -1412,8 +1454,10 @@ mod tests {
             .expect_err("a write does not guess")
             .to_string();
         assert!(refusal.contains(digest.as_str()), "{refusal}");
-        // `verify` REPORTS, twice over, and both are true: the file no longer
-        // hashes to its name, and the object resting on it rests on nothing.
+        // `verify` REPORTS three things, and all are true: the file no longer
+        // hashes to its name, the object resting on it rests on nothing, and
+        // the record of heads, which the last write left, is not what the
+        // store derives, since a program changed `objects/` without it.
         assert_eq!(
             findings(&store),
             vec![
@@ -1428,6 +1472,10 @@ mod tests {
                     Hash::of_bytes(&fs::read(&path).expect("reads")).as_str(),
                     digest = digest.as_str()
                 ),
+                ".heads records (objects: 2, tips: 1), and the store derives (objects: 0, \
+                 tips: 0): a program changed objects/ without the store (SPEC §3); call \
+                 `record_heads`, or delete .heads"
+                    .to_owned(),
             ]
         );
         let _ = fs::remove_dir_all(store.root());
@@ -1837,8 +1885,9 @@ mod tests {
 
         // The repair: the object back from a replica, the receipt deleted.
         // `last` rejoins with it, concurrent with `next`, which was written
-        // over the history without them: both are tips, and nothing is
-        // reported.
+        // over the history without them: both are tips. The copy is a door
+        // the store does not own, so the record of heads lags until the
+        // host records the heads (SPEC §3), and then nothing is reported.
         fs::write(&path, text).expect("restores");
         fs::remove_dir_all(store.root().join("quarantine")).expect("deletes the receipt");
         assert_eq!(
@@ -1846,6 +1895,16 @@ mod tests {
             [last.clone(), next.clone()].into_iter().collect()
         );
         assert!(fresh.concurrent(&last, &next).expect("both held"));
+        assert_eq!(
+            findings(&fresh),
+            vec![
+                ".heads records (objects: 2, tips: 1), and the store derives (objects: 4, \
+                 tips: 2): a program changed objects/ without the store (SPEC §3); call \
+                 `record_heads`, or delete .heads"
+                    .to_owned()
+            ]
+        );
+        fresh.record_heads().expect("records");
         assert_eq!(findings(&fresh), Vec::<String>::new());
         let _ = fs::remove_dir_all(store.root());
     }

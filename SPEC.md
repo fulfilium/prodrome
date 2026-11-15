@@ -186,7 +186,9 @@ since this grammar has tuples and no mapping.
 - **Tips are derived.** `tips()` is the set of objects of the history no
   object names as a parent: a function of the object set alone, in any
   order it is listed. A
-  store on disk is its `objects/` and nothing else, so two copies that each
+  store on disk is its `objects/` and nothing else, for every value that a
+  decision or `tips()` reads (the record of heads below is derived from
+  it), so two copies that each
   only added objects are merged by uniting the files — a `git merge` of two
   clones is this union and cannot conflict. A store under git needs
   `objects/** -text -diff` in the `.gitattributes` that governs it, so that
@@ -197,6 +199,50 @@ since this grammar has tuples and no mapping.
   `refs/` (one file per head while there were several); nothing reads them,
   the objects derive exactly what they named (§9.17), and `verify` reports
   them as leftovers to delete.
+- **The record of heads.** A store on disk also keeps `root/.heads`, a file
+  derived from its objects and local to one machine. The record holds
+  `Heads(count=<n>, tips=(<names>))`: the canonical print (§2) of the tips
+  of the history and the count of its objects, with the tips in name order
+  and no newline after the print. `heads()` reads the record, and one
+  `stat` for each recorded tip, in place of a listing of `objects/`. It
+  serves the record when the record parses as exactly that print and every
+  recorded tip's file is present. Otherwise it derives the heads as
+  `tips()` does. `tips()` and every decision derive, and no decision reads
+  the record.
+  - A holder of the store's lock removes the record, and syncs the root,
+    before it places or moves any object. It syncs the root also when the
+    record is already absent. If the removal fails, the write fails before
+    it changes `objects/`. When the holder lets the lock go, it writes the
+    record of the heads that it holds: it unlinks any record that is there,
+    creates the file anew and writes it, with no temp file and no sync. A
+    record that is lost or cut short at any byte does not parse, and no
+    record is written over another, so a power loss cannot mix two.
+    It writes the record once for each hold of the lock, also after several
+    appends. A hold whose placement failed writes no record. A hold that
+    placed nothing rewrites the record only when it differs from the
+    derived heads. If the final write fails, the write still succeeds, and
+    the record is absent. So no stop of a write of the store, by a killed
+    process or by a power loss, leaves a served record that is not the
+    derived heads (law 61).
+  - Before the store first writes the record into a root that holds no
+    `.gitignore`, it writes one, durably, with the line `/.heads`, and it
+    never rewrites a `.gitignore` that is there. A host that keeps its own
+    `.gitignore` adds `/.heads` to it. Two clones never share a record.
+  - A program that changes `objects/` without the store uses a door that
+    the store does not own: a union or a copy of object files, a same-name
+    move of files from a staging store, a version-control merge or
+    checkout of the directory, or an older binary that writes no record.
+    After such a door, the record can be older than the objects. Until the
+    host calls `record_heads()` (which derives and records the heads under
+    the lock) or deletes `.heads`, readers of `heads()` see the last
+    recorded history, and `verify` reports the record as stale. `verify`
+    takes no lock, so it reads the record before its look at the objects
+    and after it, and reports a stale record only when both reads found
+    the same record. Deleting
+    `.heads` is always safe: the next reader derives, and the next hold of
+    the lock records. A host that never calls `heads()` needs to do nothing
+    for correctness, but its `verify` reports the stale record after such a
+    door until a write, a `decide`, a `record_heads()` or a deletion.
 - **`init(label)`** writes a prodrome's `Genesis`, once.
 - **Appending writes a `Change`**, never a `Woven`, into the writer's
   genesis; a store of several geneses is written through a handle that
@@ -257,7 +303,7 @@ since this grammar has tuples and no mapping.
   when neither is an ancestor of the other.
 - **`verify`** changes nothing and reports an object not hashing to its
   name, a missing parent, a cycle, a malformed `Woven`, a leftover `HEAD` or
-  `refs/`, every entry of `objects/` that is not named `<name>.py` for a
+  `refs/`, a record of heads that parses and is not the derived heads, every entry of `objects/` that is not named `<name>.py` for a
   well-formed name (a temp an interrupted write left, or a stray) and every
   temp in the root as garbage, each by name — the reads pass over such an
   entry, and only `verify` speaks of it — a receipt for
@@ -1901,6 +1947,37 @@ description.
     step, the kept tips and the kept order, or the refusal to order, equal
     those of a DAG read fresh from the same objects.
     `dag.rs::tests::a_kept_fact_is_the_fresh_one`.
+
+Laws 60 to 63 are the record of a store's heads (§3), over generated
+scripts of writes by two handles of one store on disk.
+
+60. **Recorded equals derived.** After any sequence of `init`, `append`,
+    several appends under one decision, a receive and `quarantine`, by two
+    handles that take turns under the lock, the record on disk parses and
+    equals the store's tips and the count of the objects of its history, so
+    `heads()` serves it.
+    `record.rs::tests::the_recorded_heads_are_the_derived_ones`.
+61. **A served record is the derived one.** Stop a write of the store at
+    any instant, by a killed process (every step done so far is visible)
+    or by a power loss (a prefix of the durable steps persists, and the
+    unsynced record can be lost or cut at any byte). Then a record that
+    `heads()` serves equals the derived heads. A placement that fails after
+    the removal leaves no record, also when a later write of the same hold
+    succeeds.
+    `record.rs::tests::a_served_record_is_the_derived_one`,
+    `record.rs::tests::a_failed_placement_leaves_no_record`.
+62. **Another door's objects read as the older heads.** Objects that a
+    program adds to `objects/` without the store read as the older heads
+    until a hold of the lock, a `record_heads()` or a deletion of the
+    record, and as the derived heads after each.
+    `record.rs::tests::another_door_s_objects_read_as_the_older_heads`.
+63. **A record that names an absent head is not served.** After another
+    door removes a head's file, `heads()` answers the derived heads, and
+    `verify` reports the record and the derived heads.
+    `record.rs::tests::a_record_naming_an_absent_head_is_not_served`.
+    The bytes of the record are its canonical print, and no proper prefix,
+    conflicted text, unknown field or other print of a value reads:
+    `record.rs::tests::the_record_is_its_canonical_print_and_nothing_else_reads`.
 
 ## 10. Non-goals
 
