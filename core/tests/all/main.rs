@@ -24,6 +24,7 @@ mod folds;
 mod fpl_laws;
 mod fpl_vectors;
 mod frontier;
+mod frontier_reach;
 mod fuzz;
 mod kit;
 mod link_vectors;
