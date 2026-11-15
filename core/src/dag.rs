@@ -2,11 +2,12 @@
 //! findings, with no files. [`crate::store`] is the files around one.
 
 mod finding;
+mod history;
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::OnceLock;
 
 pub use finding::{Excluded, Finding, Unread};
+use history::History;
 
 use crate::change::Change;
 use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
@@ -16,7 +17,6 @@ use crate::registers::{Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
 use crate::spread::spread;
-use crate::topo;
 
 /// Named prints read at the schema `E`: each an object or, `unread`, a print
 /// that is not one. The objects are `objects` and `waiting`: of a DAG made
@@ -27,31 +27,17 @@ use crate::topo;
 /// a function of every print held.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dag<E> {
-    objects: BTreeMap<Hash, Envelope<E>>,
+    history: History<E>,
     waiting: BTreeMap<Hash, Envelope<E>>,
     unread: BTreeMap<Hash, Unread>,
-    tips: Tips,
-}
-
-/// [`Dag::tips`] of the objects, derived on its first ask and kept until
-/// the objects change: every method that changes them clears it. A
-/// function of the objects, so it plays no part in equality.
-#[derive(Debug, Clone, Default)]
-struct Tips(OnceLock<BTreeSet<Hash>>);
-
-impl PartialEq for Tips {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
 }
 
 impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
     fn from_iter<I: IntoIterator<Item = (Hash, Envelope<E>)>>(objects: I) -> Self {
         Dag {
-            objects: objects.into_iter().collect(),
+            history: History::new(objects.into_iter().collect()),
             waiting: BTreeMap::new(),
             unread: BTreeMap::new(),
-            tips: Tips::default(),
         }
     }
 }
@@ -60,11 +46,11 @@ impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
 /// is held once, and a name it is held under is no longer unread.
 impl<E> Extend<(Hash, Envelope<E>)> for Dag<E> {
     fn extend<I: IntoIterator<Item = (Hash, Envelope<E>)>>(&mut self, objects: I) {
-        self.tips = Tips::default();
+        let held = self.history.edit();
         for (name, object) in objects {
             self.unread.remove(&name);
             self.waiting.remove(&name);
-            self.objects.insert(name, object);
+            held.insert(name, object);
         }
     }
 }
@@ -86,7 +72,7 @@ pub fn decode<E: Schema>(
 
 impl<E> Dag<E> {
     pub fn objects(&self) -> &BTreeMap<Hash, Envelope<E>> {
-        &self.objects
+        self.history.objects()
     }
 
     pub fn unread(&self) -> &BTreeMap<Hash, Unread> {
@@ -94,24 +80,24 @@ impl<E> Dag<E> {
     }
 
     pub fn get(&self, name: &Hash) -> Option<&Envelope<E>> {
-        self.objects.get(name)
+        self.objects().get(name)
     }
 
     /// Every object held, in the history or waiting outside it.
     pub(crate) fn held(&self) -> impl Iterator<Item = (&Hash, &Envelope<E>)> {
-        self.objects.iter().chain(&self.waiting)
+        self.objects().iter().chain(&self.waiting)
     }
 
     /// Is `name` held as an object, in the history or waiting outside it?
     pub(crate) fn holds(&self, name: &Hash) -> bool {
-        self.objects.contains_key(name) || self.waiting.contains_key(name)
+        self.objects().contains_key(name) || self.waiting.contains_key(name)
     }
 
     /// Every print `name` was held as, an object or unread, let go.
     pub(crate) fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
-        self.tips = Tips::default();
         self.unread.remove(name);
-        self.objects
+        self.history
+            .edit()
             .remove(name)
             .or_else(|| self.waiting.remove(name))
     }
@@ -123,7 +109,7 @@ impl<E> Dag<E> {
 
     /// Every object held, and every print that is not one.
     pub(crate) fn into_prints(self) -> (BTreeMap<Hash, Envelope<E>>, BTreeMap<Hash, Unread>) {
-        let mut objects = self.objects;
+        let mut objects = self.history.into_objects();
         objects.extend(self.waiting);
         (objects, self.unread)
     }
@@ -153,7 +139,7 @@ impl<E> Dag<E> {
     /// Make the history the interior of every object held: each one waits,
     /// and [`Dag::grow`] takes back in what rests only on the rest.
     pub(crate) fn settle(&mut self) {
-        let held = std::mem::take(&mut self.objects);
+        let held = std::mem::take(self.history.edit());
         self.grow(held);
     }
 
@@ -168,8 +154,7 @@ impl<E> Dag<E> {
     /// costs less than an insert per object: a merge costs the sizes of
     /// both maps, and an insert the logarithm of the larger.
     pub(crate) fn grow(&mut self, mut arrived: BTreeMap<Hash, Envelope<E>>) -> Vec<Hash> {
-        self.tips = Tips::default();
-        arrived.retain(|name, _| !self.objects.contains_key(name));
+        arrived.retain(|name, _| !self.objects().contains_key(name));
         for name in arrived.keys() {
             self.unread.remove(name);
         }
@@ -181,10 +166,11 @@ impl<E> Dag<E> {
             .partition(|_| joins.next().unwrap_or(false));
         self.waiting = still.into_iter().collect();
         let taken = joined.iter().map(|(name, _)| name.clone()).collect();
-        if joined.len() < self.objects.len() {
-            self.objects.extend(joined);
+        let history = self.history.edit();
+        if joined.len() < history.len() {
+            history.extend(joined);
         } else {
-            self.objects.append(&mut joined.into_iter().collect());
+            history.append(&mut joined.into_iter().collect());
         }
         taken
     }
@@ -206,7 +192,7 @@ impl<E> Dag<E> {
                         short[at] += 1;
                     }
                     // Missing: the object waits until it arrives.
-                    Err(_) if !self.objects.contains_key(parent) => short[at] += 1,
+                    Err(_) if !self.objects().contains_key(parent) => short[at] += 1,
                     Err(_) => {}
                 }
             }
@@ -250,18 +236,9 @@ impl<E> Dag<E> {
     /// Every object no object rests on: the maximal objects of the causal
     /// order ([`parents_of`]). Derived from the objects on the first ask
     /// and kept until they change, so a DAG that a store of record keeps
-    /// answers it without a pass over its objects.
+    /// answers it without a pass over its objects (law 59).
     pub fn tips(&self) -> BTreeSet<Hash> {
-        self.tips
-            .0
-            .get_or_init(|| {
-                tips_among(
-                    self.objects
-                        .iter()
-                        .map(|(name, object)| (name, rests_on(object))),
-                )
-            })
-            .clone()
+        self.history.tips().clone()
     }
 
     /// `seeds` and everything they rest on; a name this DAG lacks is in it,
@@ -270,7 +247,7 @@ impl<E> Dag<E> {
         let mut found = BTreeSet::new();
         let mut pending: Vec<Hash> = seeds.into_iter().collect();
         while let Some(name) = pending.pop() {
-            if let Some(object) = self.objects.get(&name).filter(|_| !found.contains(&name)) {
+            if let Some(object) = self.objects().get(&name).filter(|_| !found.contains(&name)) {
                 pending.extend(parents_of(object));
             }
             found.insert(name);
@@ -333,50 +310,27 @@ impl<E> Dag<E> {
 
     /// Kahn's algorithm with a min-heap on the name: parents first, and
     /// incomparable objects in name order. A missing parent or a cycle is a
-    /// refusal.
-    pub fn linearise(&self) -> Result<Vec<Hash>, ProdromeError> {
-        for (name, object) in &self.objects {
-            if let Some(parent) = rests_on(object)
-                .into_iter()
-                .find(|parent| !self.objects.contains_key(*parent))
-            {
-                return Err(ProdromeError::Store(format!(
-                    "missing object {}, named as a parent by {}",
-                    parent.as_str(),
-                    name.as_str()
-                )));
-            }
-        }
-        self.order_among(&self.objects.keys().collect())
+    /// refusal. Derived from the objects on the first ask and kept until
+    /// they change, as [`Dag::tips`] is (law 59), so every reader of the
+    /// order after the first reads the kept list.
+    ///
+    /// # Errors
+    ///
+    /// A parent that no object of the history is, or a cycle.
+    pub fn linearise(&self) -> Result<&[Hash], ProdromeError> {
+        self.history.order()
     }
 
     /// `among`, parents first, by Kahn's walk over them alone: a parent
     /// outside them is passed over. A cycle is a refusal.
     pub(crate) fn order_among(&self, among: &BTreeSet<&Hash>) -> Result<Vec<Hash>, ProdromeError> {
-        let rests_on: BTreeMap<&Hash, Vec<&Hash>> = among
-            .iter()
-            .filter_map(|name| self.objects.get_key_value(*name))
-            .map(|(name, object)| {
-                let parents = rests_on(object)
-                    .into_iter()
-                    .filter_map(|parent| among.get(parent).copied())
-                    .collect();
-                (name, parents)
-            })
-            .collect();
-        match topo::linear(&rests_on) {
-            Ok(order) => Ok(order.into_iter().cloned().collect()),
-            Err(stuck) => Err(ProdromeError::Store(format!(
-                "cycle in the object graph at {}",
-                stuck.as_str()
-            ))),
-        }
+        self.history.order_among(among)
     }
 
     /// Is `name` a legacy root, a `Sealed` with no `prev`?
     pub(crate) fn is_root(&self, name: &Hash) -> bool {
         matches!(
-            self.objects.get(name),
+            self.objects().get(name),
             Some(Envelope::Sealed { prev: None, .. })
         )
     }
@@ -385,11 +339,15 @@ impl<E> Dag<E> {
     /// whose prodrome every legacy object is in (§3).
     pub fn geneses(&self) -> BTreeSet<Hash> {
         let genesis = self
-            .objects
+            .objects()
             .iter()
             .filter(|(_, object)| matches!(object, Envelope::Genesis(_)))
             .map(|(name, _)| name.clone());
-        let root = self.objects.keys().find(|name| self.is_root(name)).cloned();
+        let root = self
+            .objects()
+            .keys()
+            .find(|name| self.is_root(name))
+            .cloned();
         genesis.chain(root).collect()
     }
 
@@ -405,7 +363,7 @@ impl<E> Dag<E> {
             Envelope::Sealed { .. } | Envelope::Woven { .. } => None,
             Envelope::Genesis(_) => self.key(name),
             Envelope::Signed(signed) => self
-                .objects
+                .objects()
                 .get_key_value(&signed.object)
                 .and_then(|(name, object)| self.prodrome(name, object)),
             other => other.genesis().and_then(|genesis| self.key(genesis)),
@@ -417,10 +375,14 @@ impl<E> Dag<E> {
     /// the legacy prodrome its least root. `None` where the DAG lacks it.
     #[must_use]
     pub fn genesis_of(&self, name: &Hash) -> Option<Hash> {
-        let object = self.objects.get(name)?;
+        let object = self.objects().get(name)?;
         match self.prodrome(name, object) {
             Some(genesis) => Some(genesis),
-            None => self.objects.keys().find(|name| self.is_root(name)).cloned(),
+            None => self
+                .objects()
+                .keys()
+                .find(|name| self.is_root(name))
+                .cloned(),
         }
     }
 
@@ -428,7 +390,7 @@ impl<E> Dag<E> {
     pub fn tips_in(&self, prodrome: &Genesis) -> BTreeSet<Hash> {
         self.tips()
             .into_iter()
-            .filter(|tip| self.prodrome(tip, &self.objects[tip]) == *prodrome)
+            .filter(|tip| self.prodrome(tip, &self.objects()[tip]) == *prodrome)
             .collect()
     }
 }
@@ -475,7 +437,7 @@ impl<E: Schema> Dag<E> {
         for (name, read) in spread(items, decode) {
             match read {
                 Ok(object) => {
-                    dag.objects.insert(name, object);
+                    dag.history.edit().insert(name, object);
                 }
                 Err(why) => {
                     dag.unread.insert(name, why);
@@ -498,7 +460,7 @@ impl<E: Schema> Dag<E> {
 
     /// One object as the registers read it, in this DAG's prodromes.
     pub(crate) fn node(&self, name: &Hash) -> Option<Node<E>> {
-        let (name, object) = self.objects.get_key_value(name)?;
+        let (name, object) = self.objects().get_key_value(name)?;
         Some(Node::placed(
             name.clone(),
             object,
@@ -515,7 +477,7 @@ impl<E: Schema> Dag<E> {
         if !self.waiting.is_empty() {
             let mut held = self.clone();
             let waiting = std::mem::take(&mut held.waiting);
-            held.objects.extend(waiting);
+            held.history.edit().extend(waiting);
             return held.verify(policy);
         }
         let excluded = self.excluded();
@@ -539,20 +501,20 @@ impl<E: Schema> Dag<E> {
             .collect();
         if broken.is_empty() {
             match self.linearise() {
-                Ok(order) => findings.extend(self.dated(&order, policy)),
+                Ok(order) => findings.extend(self.dated(order, policy)),
                 Err(error) => findings.push(Finding::Cycle(error)),
             }
         }
         findings.extend(broken);
         findings.extend(self.signature_findings());
-        for (name, object) in &self.objects {
+        for (name, object) in self.objects() {
             findings.extend(self.genesis_findings(name, object));
             match object {
                 Envelope::Change(change) => findings.extend(self.deps_findings(name, change)),
                 Envelope::Snapshot(_) => findings.extend(
                     self.closure(parents_of(object))
                         .into_iter()
-                        .filter(|held| !self.objects.contains_key(held))
+                        .filter(|held| !self.objects().contains_key(held))
                         .map(|missing| Finding::Incomplete {
                             snapshot: name.clone(),
                             missing,
@@ -570,7 +532,7 @@ impl<E: Schema> Dag<E> {
     fn signature_findings(&self) -> Vec<Finding> {
         let proof = Proof::of(self, &Registrar::Anyone);
         let mut findings = Vec::new();
-        for (name, object) in &self.objects {
+        for (name, object) in self.objects() {
             if matches!(object, Envelope::Signed(signed) if !signed.verifies()) {
                 findings.push(Finding::Forged {
                     signed: name.clone(),
@@ -593,13 +555,13 @@ impl<E: Schema> Dag<E> {
     fn genesis_findings(&self, name: &Hash, object: &Envelope<E>) -> Vec<Finding> {
         let stranger = object.genesis().filter(|genesis| {
             !self.is_root(genesis)
-                && !matches!(self.objects.get(*genesis), Some(Envelope::Genesis(_)))
+                && !matches!(self.objects().get(*genesis), Some(Envelope::Genesis(_)))
         });
         let prodrome = self.prodrome(name, object);
         let crossings = parents_of(object).into_iter().filter(|parent| {
             Some(parent) != stranger
                 && self
-                    .objects
+                    .objects()
                     .get(parent)
                     .is_some_and(|held| self.prodrome(parent, held) != prodrome)
         });
@@ -623,13 +585,13 @@ impl<E: Schema> Dag<E> {
             .deps
             .iter()
             .map(|dep| {
-                let parents = self.objects.get(dep).map(parents_of).unwrap_or_default();
+                let parents = self.objects().get(dep).map(parents_of).unwrap_or_default();
                 (dep, self.closure(parents))
             })
             .collect();
         let mut findings = Vec::new();
         for (dep, _) in &beneath {
-            let held = self.objects.get(dep);
+            let held = self.objects().get(dep);
             if held.is_some_and(|held| held.event().map(Schema::key) != Some(change.event.key())) {
                 findings.push(Finding::Foreign {
                     change: name.clone(),
@@ -656,7 +618,7 @@ impl<E: Schema> Dag<E> {
         let mut findings = Vec::new();
         for name in order {
             let (name, object) = self
-                .objects
+                .objects()
                 .get_key_value(name)
                 .expect("the order names objects");
             let behind = parents_of(object)
@@ -761,8 +723,96 @@ fn up(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{canonical_envelope, mk_created, mk_sealed, seal_hash, TodoEvent};
+    use crate::event::{canonical_envelope, mk_created, mk_sealed, mk_woven, seal_hash, TodoEvent};
     use crate::reference::Todo;
+    use proptest::prelude::*;
+
+    type Object = Envelope<TodoEvent<Todo>>;
+
+    /// Objects as drawn: for each object in turn, picks among the objects
+    /// before it, which [`realise`] reduces to its parents.
+    fn a_dag() -> impl Strategy<Value = Vec<Vec<usize>>> {
+        prop::collection::vec(prop::collection::vec(0usize..64, 0..3), 1..16)
+    }
+
+    /// The drawn objects, in the order drawn: `Sealed` for one parent or
+    /// none, and `Woven` for more.
+    fn realise(drawn: &[Vec<usize>]) -> Vec<(Hash, Object)> {
+        let at = Datetime::new(2026, 9, 1, 12, 0, 0, 0).expect("a real instant");
+        let mut objects: Vec<(Hash, Object)> = Vec::with_capacity(drawn.len());
+        for (i, picks) in drawn.iter().enumerate() {
+            let parents: BTreeSet<Hash> = picks
+                .iter()
+                .filter(|_| i > 0)
+                .map(|pick| objects[pick % i].0.clone())
+                .collect();
+            let event = mk_created(&format!("t{i}"), at, "ada", "", "").expect("valid");
+            let object = if parents.len() > 1 {
+                mk_woven(parents.into_iter().collect(), Some(event)).expect("distinct parents")
+            } else {
+                mk_sealed(parents.into_iter().next(), event)
+            };
+            objects.push((seal_hash(&object), object));
+        }
+        objects
+    }
+
+    /// One of the DAG's own operations that change its objects, over the
+    /// drawn objects by their places.
+    #[derive(Debug, Clone)]
+    enum Step {
+        Extend(Vec<usize>),
+        Grow(Vec<usize>),
+        Forget(usize),
+        Settle,
+        Interior,
+    }
+
+    fn a_step() -> impl Strategy<Value = Step> {
+        let some = || prop::collection::vec(0usize..64, 0..6);
+        prop_oneof![
+            some().prop_map(Step::Extend),
+            some().prop_map(Step::Grow),
+            (0usize..64).prop_map(Step::Forget),
+            Just(Step::Settle),
+            Just(Step::Interior),
+        ]
+    }
+
+    proptest! {
+        #![proptest_config(crate::cases::cases(256))]
+
+        /// Law 59: the kept tips and the kept order equal those of a DAG
+        /// read fresh from the same objects, after any sequence of `extend`,
+        /// `grow`, `forget`, `settle` and `interior`, with each fact asked
+        /// for before and after every step.
+        #[test]
+        fn a_kept_fact_is_the_fresh_one(
+            drawn in a_dag(),
+            steps in prop::collection::vec(a_step(), 0..12),
+        ) {
+            let objects = realise(&drawn);
+            let pick = |at: &usize| objects[at % objects.len()].clone();
+            let mut dag: Dag<TodoEvent<Todo>> = Dag::from_iter([]);
+            for step in steps {
+                let _ = (dag.tips(), dag.linearise().map(<[Hash]>::len));
+                match step {
+                    Step::Extend(picks) => dag.extend(picks.iter().map(pick)),
+                    Step::Grow(picks) => {
+                        dag.grow(picks.iter().map(pick).collect());
+                    }
+                    Step::Forget(at) => {
+                        dag.forget(&pick(&at).0);
+                    }
+                    Step::Settle => dag.settle(),
+                    Step::Interior => dag = dag.interior(),
+                }
+                let fresh: Dag<TodoEvent<Todo>> = dag.objects().clone().into_iter().collect();
+                prop_assert_eq!(dag.tips(), fresh.tips());
+                prop_assert_eq!(dag.linearise(), fresh.linearise());
+            }
+        }
+    }
 
     #[test]
     fn linearise_refuses_a_missing_parent() {

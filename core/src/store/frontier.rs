@@ -199,7 +199,8 @@ impl Frontiers {
 
     /// The pull from `since` in `store`, whose objects are `dag`: what
     /// `since` reaches, and the objects outside it in `dag`'s linear order
-    /// ([`Dag::linearise`]).
+    /// ([`Dag::linearise`], which a DAG keeps once derived). So a second
+    /// answer on a DAG that did not change orders no object.
     ///
     /// `since` reaches [`Reached::Everything`] when the store of record
     /// holds its token and the tips held under it are `dag`'s own tips
@@ -295,9 +296,9 @@ fn outside<'a, E: Schema>(
 ) -> Result<Vec<(&'a Hash, &'a Envelope<E>)>, Unanswered> {
     let order = dag.linearise().map_err(Unanswered::Unordered)?;
     Ok(order
-        .into_iter()
-        .filter(|name| !reached.contains(name))
-        .filter_map(|name| dag.objects().get_key_value(&name))
+        .iter()
+        .filter(|name| !reached.contains(*name))
+        .filter_map(|name| dag.objects().get_key_value(name))
         .collect())
 }
 
