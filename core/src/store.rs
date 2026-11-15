@@ -402,16 +402,16 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             let genesis = decision.memory.writer(self.genesis.as_ref())?;
             let dag = decision.memory.dag();
             let tips = dag.tips_in(&dag.key(&genesis));
-            let previous = dag.linearise()?.into_iter().rev().find(|name| {
-                tips.contains(name) && matches!(dag.get(name), Some(Envelope::Snapshot(_)))
+            let previous = dag.linearise()?.iter().rev().find(|name| {
+                tips.contains(*name) && matches!(dag.get(name), Some(Envelope::Snapshot(_)))
             });
             let tips: Vec<Hash> = tips
                 .into_iter()
-                .filter(|tip| Some(tip) != previous.as_ref())
+                .filter(|tip| Some(tip) != previous)
                 .collect();
             match previous {
-                Some(previous) if tips.is_empty() => return Ok(previous),
-                previous => mk_snapshot(genesis, tips, previous)?,
+                Some(previous) if tips.is_empty() => return Ok(previous.clone()),
+                previous => mk_snapshot(genesis, tips, previous.cloned())?,
             }
         };
         self.write(
@@ -1055,7 +1055,7 @@ mod tests {
     }
 
     fn order(store: &Store) -> Result<Vec<Hash>, ProdromeError> {
-        store.dag()?.linearise()
+        store.dag()?.linearise().map(<[Hash]>::to_vec)
     }
 
     fn scratch(name: &str) -> PathBuf {

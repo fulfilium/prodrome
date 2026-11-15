@@ -39,6 +39,17 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **A DAG keeps its linear order, and `Dag::linearise` returns a borrowed
+  slice (SPEC law 59).** A `Dag` derives its order on the first ask and
+  keeps it until its objects change, as it keeps its tips.
+  `Dag::linearise` returns `Result<&[Hash], ProdromeError>`, and a caller
+  that needs to own the list calls `to_vec`. So a second answer of
+  `Frontiers::answer` on a DAG that did not change orders no object, and
+  `Dag::nodes`, `Dag::verify` and `EventStore::snapshot` read the kept
+  order too. The kept order costs about 120 bytes for each object. On the
+  new `frontier_answer` example (a generated DAG of 30,000 objects), a
+  second answer from nothing takes about 3.6 ms instead of 32 ms. No
+  stored byte and no answer changes.
 - **`memo::Lookup` holds owned values, and `Cache::keys`, `Cache::pairs`,
   `Cache::findings` and `Cache::join` work over any holder.** A value read
   from a file is decoded, so a lookup owns it: `Lookup::Hit(V)` and

@@ -1893,6 +1893,14 @@ description.
     opened again. It is never longer than its header, twice its live
     records, 64 KiB of dead records and one buffer of 256 KiB of new
     records. `memo_file.rs::a_policy_bounds_the_file`.
+59. **A kept fact of a DAG is the fresh one.** A DAG in memory keeps its
+    tips and its linear order once a reader asks for them, and lets both go
+    when its objects change. After any sequence of the DAG's own operations
+    that change its objects (an extend, a grow, a forget, a settle, and a
+    move to its interior), with each fact asked for before and after every
+    step, the kept tips and the kept order, or the refusal to order, equal
+    those of a DAG read fresh from the same objects.
+    `dag.rs::tests::a_kept_fact_is_the_fresh_one`.
 
 ## 10. Non-goals
 

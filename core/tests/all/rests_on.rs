@@ -332,7 +332,7 @@ proptest! {
     fn every_order_puts_what_an_object_rests_on_first((geneses, drawn) in a_history()) {
         let (_, objects) = realise(geneses, &drawn);
         let dag: Dag<Event> = objects.clone().into_iter().collect();
-        extends(&dag.linearise().expect("orders"), &objects)?;
+        extends(dag.linearise().expect("orders"), &objects)?;
 
         let store: MemoryStore<Event> = MemoryStore::default();
         let prints: BTreeMap<Hash, Vec<u8>> = objects

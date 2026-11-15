@@ -167,10 +167,10 @@ fn every_dag_vector_linearises_tips_parents_and_verifies_alike() {
         let read: Vec<(Hash, &prodrome::event::Envelope<TodoEvent<Todo>>)> = read
             .linearise()
             .unwrap_or_else(|e| panic!("seed {seed}: {e}"))
-            .into_iter()
+            .iter()
             .map(|name| {
-                let object = read.get(&name).expect("the order names objects");
-                (name, object)
+                let object = read.get(name).expect("the order names objects");
+                (name.clone(), object)
             })
             .collect();
 

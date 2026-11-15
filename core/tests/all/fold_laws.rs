@@ -666,12 +666,12 @@ fn world(store: &Store, dropped: &BTreeSet<&Hash>) -> Vec<Chain> {
     let mut renamed: BTreeMap<Hash, Hash> = BTreeMap::new();
     let mut objects: Vec<(Hash, Envelope<Event>)> = Vec::new();
     for name in dag.linearise().expect("the DAG linearises") {
-        let held = dag.get(&name).expect("a linearised object is held");
+        let held = dag.get(name).expect("a linearised object is held");
         let parents: Vec<Hash> = parents_of(held)
             .iter()
             .map(|parent| renamed[parent].clone())
             .collect();
-        let object = match (held, dropped.contains(&name)) {
+        let object = match (held, dropped.contains(name)) {
             (_, true) => Envelope::Woven {
                 parents,
                 event: None,
@@ -687,7 +687,7 @@ fn world(store: &Store, dropped: &BTreeSet<&Hash>) -> Vec<Chain> {
             (other, false) => panic!("{} is not a legacy object", other.name()),
         };
         let print = seal_hash(&object);
-        renamed.insert(name, print.clone());
+        renamed.insert(name.clone(), print.clone());
         objects.push((print, object));
     }
     objects
