@@ -185,8 +185,9 @@ impl Record {
         let order: Vec<Hash> = dag
             .linearise()
             .expect("a store is closed under parents")
-            .into_iter()
-            .filter(|name| !from.contains(name))
+            .iter()
+            .filter(|name| !from.contains(*name))
+            .cloned()
             .collect();
         let names: Vec<Hash> = lacking.iter().map(|(name, _)| (*name).clone()).collect();
         prop_assert_eq!(names, order);
