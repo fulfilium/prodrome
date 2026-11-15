@@ -283,7 +283,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             Some(_) | None => {
                 let mut memory = self.memory();
                 self.look(&mut memory)?;
-                Ok(memory.heads())
+                Ok(memory.dag().heads())
             }
         }
     }

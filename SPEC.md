@@ -208,7 +208,10 @@ since this grammar has tuples and no mapping.
   serves the record when the record parses as exactly that print and every
   recorded tip's file is present. Otherwise it derives the heads as
   `tips()` does. `tips()` and every decision derive, and no decision reads
-  the record.
+  the record. `Dag::heads()` derives the same heads from a DAG: the tips of
+  its history and the count of its objects (law 65). A host that places
+  its own files, and keeps the record by the steps below, derives the
+  record with `Dag::heads()` from the history that it has read.
   - A holder of the store's lock removes the record, and syncs the root,
     before it places or moves any object. It syncs the root also when the
     record is already absent. If the removal fails, the write fails before
@@ -1992,6 +1995,13 @@ posts of any names, and a store that grows between two pieces.
     rests on), and the count of that set. The specification is the walk
     over names.
     `frontier_reach.rs::a_reach_in_positions_is_the_reach_in_names`.
+65. **A DAG's heads are what its store records.** After any script of
+    writes of law 60, the heads that the store's history derives as a
+    `Dag` (`Dag::heads`) are the heads that the store records and serves,
+    and so are the heads of a DAG read fresh from exactly the objects of
+    that history. The scripts include `quarantine` of any object, so the
+    history can leave objects out.
+    `record.rs::tests::a_dag_s_heads_are_what_its_store_records`.
 
 ## 10. Non-goals
 

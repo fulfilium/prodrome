@@ -10,6 +10,14 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`Dag::heads`, the heads of a history derived from a DAG (SPEC law 65).**
+  It answers the DAG's kept tips and the count of its objects. A host
+  that places its own files derives its record of heads with it, and no
+  longer builds a whole `Held` (with a fold over every object) to read
+  the tips and the count. `Replica::heads` and the derived path of
+  `EventStore::heads` call it, so the crate has one derivation. The
+  WebAssembly fixture `core/tests/fixtures/dag-sizes` stays at 89,664
+  bytes after `wasm-opt -Oz`.
 - **`dag::Reach` and `Dag::reach`: a set of a DAG's objects as positions in
   its linear order (SPEC law 64).** A DAG keeps an index of its order
   beside the order: each object's parents as positions, and a search from
