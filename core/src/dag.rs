@@ -2,11 +2,13 @@
 //! findings, with no files. [`crate::store`] is the files around one.
 
 mod finding;
+mod heads;
 mod history;
 
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use finding::{Excluded, Finding, Unread};
+pub use heads::Heads;
 use history::History;
 
 use crate::change::Change;

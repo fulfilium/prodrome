@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc abdce1273b05d395209a8b2ad8c1cbf9fd41e8b004024dfa2d178256c10c76a5 # shrinks to (shared, mine, _) = ([], [Created(Created { todo: TodoId("alpha"), at: Datetime { year: 2026, month: 10, day: 31, hour: 0, minute: 0, second: 0, microsecond: 0 }, actor: Actor("ada"), text: "t0", note: "mine" })], [])

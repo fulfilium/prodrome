@@ -1,6 +1,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
+use super::Heads;
 use crate::event::{Actor, Hash};
 use crate::literal::{Datetime, ProdromeError};
 
@@ -64,6 +65,9 @@ pub enum Finding {
         object: Hash,
         actor: Actor,
     },
+    /// The store's record of its heads, `.heads`, which parses and differs
+    /// from the heads that the store derives (SPEC §3).
+    StaleHeads { recorded: Heads, derived: Heads },
 }
 
 /// A name the history of a set of prints lacks, and what it leaves out with
@@ -175,6 +179,16 @@ impl fmt::Display for Finding {
                 f,
                 "object {object} is {actor}'s, who has a key, and no signature by a key of \
                  {actor}'s proves it (SPEC §5)"
+            ),
+            Finding::StaleHeads { recorded, derived } => write!(
+                f,
+                ".heads records {} heads of {} objects, and the store derives {} heads of {} \
+                 objects: a program changed objects/ without the store (SPEC §3); call \
+                 `record_heads`, or delete .heads",
+                recorded.tips().len(),
+                recorded.count(),
+                derived.tips().len(),
+                derived.count()
             ),
         }
     }

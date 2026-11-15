@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::change::mk_change;
-use crate::dag::{decode, lacked_among, Dag, Unread};
+use crate::dag::{decode, lacked_among, Dag, Heads, Unread};
 use crate::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope, Hash};
 use crate::literal::{Datetime, ProdromeError};
 use crate::registers::{deps_for, fold, Folded, Genesis};
@@ -295,6 +295,11 @@ impl<E: Schema> Memory<E> {
 
     pub fn tips(&self) -> &BTreeSet<Hash> {
         &self.tips
+    }
+
+    /// The tips of the history and the count of its objects.
+    pub fn heads(&self) -> Heads {
+        Heads::new(self.tips.clone(), self.dag.objects().len())
     }
 
     /// Every prodrome's genesis, as [`Dag::geneses`] answers it.
