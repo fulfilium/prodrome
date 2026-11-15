@@ -179,14 +179,20 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
             .iter()
             .filter_map(|(verified, print)| Some((verified.name(), print.as_deref()?)))
             .collect();
-        let after = if prints.is_empty() {
-            self.record
+        if prints.is_empty() {
+            self.admit(taken);
         } else {
-            let after = self.record.placed();
-            self.record = self.record.remove(&self.store.root)?;
+            let removal = self.record.remove(&self.store.root)?;
+            self.record = removal.placing();
             self.store.place(prints)?;
-            after
-        };
+            self.admit(taken);
+            self.record = removal.placed();
+        }
+        Ok(())
+    }
+
+    /// Every object into the memory, with its file as it is now seen.
+    fn admit(&mut self, taken: Vec<(Verified<E>, Option<Vec<u8>>)>) {
         let now = SystemTime::now();
         let seen = taken
             .into_iter()
@@ -199,7 +205,5 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
             })
             .collect();
         self.memory.admit(&[], seen);
-        self.record = after;
-        Ok(())
     }
 }

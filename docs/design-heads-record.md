@@ -90,8 +90,10 @@ merge leaves conflict markers in the file, the file does not parse, and
 2. The store places its objects as today: each one staged, synced and
    renamed in, and `objects/` synced once.
 3. When the holder lets the lock go, the store writes the record from its
-   memory: staged in a temp file in the root, renamed over `.heads`, with
-   no sync of the file and no sync of the root.
+   memory: it unlinks any record that is there, creates `.heads` anew and
+   writes it, with no temp file, no sync of the file and no sync of the
+   root. No record is written over another, so a power loss cannot mix
+   the bytes of two records.
 
 The record needs no sync, because a lost record, or one that is cut short
 at any byte, is not served: it is absent, or it does not parse. The record
@@ -193,7 +195,9 @@ compares no directory stamp. Instead:
    `verify` compares a record that parses with the derived heads and
    count, and reports a difference as `Finding::StaleHeads { recorded,
    derived }`. A missing record, or one that does not parse, is not a
-   finding.
+   finding. `verify` takes no lock, so it reads the record before and
+   after its look at the objects, and compares only when both reads found
+   the same record.
 2. A host that brings objects in by another door calls
    `EventStore::record_heads()`, or deletes `.heads`. Deleting the record
    is always safe: the next reader derives, and the next hold of the lock

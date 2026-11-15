@@ -213,8 +213,10 @@ since this grammar has tuples and no mapping.
     before it places or moves any object. It syncs the root also when the
     record is already absent. If the removal fails, the write fails before
     it changes `objects/`. When the holder lets the lock go, it writes the
-    record of the heads that it holds: staged, renamed in, and not synced,
-    since a record that is lost or cut short at any byte does not parse.
+    record of the heads that it holds: it unlinks any record that is there,
+    creates the file anew and writes it, with no temp file and no sync. A
+    record that is lost or cut short at any byte does not parse, and no
+    record is written over another, so a power loss cannot mix two.
     It writes the record once for each hold of the lock, also after several
     appends. A hold whose placement failed writes no record. A hold that
     placed nothing rewrites the record only when it differs from the
@@ -233,7 +235,10 @@ since this grammar has tuples and no mapping.
     After such a door, the record can be older than the objects. Until the
     host calls `record_heads()` (which derives and records the heads under
     the lock) or deletes `.heads`, readers of `heads()` see the last
-    recorded history, and `verify` reports the record as stale. Deleting
+    recorded history, and `verify` reports the record as stale. `verify`
+    takes no lock, so it reads the record before its look at the objects
+    and after it, and reports a stale record only when both reads found
+    the same record. Deleting
     `.heads` is always safe: the next reader derives, and the next hold of
     the lock records. A host that never calls `heads()` needs to do nothing
     for correctness, but its `verify` reports the stale record after such a

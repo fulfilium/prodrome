@@ -263,7 +263,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// the objects until it calls [`EventStore::record_heads`] or deletes
     /// the record (law 62). Where the record is absent, does not parse, or
     /// names a tip whose file is absent (law 63), the heads are derived as
-    /// [`EventStore::tips`] derives them.
+    /// [`EventStore::tips`] derives them. Such a fallback writes no record,
+    /// so a store with no record pays the listing on every call until the
+    /// next hold of its lock (a write, a `decide`, or `record_heads`).
     ///
     /// # Errors
     ///
@@ -717,14 +719,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let record = if tampered.is_empty() {
             Record::Untouched
         } else {
-            let after = Record::Untouched.placed();
-            Record::Untouched.remove(&self.root)?;
+            let removal = Record::Untouched.remove(&self.root)?;
             make_dir(&self.quarantine_dir())?;
             for (name, computed) in tampered {
                 rename_into(&self.object_path(name), &self.aside_path(name, computed))?;
             }
             sync_dir(&self.objects_dir())?;
-            after
+            removal.placed()
         };
         let mut memory = self.memory();
         self.look(&mut memory)?;
@@ -793,11 +794,19 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// left from before the tips were derived, and a receipt for each file in
     /// `quarantine/`, which stands in for the missing parent it would be.
     /// Asked under the store's policy at what it read ([`Policy::at`]).
+    ///
+    /// The record of heads is reported when it parses and is not the heads
+    /// of the cold look ([`Finding::StaleHeads`]). `verify` takes no lock,
+    /// so it reads the record before the look and after it, and compares
+    /// only a record that both reads found: a write of the store between
+    /// the two changes the record, and a stale finding would then not be
+    /// true. A change by another door in that window is reported.
     pub fn verify(&self) -> Vec<Finding> {
-        let (garbage, read) = match self
-            .listing()
-            .and_then(|listing| Ok((listing, self.cold()?)))
-        {
+        let (recorded, looked) = record::bracketed(&self.root, || {
+            self.listing()
+                .and_then(|listing| Ok((listing, self.cold()?)))
+        });
+        let (garbage, read) = match looked {
             Ok((Listing { garbage, .. }, read)) => (garbage, read),
             Err(error) => return vec![Finding::Io(error)],
         };
@@ -836,7 +845,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }));
         let derived = read.heads();
         findings.extend(
-            record::read(&self.root)
+            recorded
                 .filter(|recorded| *recorded != derived)
                 .map(|recorded| Finding::StaleHeads { recorded, derived }),
         );
@@ -981,22 +990,14 @@ fn put_durably(path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
 /// into one temp together, and one of them rename the other's half. A temp
 /// is not named like an object, so no read takes it for one.
 fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
-    let (temp, file) = staged(dir, bytes)?;
-    file.sync_all().map_err(|e| ProdromeError::io(&temp, &e))?;
-    Ok(temp)
-}
-
-/// Bytes into a fresh temp file in `dir`, not synced: [`stage`] before its
-/// sync, and the whole of the write of a file that a reader may find lost
-/// or cut short (the record of heads, [`record`]).
-fn staged(dir: &Path, bytes: &[u8]) -> Result<(PathBuf, File), ProdromeError> {
     loop {
         let temp = dir.join(temp_name());
         match File::options().write(true).create_new(true).open(&temp) {
             Ok(mut file) => {
                 file.write_all(bytes)
+                    .and_then(|()| file.sync_all())
                     .map_err(|e| ProdromeError::io(&temp, &e))?;
-                return Ok((temp, file));
+                return Ok(temp);
             }
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
             Err(error) => return Err(ProdromeError::io(&temp, &error)),
@@ -1471,8 +1472,8 @@ mod tests {
                     Hash::of_bytes(&fs::read(&path).expect("reads")).as_str(),
                     digest = digest.as_str()
                 ),
-                ".heads records 1 heads of 2 objects, and the store derives 0 heads of 0 \
-                 objects: a program changed objects/ without the store (SPEC §3); call \
+                ".heads records (objects: 2, tips: 1), and the store derives (objects: 0, \
+                 tips: 0): a program changed objects/ without the store (SPEC §3); call \
                  `record_heads`, or delete .heads"
                     .to_owned(),
             ]
@@ -1897,8 +1898,8 @@ mod tests {
         assert_eq!(
             findings(&fresh),
             vec![
-                ".heads records 1 heads of 2 objects, and the store derives 2 heads of 4 \
-                 objects: a program changed objects/ without the store (SPEC §3); call \
+                ".heads records (objects: 2, tips: 1), and the store derives (objects: 4, \
+                 tips: 2): a program changed objects/ without the store (SPEC §3); call \
                  `record_heads`, or delete .heads"
                     .to_owned()
             ]

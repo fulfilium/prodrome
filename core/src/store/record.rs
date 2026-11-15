@@ -9,14 +9,16 @@
 //! The store removes the record, durably, before it changes `objects/`, and
 //! writes it again when the holder of the lock lets the lock go. So a record
 //! that a reader finds is never older than a change of the store's own: a
-//! stop between the two steps leaves no record. The final write has no sync,
-//! because a record that is lost, or cut short at any byte, does not parse,
-//! and a reader then derives the heads.
+//! stop between the two steps leaves no record. The final write has no sync
+//! and no temp file: the store unlinks any record that is there and creates
+//! the file anew, and a record that is lost, or cut short at any byte, does
+//! not parse, so a reader then derives the heads.
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::Write;
 use std::path::Path;
 
-use super::{put_durably, rename_into, staged, sync_dir};
+use super::{put_durably, sync_dir};
 use crate::dag::Heads;
 use crate::literal::ProdromeError;
 
@@ -31,46 +33,48 @@ const GITIGNORE: &str = "/.heads\n";
 pub(super) enum Record {
     /// Nothing was placed under this hold, and the record is as it was.
     Untouched,
-    /// The record is removed, durably, and a placement can be cut short. A
-    /// hold in this state at its end leaves no record.
-    Removed,
+    /// The record is removed, and a placement is under way or was cut
+    /// short. A hold in this state at its end leaves no record.
+    Placing(Removal),
     /// The record is removed, and every placement of this hold is done and
     /// in memory.
-    Due,
+    Due(Removal),
+}
+
+/// The record removed under this hold, with the root synced. Only
+/// [`Record::remove`] makes one, so no state that owes a record exists
+/// without a removal before it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) struct Removal(Owes);
+
+/// What a removal owes when its placement succeeds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Owes {
+    /// The record of the hold's heads.
+    Record,
+    /// Nothing: an earlier placement of the hold was cut short, so its
+    /// objects can be on disk and not in memory.
+    Nothing,
 }
 
 impl Record {
-    /// The state before a placement: the record removed, and the root
-    /// synced, also when the file is already absent, because a host can
-    /// delete it without a sync. Removed once for each hold of the lock.
+    /// Remove the record before a placement, and sync the root, also when
+    /// the file is already absent, because a host can delete it without a
+    /// sync. The record is removed once for each hold of the lock.
     ///
     /// # Errors
     ///
     /// The record not removed, or the root not synced. The caller then
     /// places nothing.
-    pub(super) fn remove(self, root: &Path) -> Result<Record, ProdromeError> {
+    pub(super) fn remove(self, root: &Path) -> Result<Removal, ProdromeError> {
         match self {
             Record::Untouched => {
-                let path = root.join(FILE);
-                match fs::remove_file(&path) {
-                    Ok(()) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                    Err(error) => return Err(ProdromeError::io(&path, &error)),
-                }
+                unlink(root)?;
                 sync_dir(root)?;
-                Ok(Record::Removed)
+                Ok(Removal(Owes::Record))
             }
-            Record::Removed | Record::Due => Ok(Record::Removed),
-        }
-    }
-
-    /// The state after a placement that succeeds. A hold whose earlier
-    /// placement failed stays [`Record::Removed`], because the objects of
-    /// the failed placement can be on disk and not in memory.
-    pub(super) fn placed(self) -> Record {
-        match self {
-            Record::Untouched | Record::Due => Record::Due,
-            Record::Removed => Record::Removed,
+            Record::Due(removal) => Ok(removal),
+            Record::Placing(_) => Ok(Removal(Owes::Nothing)),
         }
     }
 
@@ -85,8 +89,23 @@ impl Record {
     pub(super) fn finish(self, root: &Path, heads: &Heads) -> Result<(), ProdromeError> {
         match self {
             Record::Untouched if read(root).as_ref() == Some(heads) => Ok(()),
-            Record::Untouched | Record::Due => write(root, heads),
-            Record::Removed => Ok(()),
+            Record::Untouched | Record::Due(_) => write(root, heads),
+            Record::Placing(_) => Ok(()),
+        }
+    }
+}
+
+impl Removal {
+    /// The state while the placement runs.
+    pub(super) fn placing(self) -> Record {
+        Record::Placing(self)
+    }
+
+    /// The state after the placement succeeds.
+    pub(super) fn placed(self) -> Record {
+        match self.0 {
+            Owes::Record => Record::Due(self),
+            Owes::Nothing => Record::Placing(self),
         }
     }
 }
@@ -97,15 +116,47 @@ pub(super) fn read(root: &Path) -> Option<Heads> {
     Heads::parse(&text).ok()
 }
 
+/// `look` run between two reads of the record in `root`, and the record if
+/// both reads found the same one. A write of the store changes the record
+/// (it is absent while the write runs, and its count or its tips differ
+/// after), so a record that both reads found brackets a look that no write
+/// of the store crossed. A change by another door in that window leaves
+/// the record as it was, and a comparison then reports it, truly.
+pub(super) fn bracketed<T>(root: &Path, look: impl FnOnce() -> T) -> (Option<Heads>, T) {
+    let before = read(root);
+    let looked = look();
+    let after = read(root);
+    (before.filter(|held| Some(held) == after.as_ref()), looked)
+}
+
+/// Unlink the record, if it is there.
+fn unlink(root: &Path) -> Result<(), ProdromeError> {
+    let path = root.join(FILE);
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(ProdromeError::io(&path, &error)),
+    }
+}
+
 /// `heads` as the record of `root`: the `.gitignore` first, durably, where
-/// there is none; then the record, staged and renamed in, with no sync.
+/// there is none; then any record that is there unlinked, and the file
+/// created anew and written, with no sync. A record is never written over
+/// another, so a power loss cannot mix the bytes of two records: the file
+/// holds the old record, nothing, or a prefix of the new one.
 fn write(root: &Path, heads: &Heads) -> Result<(), ProdromeError> {
     let gitignore = root.join(".gitignore");
     if !gitignore.exists() {
         put_durably(&gitignore, GITIGNORE.as_bytes())?;
     }
-    let (temp, _) = staged(root, heads.print().as_bytes())?;
-    rename_into(&temp, &root.join(FILE))
+    unlink(root)?;
+    let path = root.join(FILE);
+    File::options()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .and_then(|mut file| file.write_all(heads.print().as_bytes()))
+        .map_err(|error| ProdromeError::io(&path, &error))
 }
 
 #[cfg(test)]
@@ -116,7 +167,7 @@ mod tests {
 
     use proptest::prelude::*;
 
-    use super::{read, FILE};
+    use super::{bracketed, read, Record, FILE};
     use crate::dag::{Finding, Heads};
     use crate::event::{mk_created, mk_reopened, mk_sealed, Hash, TodoEvent};
     use crate::literal::Datetime;
@@ -382,6 +433,56 @@ mod tests {
         assert!(writer
             .verify()
             .contains(&Finding::StaleHeads { recorded, derived }));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// `verify` compares only a record that both of its reads found: a
+    /// second handle that appends between the cold look and the second read
+    /// leaves no stale finding, where one read after the look would report
+    /// one that is not true.
+    #[test]
+    fn a_write_during_verify_is_not_reported_as_stale() {
+        let root = scratch();
+        let writer = store(&root);
+        writer.init("heads").expect("begins");
+        writer.append(reopened(1, 1)).expect("appends");
+        let other = store(&root);
+        let (recorded, looked) = bracketed(&root, || {
+            let looked = writer.cold().expect("reads");
+            other.append(reopened(2, 2)).expect("appends");
+            looked
+        });
+        assert_eq!(
+            recorded, None,
+            "the write changed the record between the reads"
+        );
+        let unbracketed = read(&root).expect("recorded");
+        assert_ne!(
+            unbracketed,
+            looked.heads(),
+            "one read after the look would report it"
+        );
+        assert_eq!(writer.verify(), Vec::new());
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    /// A record written where an older, longer record was holds the new
+    /// print and nothing of the old one, since the old file is unlinked and
+    /// the new one created.
+    #[test]
+    fn a_shorter_record_leaves_nothing_of_a_longer_one() {
+        let root = scratch();
+        let writer = store(&root);
+        writer.init("heads").expect("begins");
+        let longer = Heads::new((1..40).map(tip).collect(), 39);
+        std::fs::write(root.join(FILE), longer.print()).expect("writes");
+        let heads = derived(&root);
+        assert!(heads.print().len() < longer.print().len());
+        Record::Untouched.finish(&root, &heads).expect("records");
+        assert_eq!(
+            std::fs::read_to_string(root.join(FILE)).expect("recorded"),
+            heads.print()
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 

@@ -185,13 +185,13 @@ impl fmt::Display for Finding {
             ),
             Finding::StaleHeads { recorded, derived } => write!(
                 f,
-                ".heads records {} heads of {} objects, and the store derives {} heads of {} \
-                 objects: a program changed objects/ without the store (SPEC §3); call \
+                ".heads records (objects: {}, tips: {}), and the store derives (objects: {}, \
+                 tips: {}): a program changed objects/ without the store (SPEC §3); call \
                  `record_heads`, or delete .heads",
-                recorded.tips().len(),
                 recorded.count(),
-                derived.tips().len(),
-                derived.count()
+                recorded.tips().len(),
+                derived.count(),
+                derived.tips().len()
             ),
         }
     }
