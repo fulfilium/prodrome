@@ -2003,6 +2003,22 @@ posts of any names, and a store that grows between two pieces.
     history can leave objects out.
     `record.rs::tests::a_dag_s_heads_are_what_its_store_records`.
 
+Law 66 is §3's rule for "a dep another dep of the same change rests on",
+read as positions in the linear order, over generated DAGs held in memory
+under names that the test chooses.
+
+66. **The deps rule in positions is the rule in names.** For every change
+    of a DAG, `verify` reports the dep `d` as beneath the dep `o` exactly
+    when `d` is in the closure of the parents of `o`, dep by dep in the
+    order of the change's deps, each after the finding that `d` is not a
+    write to the change's entity, if there is one. The DAGs include chains,
+    changes of several deps, redundant deps, deps that no object holds, and
+    cycles. In a DAG with a cycle, a dep on the cycle is in the closure of
+    its own parents, so `verify` reports it as beneath itself. The
+    specification is the closure.
+    `redundant_deps.rs::the_deps_rule_is_the_closure_rule`,
+    `redundant_deps.rs::a_dep_on_a_cycle_lies_beneath_itself`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;

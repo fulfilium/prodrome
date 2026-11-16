@@ -42,6 +42,7 @@ mod note;
 mod observe;
 mod order_laws;
 mod recur_vectors;
+mod redundant_deps;
 mod registers;
 mod replica;
 mod rests_on;

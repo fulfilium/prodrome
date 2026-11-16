@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 pub use finding::{Excluded, Finding, Unread};
 pub use heads::Heads;
 use history::History;
+use index::Index;
 pub use reach::Reach;
 
 use crate::change::Change;
@@ -535,10 +536,13 @@ impl<E: Schema> Dag<E> {
         }
         findings.extend(broken);
         findings.extend(self.signature_findings());
+        let ordered = self.history.indexed();
         for (name, object) in self.objects() {
             findings.extend(self.genesis_findings(name, object));
             match object {
-                Envelope::Change(change) => findings.extend(self.deps_findings(name, change)),
+                Envelope::Change(change) => {
+                    findings.extend(self.deps_findings(name, change, &ordered));
+                }
                 Envelope::Snapshot(_) => findings.extend(
                     self.closure(parents_of(object))
                         .into_iter()
@@ -607,36 +611,94 @@ impl<E: Schema> Dag<E> {
     }
 
     /// §3: each dep is a write to the change's entity, and no dep rests on
-    /// another.
-    fn deps_findings(&self, name: &Hash, change: &Change<E>) -> Vec<Finding> {
-        let beneath: Vec<(&Hash, BTreeSet<Hash>)> = change
-            .deps
-            .iter()
-            .map(|dep| {
-                let parents = self.objects().get(dep).map(parents_of).unwrap_or_default();
-                (dep, self.closure(parents))
-            })
-            .collect();
+    /// another. `ordered` is the DAG's linear order and its index, or the
+    /// refusal of the order.
+    fn deps_findings(
+        &self,
+        name: &Hash,
+        change: &Change<E>,
+        ordered: &Result<(&[Hash], &Index), ProdromeError>,
+    ) -> Vec<Finding> {
+        let above = self.deps_above(&change.deps, ordered);
         let mut findings = Vec::new();
-        for (dep, _) in &beneath {
+        for dep in &change.deps {
             let held = self.objects().get(dep);
             if held.is_some_and(|held| held.event().map(Schema::key) != Some(change.event.key())) {
                 findings.push(Finding::Foreign {
                     change: name.clone(),
-                    dep: (*dep).clone(),
+                    dep: dep.clone(),
                 });
             }
-            for (other, below) in &beneath {
-                if below.contains(*dep) {
-                    findings.push(Finding::Redundant {
-                        change: name.clone(),
-                        dep: (*dep).clone(),
-                        beneath: (*other).clone(),
-                    });
-                }
+            for &other in above.get(dep).into_iter().flatten() {
+                findings.push(Finding::Redundant {
+                    change: name.clone(),
+                    dep: dep.clone(),
+                    beneath: other.clone(),
+                });
             }
         }
         findings
+    }
+
+    /// For each of `deps`, the deps that it lies beneath, in the order of
+    /// `deps`. A dep lies beneath `other` when it is in the closure of the
+    /// parents of `other` ([`Dag::closure`]).
+    ///
+    /// Where the DAG has a linear order, it has no cycle, so no dep lies
+    /// beneath itself, and a change with fewer than two deps has no pair to
+    /// find. For more deps, one walk over the positions of the
+    /// order answers for all of them ([`Index::beneath`]), and it reaches
+    /// only the objects between the least dep and the others. Where the DAG
+    /// has no linear order, because a parent is missing or the objects make
+    /// a cycle, the closure of each dep's parents answers. In a cycle, a dep
+    /// can lie beneath itself, and this answer keeps that pair.
+    fn deps_above<'c>(
+        &self,
+        deps: &'c [Hash],
+        ordered: &Result<(&[Hash], &Index), ProdromeError>,
+    ) -> BTreeMap<&'c Hash, Vec<&'c Hash>> {
+        match (ordered, deps) {
+            (Ok(_), [] | [_]) => BTreeMap::new(),
+            (Ok((order, index)), _) => {
+                // The order holds every parent, so each dep has a position.
+                let placed: Vec<(&Hash, usize)> = deps
+                    .iter()
+                    .filter_map(|dep| index.position(order, dep).map(|at| (dep, at)))
+                    .collect();
+                let tops: Vec<usize> = placed.iter().map(|&(_, at)| at).collect();
+                placed
+                    .iter()
+                    .zip(index.beneath(&tops))
+                    .map(|(&(dep, _), above)| {
+                        (dep, above.iter().map(|top| placed[top].0).collect())
+                    })
+                    .collect()
+            }
+            (Err(_), _) => {
+                let below: Vec<BTreeSet<Hash>> = deps
+                    .iter()
+                    .map(|other| {
+                        let parents = self
+                            .objects()
+                            .get(other)
+                            .map(parents_of)
+                            .unwrap_or_default();
+                        self.closure(parents)
+                    })
+                    .collect();
+                deps.iter()
+                    .map(|dep| {
+                        let above: Vec<&Hash> = deps
+                            .iter()
+                            .zip(&below)
+                            .filter(|(_, below)| below.contains(dep))
+                            .map(|(other, _)| other)
+                            .collect();
+                        (dep, above)
+                    })
+                    .collect()
+            }
+        }
     }
 
     /// An event the policy does not confirm, dated before the latest stamp

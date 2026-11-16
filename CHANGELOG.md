@@ -74,6 +74,17 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`verify` finds a redundant dep with one walk over the linear order
+  (SPEC law 66).** The rule reports a dep of a change that another dep of
+  the same change rests on. It built the closure of each dep's parents, so
+  a store of long histories cost time that grows with the square of a
+  history's length. Where the DAG has a linear order, a change with one
+  dep now costs no walk, and a change with more deps costs one walk down
+  the positions of the order, from the deps to the least of them. Where
+  the DAG has no linear order (a missing parent or a cycle), the rule
+  builds the closures as before. The findings do not change for any
+  store. On the new `verify_cost` example, a generated chain of 40,000
+  changes verifies in about 170 ms in place of about 930 s.
 - **`Reached::Known` holds a `&Reach`, `Reached` has a lifetime, and
   `Lacking::reached` returns it by value.** A host that read the reach as
   a `BTreeSet<Hash>` reads it through `Reach::len`, `Reach::contains` and
