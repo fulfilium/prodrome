@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=('8d595aa650561b2b1e62f4b21ffb92b33e56cc29bce590c48a1b8d420e90e9ec',), event=SpecRevised(todo='viewer-shows-event-notes', at=datetime(2026, 11, 17, 23, 5, 0), actor='maintainer', spec=Flat(value=0.7), note=''))

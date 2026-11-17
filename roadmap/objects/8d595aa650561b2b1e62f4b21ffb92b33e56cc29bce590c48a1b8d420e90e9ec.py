@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='viewer-shows-event-notes', at=datetime(2026, 11, 17, 23, 5, 0), actor='maintainer', text="show each event's note in the viewer's history of an item", note=''))
