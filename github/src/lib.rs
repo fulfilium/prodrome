@@ -7,10 +7,11 @@
 //! same events — which is what lets a replay append nothing: `append` writes
 //! nothing for an event its prodrome already holds (SPEC §3).
 //!
-//! The payload is the JSON a workflow finds at `$GITHUB_EVENT_PATH`. Two event
-//! names are read, `issues` and `issue_comment`, and told apart by the payload
-//! itself (only a comment delivery carries `comment`), so the input is one file
-//! and a test is one fixture.
+//! The payload is the JSON a workflow finds at `$GITHUB_EVENT_PATH`. Three
+//! event names are read, `issues`, `issue_comment` and `pull_request`, and told
+//! apart by the payload itself (only a comment delivery carries `comment`, and
+//! only a pull request delivery carries `pull_request` at its top level), so
+//! the input is one file and a test is one fixture.
 //!
 //! WHO WRITES WHAT. Facts GitHub asserts — an issue was opened, retitled,
 //! closed, reopened — are written as [`MIRROR`]. A `/price` comment is written
@@ -18,8 +19,11 @@
 //! repository's owner, a member or a collaborator; anyone else's `/price` is
 //! ignored before its text is even parsed. A proposal from the pricing step is
 //! written as [`BOT`], which a reader passes to `--untrusted` to see it as the
-//! CLAIM it is (§5).
+//! CLAIM it is (§5). The merge of a pull request whose description names
+//! items in `Completes:` lines completes those items, as [`MIRROR`]
+//! ([`completes`]).
 
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use prodrome::dag::Dag;
@@ -35,6 +39,8 @@ use serde_json::Value;
 
 use prodrome_cli::command::Price as PriceArgs;
 use prodrome_cli::{price, store_root, Error, Outcome, Store};
+
+pub mod completes;
 
 /// The actor every mirrored fact is written as.
 pub const MIRROR: &str = "github-mirror";
@@ -163,7 +169,7 @@ pub enum Price {
 
 // --- reading the payload -----------------------------------------------------
 
-fn field<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
+pub(crate) fn field<'a>(value: &'a Value, path: &[&str]) -> Option<&'a Value> {
     path.iter().try_fold(value, |value, key| value.get(key))
 }
 
@@ -412,7 +418,7 @@ fn record(issue: &Issue, at: Datetime, spec: Option<Term>) -> Result<TodoEvent<T
 }
 
 /// What the store already says, as far as a delivery needs to know.
-struct Known<'a> {
+pub(crate) struct Known<'a> {
     dag: &'a Dag<TodoEvent<Todo>>,
     events: Vec<TodoEvent<Todo>>,
     state: Folded<TodoEvent<Todo>>,
@@ -433,7 +439,7 @@ impl<'a> Known<'a> {
         })
     }
 
-    fn has_item(&self, todo: &str) -> bool {
+    pub(crate) fn has_item(&self, todo: &str) -> bool {
         self.events
             .iter()
             .any(|event| matches!(event, TodoEvent::Created(e) if e.todo.as_str() == todo))
@@ -473,6 +479,11 @@ pub enum Skip {
     NotAPrice,
     Outsider(String),
     BodyOnlyEdit,
+    /// A pull request whose description has no `Completes:` line.
+    CompletesNothing,
+    /// A pull request that has not merged, with the items that its merge
+    /// will complete.
+    Unmerged(BTreeSet<TodoId>),
 }
 
 impl std::fmt::Display for Skip {
@@ -485,6 +496,20 @@ impl std::fmt::Display for Skip {
                 write!(f, "a /price from {login}, who is not a maintainer: ignored")
             }
             Skip::BodyOnlyEdit => write!(f, "an edit that left the title alone"),
+            Skip::CompletesNothing => write!(
+                f,
+                "a pull request with no `{}` line, which completes nothing",
+                completes::WORD
+            ),
+            Skip::Unmerged(items) => write!(
+                f,
+                "a pull request that has not merged; its merge completes {}",
+                items
+                    .iter()
+                    .map(TodoId::as_str)
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
         }
     }
 }
@@ -731,10 +756,11 @@ pub struct Cli {
     pub store: Option<std::path::PathBuf>,
 }
 
-/// Apply one GitHub webhook delivery (`issues` or `issue_comment`) to the
-/// store: an issue becomes item `gh-<number>`, and a maintainer's `/price`
-/// comment reprices it. Deterministic and offline, and a delivery already
-/// applied appends nothing.
+/// Apply one GitHub webhook delivery (`issues`, `issue_comment` or
+/// `pull_request`) to the store: an issue becomes item `gh-<number>`, a
+/// maintainer's `/price` comment reprices it, and a merged pull request
+/// completes the items that its `Completes:` lines name. Deterministic and
+/// offline, and a delivery already applied appends nothing.
 ///
 /// # Errors
 /// A payload or reply that does not parse, and the store's own refusals.
@@ -747,10 +773,24 @@ pub fn run(cli: &Cli) -> Result<Outcome, Error> {
 }
 
 /// Read the payload (and the reply, for a proposal), and apply it.
+///
+/// # Errors
+///
+/// A payload or reply that does not parse, a proposal beside a pull request,
+/// and the store's own refusals.
 pub fn apply(store: &Store, payload: &Path, proposal: Option<&Path>) -> Result<Outcome, Error> {
-    let delivery = delivery_of(&read_json(payload)?)?;
-    let reply = proposal.map(read_text).transpose()?;
-    apply_delivery(store, &delivery, reply.as_deref())
+    let payload = read_json(payload)?;
+    match (payload.get("pull_request"), proposal) {
+        (Some(pull), None) => apply_pull(store, &completes::pull_of(pull)?),
+        (Some(_), Some(_)) => Err(Error::usage(
+            "--proposal: a proposal prices an issue, and this payload is a pull request",
+        )),
+        (None, proposal) => {
+            let delivery = delivery_of(&payload)?;
+            let reply = proposal.map(read_text).transpose()?;
+            apply_delivery(store, &delivery, reply.as_deref())
+        }
+    }
 }
 
 /// Plan one delivery against the store and append what it means: the digest
@@ -761,7 +801,27 @@ pub fn apply_delivery(
     delivery: &Delivery,
     proposal: Option<&str>,
 ) -> Result<Outcome, Error> {
-    match plan(delivery, proposal, &*store.dag()?)? {
+    append(store, plan(delivery, proposal, &*store.dag()?)?)
+}
+
+/// Plan one pull request against the store and append the completions that
+/// its merge means, as [`apply_delivery`] does for an issue. A pull request
+/// that has not merged appends nothing, and the outcome names the items that
+/// its merge will complete.
+///
+/// # Errors
+///
+/// A `Completes:` line that names an item the store does not hold, and the
+/// store's own refusals.
+pub fn apply_pull(store: &Store, pull: &completes::Pull) -> Result<Outcome, Error> {
+    let dag = store.dag()?;
+    append(store, completes::meant(pull, &Known::of(&dag)?)?)
+}
+
+/// Append what a delivery means: the digest of each event, one per line, or
+/// why there are none.
+fn append(store: &Store, meant: Result<Vec<TodoEvent<Todo>>, Skip>) -> Result<Outcome, Error> {
+    match meant {
         Err(skip) => Ok(Outcome::said(format!("nothing to append: {skip}"))),
         Ok(meant) if meant.is_empty() => Ok(Outcome::said("nothing to append: already applied")),
         Ok(meant) => {

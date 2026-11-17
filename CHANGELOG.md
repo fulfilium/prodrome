@@ -10,6 +10,19 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`prodrome-github` completes the roadmap items that a merged pull request
+  names.** A pull request's description names each item that it completes
+  in a line `Completes: <id>`. For a `pull_request` payload,
+  `prodrome-github` checks that the store holds every named item. When the
+  pull request has merged, it writes one `Completed` for each item, as
+  `github-mirror`, at the instant of the merge, with the note `completed by
+  pull request #N`, and a replay writes nothing. The new workflow
+  `completes.yml` runs the check on every change to a pull request against
+  `main`, and records the completions on every push to `main`, for the
+  pushed commit's pull request and the recent merges. `pages.yml` publishes
+  the viewer again when a `completes` run finishes. No stored constructor
+  and no core API changes.
+
 - **`Dag::heads`, the heads of a history derived from a DAG (SPEC law 65).**
   It answers the DAG's kept tips and the count of its objects. A host
   that places its own files derives its record of heads with it, and no

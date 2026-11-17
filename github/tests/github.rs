@@ -16,14 +16,16 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use clap::Parser;
 use proptest::prelude::*;
 
+use prodrome::event::TodoId;
 use prodrome::event::{canonical_envelope, seal_hash, Actor, Envelope, TodoEvent};
 use prodrome::genesis::mk_genesis;
 use prodrome::policy::Untrusted;
 use prodrome::reference::Todo;
 use prodrome_cli::command::Cli;
 use prodrome_cli::{read, run, Outcome, Store};
+use prodrome_github::completes::{Merge, Pull};
 use prodrome_github::{
-    apply_delivery, instant_of, Action, Comment, Delivery, Issue, Standing, BOT, MIRROR,
+    apply_delivery, apply_pull, instant_of, Action, Comment, Delivery, Issue, Standing, BOT, MIRROR,
 };
 
 static NEXT: AtomicUsize = AtomicUsize::new(0);
@@ -384,6 +386,100 @@ fn a_proposal_cannot_accept_itself() {
     assert!(refusal.to_string().contains("maintainer"), "{refusal}");
 }
 
+// --- pull requests and their `Completes:` lines -------------------------------
+
+#[test]
+fn a_merged_pull_request_completes_what_it_names_at_its_merge() {
+    let root = a_store();
+    github(&root, "issues-opened.json");
+    let first = github(&root, "pull-request-merged.json");
+    assert_eq!(first.lines().count(), 1, "one completion: {first}");
+    let before = said(&root, &["list", "--at", "2026-09-24T09:00:00"]);
+    assert!(row(&before, "gh-12").is_some(), "{before}");
+    let after = said(&root, &["list", "--at", "2026-09-24T09:30:00"]);
+    assert!(row(&after, "gh-12").is_none(), "{after}");
+
+    // A replay answers the same digest and writes nothing.
+    let written = objects(&root);
+    assert_eq!(github(&root, "pull-request-merged.json"), first);
+    assert_eq!(objects(&root), written);
+    let completion = written
+        .iter()
+        .map(|name| std::fs::read_to_string(root.join("objects").join(name)).expect("an object"))
+        .find(|object| object.contains("Completed("))
+        .expect("a completion");
+    assert!(
+        completion.contains("note='completed by pull request #30'"),
+        "{completion}"
+    );
+    assert!(completion.contains("actor='github-mirror'"), "{completion}");
+}
+
+#[test]
+fn an_unmerged_pull_request_is_checked_and_writes_nothing() {
+    let root = a_store();
+    github(&root, "issues-opened.json");
+    let before = objects(&root);
+    for name in [
+        "pull-request-opened.json",
+        "pull-request-closed-unmerged.json",
+    ] {
+        let said = github(&root, name);
+        assert!(said.contains("has not merged"), "{said}");
+        assert!(said.contains("completes gh-12"), "{said}");
+    }
+    assert_eq!(objects(&root), before);
+}
+
+#[test]
+fn a_pull_request_without_a_completes_line_completes_nothing() {
+    let root = a_store();
+    github(&root, "issues-opened.json");
+    let before = objects(&root);
+    for name in [
+        "pull-request-no-line.json",
+        "pull-request-no-description.json",
+    ] {
+        assert!(github(&root, name).contains("completes nothing"));
+    }
+    assert_eq!(objects(&root), before);
+}
+
+#[test]
+fn a_completes_line_that_names_an_unknown_item_is_refused() {
+    let root = a_store();
+    github(&root, "issues-opened.json");
+    let before = objects(&root);
+    let refusal = prodrome(
+        &root,
+        &["github", &fixture("pull-request-unknown-item.json")],
+    )
+    .expect_err("refused");
+    let refusal = refusal.to_string();
+    assert!(refusal.contains("\"no-such-item\""), "{refusal}");
+    assert!(!refusal.contains("\"gh-12\""), "{refusal}");
+    // Before the issue is mirrored, the roadmap holds neither item.
+    let empty = a_store();
+    assert!(prodrome(&empty, &["github", &fixture("pull-request-merged.json")]).is_err());
+    assert_eq!(objects(&root), before);
+}
+
+#[test]
+fn a_pull_request_cannot_carry_a_proposal() {
+    let root = a_store();
+    github(&root, "issues-opened.json");
+    assert!(prodrome(
+        &root,
+        &[
+            "github",
+            &fixture("pull-request-merged.json"),
+            "--proposal",
+            &fixture("proposal.md"),
+        ],
+    )
+    .is_err());
+}
+
 // --- the laws -----------------------------------------------------------------
 
 fn at(minutes: u32) -> prodrome::literal::Datetime {
@@ -554,4 +650,55 @@ proptest! {
         apply_delivery(&store, &reopen, None).expect("reopen applies");
         prop_assert_eq!(open(&store, closed + gap), Some(true));
     }
+
+    /// The merges of pull requests complete exactly the items that their
+    /// `Completes:` lines name, and applying the same merges again writes
+    /// nothing, in any order.
+    #[test]
+    fn merges_complete_what_they_name_and_replay_writes_nothing(
+        pulls in prop::collection::vec(a_merge(), 0..8),
+    ) {
+        let root = a_store();
+        let store = Store::new(&root, Untrusted::none());
+        for number in 1..4 {
+            let opened = Delivery { issue: issue(number, "one", 0), action: Action::Opened, pull_request: false };
+            apply_delivery(&store, &opened, None).expect("an issue opens");
+        }
+        for pull in &pulls {
+            apply_pull(&store, pull).expect("a merge applies");
+        }
+        let once = objects(&root);
+        for pull in pulls.iter().rev() {
+            apply_pull(&store, pull).expect("a merge applies again");
+        }
+        prop_assert_eq!(&objects(&root), &once);
+        prop_assert!(store.verify().is_empty(), "{:?}", store.verify());
+
+        let named: BTreeSet<String> = pulls
+            .iter()
+            .flat_map(|pull| pull.completes.iter().map(|id| id.as_str().to_owned()))
+            .collect();
+        let reading = read(&store, at(8 * 24 * 60)).expect("a reading");
+        for entry in &reading.entries {
+            prop_assert_eq!(entry.is_open(), !named.contains(entry.key.as_str()), "{}", entry.key.as_str());
+        }
+    }
+}
+
+/// One generated merge: a pull request merged at a minute of a week, that
+/// completes some of the items `gh-1` to `gh-3`.
+fn a_merge() -> impl Strategy<Value = Pull> {
+    (
+        1u64..6,
+        1u32..(7 * 24 * 60),
+        prop::collection::btree_set(1u64..4, 0..3),
+    )
+        .prop_map(|(number, minute, items)| Pull {
+            number,
+            merge: Merge::Merged(at(minute)),
+            completes: items
+                .into_iter()
+                .map(|item| TodoId::new(format!("gh-{item}")).expect("an item id"))
+                .collect(),
+        })
 }

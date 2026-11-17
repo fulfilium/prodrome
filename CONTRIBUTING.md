@@ -53,6 +53,35 @@ it to a colleague. Add one line that says how you tested it. The template
 `.github/pull_request_template.md` gives this form. The commits give the
 details.
 
+## Name the roadmap items that a pull request completes
+
+If your pull request completes an item on the roadmap, add a line to its
+description that starts with `Completes:` and names the item's id:
+
+```
+Completes: digest-objects
+```
+
+A line can name several items, separated by commas. If the pull request
+completes nothing, do not add a line. The ids are on the
+[viewer](https://fulfilium.github.io/prodrome/), and `prodrome list` on the
+branch `roadmap-data` prints them.
+
+The workflow `.github/workflows/completes.yml` reads these lines:
+
+- On every change to the pull request, a check refuses a line that names
+  an item that the roadmap does not hold, or that is not an item id. The
+  check says which id it refused. Correct the line, and the check runs
+  again.
+- When the pull request merges, the workflow records each item as completed,
+  at the instant of the merge, with the note "completed by pull request
+  #N". If you correct a line after the merge, the next merge into `main`
+  records it.
+
+If your work completes only part of an item, do not name it. Change the
+item's text in a pull request against `roadmap-data` instead, as the section
+"Roadmap items arrive by pull request" explains.
+
 ## A change to semantics needs the SPEC and a test
 
 [`SPEC.md`](SPEC.md) is the specification, and this crate is its reference

@@ -1,14 +1,17 @@
-# Issues on the roadmap: the mirror and the pricing bot
+# Issues and pull requests on the roadmap: the mirror and the pricing bot
 
 This repository keeps its roadmap as a Prodrome store on the `roadmap-data`
-branch. Two workflows keep GitHub issues and that store in step:
+branch. Three workflows keep GitHub issues, merged pull requests and that
+store in step:
 
 - **`mirror.yml`** turns what happens to an issue into events in the store.
 - **`price.yml`** asks Claude to suggest a price for a new or edited issue,
   and records the suggestion as a *claim*: something the store keeps and
   shows, but does not believe until a maintainer says so.
+- **`completes.yml`** completes the items that a merged pull request names
+  in its `Completes:` lines.
 
-Both run one command, `prodrome-github`, which does all the deciding. The
+All three run one command, `prodrome-github`, which does all the deciding. The
 workflows only fetch, run it, and push.
 
 ## The flow
@@ -43,7 +46,9 @@ The item for issue `#N` is `gh-N`, and its page in the viewer is
 | issue reopened | `Reopened` | `github-mirror` |
 | a maintainer's `/price` comment | `SpecRevised` | the commenter's login, lowercased |
 | a pricing reply | `SpecRevised` | `pricing-bot` |
-| anything on a pull request | nothing | |
+| a comment on a pull request | nothing | |
+| a pull request that has not merged | nothing; the check refuses a `Completes:` line that names no item in the store | |
+| a merged pull request with `Completes:` lines | one `Completed` for each item that the lines name, at the instant of the merge, with the note `completed by pull request #N` | `github-mirror` |
 
 An issue opened before the mirror existed is created by the first event that
 mentions it.
@@ -114,16 +119,49 @@ so they are treated as hostile input:
 - The action is pinned to a commit, and it authenticates with the
   `CLAUDE_CODE_OAUTH_TOKEN` secret, which only the `propose` job sees.
 
-**What code runs.** Both workflows trigger only on `issues` and
-`issue_comment`, which GitHub runs from the default branch. The only code
-they check out and build is `main`. There is no `pull_request_target`
-trigger, and nothing from a pull request is ever checked out.
+**What code runs.** `mirror.yml` and `price.yml` trigger only on `issues`
+and `issue_comment`, which GitHub runs from the default branch.
+`completes.yml` triggers on `pull_request` (its `check` job, whose token can
+only read) and on a push to `main` (its `record` job). Every job checks out
+and builds only `main`. There is no `pull_request_target` trigger, and
+nothing from a pull request is ever checked out. A pull request's
+description reaches `prodrome-github` only as a JSON file.
 
 **What gets pushed.** Only `roadmap-data`, only after `prodrome verify`
 passes, and only new files under `roadmap/objects/`: an object is named by the
 hash of its bytes and never rewritten. Two runs racing to push append
 disjoint sets of files, so the loser merges and pushes again; the union is
 the store, and nothing has to join it.
+
+## Pull requests complete items
+
+`completes.yml` ties a merge into `main` to the roadmap. A pull request's
+description names each item that it completes in a line `Completes: <id>`
+(several ids are separated by commas), and a description with no such line
+completes nothing.
+
+- **Before the merge.** The `check` job runs `prodrome-github` on the
+  `pull_request` event. The pull request has not merged, so the binary only
+  reads: it prints the items that the merge will complete, or it exits 2 and
+  names the ids that the store does not hold, or the first text that is not
+  an item id.
+- **At the merge.** The `record` job runs on the push to `main`. It reads
+  the pull request of the pushed commit and the 30 closed pull requests
+  against `main` that changed most recently from the GitHub API, keeps
+  those that merged, and takes them oldest merge first. It gives each one to
+  `prodrome-github` in the shape of a `pull_request` delivery. The binary
+  writes a `Completed` for each named item, dated at the pull request's
+  `merged_at`, as `github-mirror`. The note holds only the pull request's
+  number, which never changes, so a pull request that was applied before
+  writes nothing again.
+- **Repair.** Because each run applies the recent merges again, a run that
+  failed, or a `Completes:` line that a maintainer corrected after the
+  merge, is recorded by the next push to `main`. A maintainer can also start
+  the workflow by hand. A run that refuses one pull request still records
+  the others, pushes them, and then fails, so the refusal shows.
+
+A contributor cannot complete an item alone: the completion is written only
+when a maintainer merges the pull request.
 
 ## Determinism
 
@@ -141,7 +179,9 @@ deliveries that were applied, and pinned as property tests in
 
 - replaying what was applied appends nothing, and a fresh store given those
   deliveries twice is identical, file for file, to one given them once;
-- close then reopen folds to open.
+- close then reopen folds to open;
+- merges complete exactly the items that their `Completes:` lines name, and
+  applying the same merges again, in any order, writes nothing.
 
 ## Known limits
 
@@ -150,5 +190,10 @@ deliveries that were applied, and pinned as property tests in
 - The store folds events in the order they were appended, and GitHub does not
   promise to deliver webhooks in order. A close and a reopen seconds apart can
   in principle land out of order; the next close or reopen settles it.
-- The workflows do not use a `concurrency` group, because GitHub keeps only
-  one pending run per group and would drop the rest; the push retries instead.
+- `mirror.yml` and `price.yml` do not use a `concurrency` group, because
+  GitHub keeps only one pending run per group and would drop the rest; the
+  push retries instead. The `record` job of `completes.yml` does use one: a
+  dropped run loses nothing, because the run that follows it applies the
+  same merges.
+- A completion stays when a maintainer removes its `Completes:` line after
+  the merge, because the store only grows. To undo it, reopen the item.

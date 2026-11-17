@@ -9,15 +9,20 @@
 # to the roadmap arrives by `workflow_run` instead — when that branch's
 # `verify` workflow finishes — and deploys only a push that verified. (A
 # `workflow_run` workflow must live on the default branch, which this does.)
+#
+# A push that a workflow makes with the run's own token starts no other
+# workflow, so `verify` does not run on the completions that `completes.yml`
+# pushes after a merge into main. So this workflow also runs when a
+# `completes` run on main finishes, and publishes the tip of `roadmap-data`.
 name: pages
 
 on:
   push:
     branches: [main]
   workflow_run:
-    workflows: [verify]
+    workflows: [verify, completes]
     types: [completed]
-    branches: [roadmap-data]
+    branches: [roadmap-data, main]
   workflow_dispatch:
 
 permissions:
@@ -34,11 +39,17 @@ concurrency:
 jobs:
   build:
     # From roadmap-data: only a PUSH (not a pull request's run) whose verify
-    # passed. Everything else — a push to main, a manual run — always builds.
+    # passed. From `completes`: a run on a push to main that was not
+    # cancelled. A run that refused one pull request still pushed the
+    # others' completions, and this job verifies the store before it
+    # publishes. Everything else — a push to main, a manual run — always
+    # builds.
     if: >-
       github.event_name != 'workflow_run' ||
-      (github.event.workflow_run.conclusion == 'success' &&
-       github.event.workflow_run.event == 'push')
+      (github.event.workflow_run.event == 'push' &&
+       (github.event.workflow_run.conclusion == 'success' ||
+        (github.event.workflow_run.name == 'completes' &&
+         github.event.workflow_run.conclusion == 'failure')))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,10 +64,11 @@ jobs:
       # TypeScript, with no data in it.
       - run: nix build .#prodrome-viewer -o result-viewer --print-build-logs
       # The data: exactly the commit verify checked when this run came from
-      # it, the branch's tip otherwise.
+      # it, the branch's tip otherwise. The head of a `completes` run is a
+      # commit of main, so its data is the branch's tip.
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_sha || 'roadmap-data' }}
+          ref: ${{ github.event.workflow_run.name == 'verify' && github.event.workflow_run.head_sha || 'roadmap-data' }}
           path: roadmap-data
       # Verify before publishing, with the binary built from the same main.
       - run: nix build .#prodrome-cli -o result-cli --print-build-logs
