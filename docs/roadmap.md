@@ -72,6 +72,14 @@ pull request. So the list of completed items is the history of the merged
 work. [`github-agent.md`](github-agent.md) explains the workflow,
 `.github/workflows/completes.yml`.
 
+The rule has a limit. The author of a merged pull request can still edit its
+description. The next push to `main` then records each item that the edited
+line names, dated at that pull request's merge. The workflow writes a
+completion only for an item that the roadmap holds, and it never removes
+one, because the store never takes an object back. To undo a wrong
+completion, reopen the item with `prodrome reopen <id>` in a pull request
+against `roadmap-data`, or reopen the issue for an item `gh-<number>`.
+
 ## Add to the roadmap
 
 To add or change roadmap items, open a pull request against the
