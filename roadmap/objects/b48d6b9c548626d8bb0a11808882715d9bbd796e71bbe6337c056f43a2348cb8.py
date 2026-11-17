@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='kept-linear-order', at=datetime(2026, 11, 15, 6, 48, 0), actor='maintainer', text="keep a DAG's linear order once it is derived, and read a frontier's reach in the positions of that order", note=''))

@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=('18adeb9fc55ab4d538de512f8c4679caa7f552c218c490a9c296d41053e6a6d7',), event=SpecRevised(todo='memo-early-cutoff', at=datetime(2026, 11, 17, 22, 50, 0), actor='maintainer', spec=Flat(value=0.9), note=''))

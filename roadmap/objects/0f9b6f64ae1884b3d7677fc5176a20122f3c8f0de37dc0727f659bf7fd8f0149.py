@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=('5d1bbef49b6e7c6a9df60b5b1a1da71c2930745c1f2826a609497a358748f8c9',), event=SpecRevised(todo='memo-cache-holders', at=datetime(2026, 11, 12, 5, 21, 58), actor='maintainer', spec=Flat(value=0.7), note=''))

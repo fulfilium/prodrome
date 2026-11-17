@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='schema-laws-kit', at=datetime(2026, 10, 27, 14, 7, 22), actor='maintainer', text='give applications the schema laws as a kit that they run against their own schemas', note=''))

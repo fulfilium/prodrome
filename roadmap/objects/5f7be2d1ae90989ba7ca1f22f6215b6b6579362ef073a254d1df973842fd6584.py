@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='faster-store-read', at=datetime(2026, 11, 2, 7, 32, 58), actor='maintainer', text='read a store several times faster, with the same values and the same names', note=''))
