@@ -56,6 +56,22 @@ viewer: no code in `core/` or `cli/` knows about GitHub.
 [`github-agent.md`](github-agent.md) explains the workflow and the limits
 of trust in it.
 
+## Merged pull requests complete items
+
+A pull request against `main` names each roadmap item that it completes, in
+a line of its description:
+
+```
+Completes: digest-objects
+```
+
+A check refuses a line that names an item that the roadmap does not hold.
+When the pull request merges, a workflow records each item as completed by
+`github-mirror`, at the instant of the merge, with a note that names the
+pull request. So the list of completed items is the history of the merged
+work. [`github-agent.md`](github-agent.md) explains the workflow,
+`.github/workflows/completes.yml`.
+
 ## Add to the roadmap
 
 To add or change roadmap items, open a pull request against the

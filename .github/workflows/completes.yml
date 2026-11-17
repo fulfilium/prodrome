@@ -1,0 +1,139 @@
+# THE ROADMAP FOLLOWS THE MERGES. A pull request's description names each
+# roadmap item that it completes, in a line `Completes: <item id>`. A
+# description with no such line completes nothing. This workflow has two
+# jobs, and both run `prodrome-github` on a pull request's JSON:
+#
+# - `check`, on every change to a pull request against `main`: the binary
+#   refuses a `Completes:` line that names an item the roadmap does not hold,
+#   and writes nothing. The job can only read.
+# - `record`, on every push to `main`: the binary writes one `Completed` for
+#   each item, as `github-mirror`, at the instant of the merge, with the note
+#   "completed by pull request #N". It applies the pull request of the pushed
+#   commit, and each of the 30 closed pull requests against `main` that
+#   changed most recently and that merged. A pull request that it applied
+#   before writes nothing again. So when a run
+#   fails, or a maintainer corrects a description after the merge, the next
+#   push to `main` writes the missing record.
+#
+# WHAT RUNS HERE IS THIS REPOSITORY'S OWN CODE. Both jobs build the binary
+# from `main` and check out nothing from a pull request. There is no
+# `pull_request_target` trigger, and the text of a description reaches the
+# binary only as a JSON file, never as a shell command line. The only
+# credential is the run's own token: `check` can read, and `record` can push
+# to `roadmap-data` and read the list of pull requests.
+name: completes
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: code
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: roadmap-data
+          path: data
+          persist-credentials: false
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: cachix/cachix-action@v17
+        with:
+          name: bmabsout
+      - run: nix build ./code#prodrome-github -o result-github --print-build-logs
+      # The payload's pull request has not merged, so the binary only checks.
+      # It prints the items that the merge will complete, or why there are
+      # none, and exits 2 with the reason when it refuses.
+      - name: Check the Completes lines
+        run: ./result-github/bin/prodrome-github "$GITHUB_EVENT_PATH" --store data/roadmap
+
+  record:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # push to roadmap-data
+      pull-requests: read # read the merged pull requests' descriptions
+    # One run at a time. roadmap-push.sh merges a race with the issue mirror.
+    concurrency:
+      group: completes-record
+      cancel-in-progress: false
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: code
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: roadmap-data
+          path: data
+      - uses: DeterminateSystems/nix-installer-action@v23
+      - uses: cachix/cachix-action@v17
+        with:
+          name: bmabsout
+      - run: nix build ./code#prodrome-cli -o result-cli --print-build-logs
+      - run: nix build ./code#prodrome-github -o result-github --print-build-logs
+
+      # The pushed commit's pull request, and the latest merges into main,
+      # oldest merge first. Each one becomes a file in the shape of a
+      # `pull_request` delivery.
+      - name: Collect the merged pull requests
+        run: |
+          {
+            gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls"
+            gh api "repos/$GITHUB_REPOSITORY/pulls?state=closed&base=main&sort=updated&direction=desc&per_page=30"
+          } | jq -s 'add
+                     | map(select(.merged_at != null and .base.ref == "main"))
+                     | unique_by(.number)
+                     | sort_by(.merged_at)' > merged.json
+          mkdir pulls
+          jq -c '.[]' merged.json | while read -r pull; do
+            number=$(jq -r '.number' <<< "$pull")
+            jq '{action: "closed", pull_request: .}' <<< "$pull" > "pulls/$number.json"
+          done
+          ls pulls
+
+      # A refused pull request does not stop the others. The job writes and
+      # pushes what it can, and then fails, so the refusal shows in the run.
+      - name: Record the completions
+        id: record
+        run: |
+          refused=0
+          for file in $(ls pulls | sort -n); do
+            echo "pull request #${file%.json}:"
+            if ! ./result-github/bin/prodrome-github "pulls/$file" --store data/roadmap; then
+              refused=1
+            fi
+          done
+          echo "refused=$refused" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the store
+        run: ./result-cli/bin/prodrome verify --store data/roadmap
+
+      - name: Push to roadmap-data
+        working-directory: data
+        run: |
+          ../code/.github/scripts/roadmap-push.sh "completes: merges into main up to ${GITHUB_SHA::7}"
+
+      - name: Fail on a refused pull request
+        if: steps.record.outputs.refused == '1'
+        run: |
+          echo "A Completes line named an item that the roadmap does not hold." >&2
+          echo "Correct the pull request's description; the next push to main records it." >&2
+          exit 1

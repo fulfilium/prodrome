@@ -22,6 +22,18 @@ or a result of `verify`), change `SPEC.md` in the same pull request. Add a
 law in SPEC section 9 with a property test that checks it, or add a vector
 in `conformance/`. Add an entry to `CHANGELOG.md`.
 
+## Name what a pull request completes
+
+If a pull request against `main` completes a roadmap item, add a line
+`Completes: <item id>` to its description. Name several items with commas.
+If it completes nothing, add no line. Read the open items with `prodrome
+list` on the branch `roadmap-data`, and name an item only when the code on
+the branch does all that the item asks. The check in
+`.github/workflows/completes.yml` refuses an id that the roadmap does not
+hold, and the workflow records the completion when the pull request merges.
+If the work completes only part of an item, record the new text of the item
+in a pull request against `roadmap-data`.
+
 ## Never do these things
 
 - Never skip, weaken, disable or delete a test to make the CI pass. Fix the
