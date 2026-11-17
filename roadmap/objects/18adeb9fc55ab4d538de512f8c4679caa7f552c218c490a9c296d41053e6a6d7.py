@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='memo-early-cutoff', at=datetime(2026, 11, 17, 22, 50, 0), actor='maintainer', text="key a memo node by its children's values, so that a recomputed child with the same value does not rename its ancestors", note=''))

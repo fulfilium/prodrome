@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='memo-cache-holders', at=datetime(2026, 11, 12, 5, 21, 58), actor='maintainer', text='one memo cache for every fold, held in memory or in a file, so that a new process starts warm', note=''))

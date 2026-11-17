@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='read-without-copies', at=datetime(2026, 11, 17, 22, 50, 0), actor='maintainer', text="read a store with one copy of each string: decode values by move, and let a DAG's nodes share their events", note=''))

@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='frontier-token', at=datetime(2026, 10, 27, 10, 0, 6), actor='maintainer', text="name a replica's frontier with a short token, so that a pull over a wire is one small request", note=''))

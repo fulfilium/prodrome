@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=('2cfb68b4e917bd38aba5493283397bfcffe82e50f36016e8ec8eb4ee1bbed706',), event=SpecRevised(todo='linear-digest-view', at=datetime(2026, 11, 4, 4, 10, 3), actor='maintainer', spec=Flat(value=0.7), note=''))

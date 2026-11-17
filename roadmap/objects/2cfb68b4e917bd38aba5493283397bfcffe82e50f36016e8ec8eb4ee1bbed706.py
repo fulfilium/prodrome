@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='linear-digest-view', at=datetime(2026, 11, 4, 4, 10, 3), actor='maintainer', text="compute a digest's view without work quadratic in the length of the log", note=''))

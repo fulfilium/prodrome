@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=('5f7be2d1ae90989ba7ca1f22f6215b6b6579362ef073a254d1df973842fd6584',), event=SpecRevised(todo='faster-store-read', at=datetime(2026, 11, 2, 7, 32, 58), actor='maintainer', spec=Flat(value=0.7), note=''))
