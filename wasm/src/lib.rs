@@ -38,6 +38,7 @@
 //! | `next_change`    | §7: when does that term's value, as a view shows it, next change |
 //! | `link`           | §7.2: every ref in a term bound to the todo it names     |
 //! | `term_json`      | §2 → §7: a stored term's print, as the JSON shape above  |
+//! | `printable`      | §2: which Unicode version decides how a string prints, and the digest of that set |
 //! | `version`        | which core answered                                     |
 //!
 //! `store` is file-backed and a browser has no `events/` directory, so the
