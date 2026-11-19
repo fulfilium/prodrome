@@ -10,6 +10,11 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`codec::assert_pinned`, a pin of a schema's stored names.** A test
+  gives the constructors as text, one `Name(field, …)` on each line, and
+  the function fails unless the declared constructors spell that text. The
+  reference payload, `Heads`, the note schema, the two tag schemas and the
+  test schemas of this repository pin their constructors with it.
 - **A derived sum's variant can hold one record.** A variant whose one
   unnamed field is a record, as `Email(Draft)`, prints and reads as the
   record's call, with the record's constructor and fields. Two variants

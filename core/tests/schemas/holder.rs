@@ -194,3 +194,15 @@ impl<I: Schema> Nests for Holder<I> {
         Some(self.heads.names())
     }
 }
+
+/// The stored names of the holder schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_holder_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        HOLDER_SIGNATURES,
+        "
+        Placed(shelf, at, actor, heads)
+        ",
+    );
+}

@@ -109,9 +109,11 @@ A constructor's name and its fields' names are in every stored object, so a
 change of a name is a change of the stored form. The rule: a stored name is
 the Rust identifier, unless `#[literal(rename = "...")]` gives one. Every
 derived type gives its constructors as data, in `Literal::CONSTRUCTORS`. A
-schema pins the constructors of its types in one test, and a rename that
-changes a stored name fails that test. `core/tests/all/derive.rs` pins the
-reference payload's four constructors. The conformance vectors also hold
+schema pins the constructors of its types in one test with
+`codec::assert_pinned`, which compares them with a text of one
+`Name(field, …)` on each line. A rename that changes a stored name fails
+that test. `core/tests/all/derive.rs` pins the reference payload's four
+constructors, and each schema of this repository pins its own. The conformance vectors also hold
 these names, so a rename fails them too.
 
 Names given only in attributes were not chosen. They would spell each name

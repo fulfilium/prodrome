@@ -219,3 +219,16 @@ impl Price for Inbox {
             .collect()
     }
 }
+
+/// The stored names of the inbox schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_inbox_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        SIGNATURES,
+        "
+        Proposed(proposal, at, actor, text)
+        Serves(proposal, at, actor, store, todo)
+        ",
+    );
+}

@@ -38,10 +38,12 @@ use chrono::NaiveDate;
 use super::{Call, Datetime, Int, ProdromeError, Value};
 
 pub mod blank_field;
+mod pinned;
 mod record;
 mod sum;
 pub mod text_field;
 
+pub use pinned::assert_pinned;
 pub use prodrome_derive::Literal;
 pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
 pub use sum::{distinct, headed_len, headed_names, headed_table, names_field, Sum};
@@ -63,8 +65,8 @@ pub trait Literal: Sized {
     /// The constructors that the type declares, each with its fields in
     /// print order: one for a record, and one for each variant of a sum. A
     /// leaf, a container and a newtype declare none. A schema pins the
-    /// constructors of its types in a test, so that a renamed constructor or
-    /// field fails the test.
+    /// constructors of its types in a test with [`assert_pinned`], so that a
+    /// renamed constructor or field fails the test.
     const CONSTRUCTORS: &'static [Constructor] = &[];
 
     /// The literal of `self`.

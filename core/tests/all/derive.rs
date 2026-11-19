@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use prodrome::event::{Actor, Hash, TodoId};
-use prodrome::literal::codec::{text_field, Constructor, Fields, Literal, Record};
+use prodrome::literal::codec::{assert_pinned, text_field, Constructor, Fields, Literal, Record};
 use prodrome::literal::{parse_literal, print_literal, Datetime, ProdromeError, Table, Value};
 use prodrome::reference::{Note, Source, SubTodo, Todo};
 use proptest::prelude::*;
@@ -24,39 +24,34 @@ fn the_reference_payload_pins_its_stored_names() {
         SubTodo::CONSTRUCTORS,
     ]
     .concat();
-    let pinned: [Constructor; 4] = [
-        (
-            "Authored",
-            &[
-                "kind",
-                "created",
-                "body",
-                "spec",
-                "rationale",
-                "category",
-                "waiting_on",
-                "detail",
-                "source",
-                "subtodos",
-                "notes",
-                "note",
-            ],
-        ),
-        (
-            "Source",
-            &[
-                "sender",
-                "subject",
-                "date",
-                "hash",
-                "thread_id",
-                "message_id",
-            ],
-        ),
-        ("Note", &["on", "lines"]),
-        ("SubTodo", &["body", "done"]),
-    ];
-    assert_eq!(vocabulary, pinned);
+    assert_pinned(
+        &vocabulary,
+        "
+        Authored(kind, created, body, spec, rationale, category, waiting_on, detail, source, subtodos, notes, note)
+        Source(sender, subject, date, hash, thread_id, message_id)
+        Note(on, lines)
+        SubTodo(body, done)
+        ",
+    );
+}
+
+/// A pin fails when a field changes its name, and when the fields change
+/// their order.
+#[test]
+fn a_changed_name_or_order_fails_its_pin() {
+    let note: &[Constructor] = &[("Note", &["on", "lines"])];
+    assert_pinned(note, "Note(on, lines)");
+    for pinned in [
+        "Note(on, line)",
+        "Note(lines, on)",
+        "Note(on, lines)\nSeen()",
+    ] {
+        let failed = std::panic::catch_unwind(|| assert_pinned(note, pinned));
+        assert!(
+            failed.is_err(),
+            "{pinned} is not the pin of Note(on, lines)"
+        );
+    }
 }
 
 // --- a neutral schema ---------------------------------------------------------
@@ -456,12 +451,14 @@ mod by_hand {
 /// Every constructor of a line, with the common fields first, as data.
 #[test]
 fn a_record_with_a_sum_lists_each_constructor_with_all_its_fields() {
-    let pinned: [Constructor; 3] = [
-        ("Opened", &["at", "actor", "rests_on", "title"]),
-        ("Closed", &["at", "actor", "rests_on", "why"]),
-        ("Paused", &["at", "actor", "rests_on"]),
-    ];
-    assert_eq!(Line::CONSTRUCTORS, pinned);
+    assert_pinned(
+        Line::CONSTRUCTORS,
+        "
+        Opened(at, actor, rests_on, title)
+        Closed(at, actor, rests_on, why)
+        Paused(at, actor, rests_on)
+        ",
+    );
 }
 
 pub(crate) fn a_datetime() -> impl Strategy<Value = Datetime> {
@@ -720,18 +717,22 @@ struct Filed {
 /// constructors, in the order of the variants.
 #[test]
 fn a_held_record_gives_the_sum_its_constructor() {
-    let pinned: [Constructor; 3] = [
-        ("Email", &["to", "subject"]),
-        ("Memo", &["lines"]),
-        ("Dropped", &["why"]),
-    ];
-    assert_eq!(Proposal::CONSTRUCTORS, pinned);
-    let pinned: [Constructor; 3] = [
-        ("Email", &["at", "to", "subject"]),
-        ("Memo", &["at", "lines"]),
-        ("Dropped", &["at", "why"]),
-    ];
-    assert_eq!(Filed::CONSTRUCTORS, pinned);
+    assert_pinned(
+        Proposal::CONSTRUCTORS,
+        "
+        Email(to, subject)
+        Memo(lines)
+        Dropped(why)
+        ",
+    );
+    assert_pinned(
+        Filed::CONSTRUCTORS,
+        "
+        Email(at, to, subject)
+        Memo(at, lines)
+        Dropped(at, why)
+        ",
+    );
     assert_eq!(
         Proposal::from_value(&Value::call("Draft", vec![])),
         Err(ProdromeError::invalid(

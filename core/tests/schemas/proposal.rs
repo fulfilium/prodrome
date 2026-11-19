@@ -365,3 +365,18 @@ pub fn a_proposal() -> impl Strategy<Value = Proposal> {
         says,
     })
 }
+
+/// The stored names of the proposal schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_proposal_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        SIGNATURES,
+        "
+        Attempted(proposal, at, actor, attempt)
+        Moved(proposal, at, actor, state)
+        Proposed(proposal, at, actor, text)
+        Tagged(proposal, at, actor, tags)
+        ",
+    );
+}

@@ -320,3 +320,16 @@ impl Price for Review {
 pub fn day(day: u32) -> Datetime {
     Datetime::new(2026, 10, day, 12, 0, 0, 0).expect("a real instant")
 }
+
+/// The stored names of the review schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_review_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        REVIEW_SIGNATURES,
+        "
+        Opened(pr, at, actor, title)
+        Moved(pr, at, actor, phase)
+        ",
+    );
+}
