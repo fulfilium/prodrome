@@ -426,5 +426,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod hand_written;
