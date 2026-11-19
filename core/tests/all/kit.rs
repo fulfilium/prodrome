@@ -148,6 +148,8 @@ impl Body for Mark {
     type Registers<'a> = Last<'a>;
     type Refusal = std::convert::Infallible;
 
+    const NAME: &'static str = "Mark";
+
     const EVENTS: &'static [Constructor] = &[SET, SEEN];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
@@ -169,7 +171,7 @@ impl Body for Mark {
         let mark = match fields.name() {
             "Set" => Mark::Set,
             "Seen" => Mark::Seen,
-            other => return Err(prodrome::literal::codec::no_arm("a mark event", other)),
+            other => return Err(prodrome::literal::codec::no_arm(Self::NAME, other)),
         };
         Ok(Event::of(
             fields.get("mark")?,

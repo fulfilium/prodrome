@@ -149,3 +149,17 @@ fn a_view_supersedes_no_title() {
         .expect("appends");
     assert_eq!(held(&mine), (vec![title], BTreeMap::new()));
 }
+
+/// The stored names of the note schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_note_schema_pins_its_stored_names() {
+    use prodrome::schema::headed::Body;
+    prodrome::literal::codec::assert_pinned(
+        Entry::EVENTS,
+        "
+        Titled(note, at, actor, title)
+        Viewed(note, at, actor)
+        ",
+    );
+}

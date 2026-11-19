@@ -15,11 +15,31 @@ fn refusal(input: &DeriveInput) -> String {
 }
 
 #[test]
-fn a_variant_with_unnamed_fields_is_refused() {
+fn a_variant_with_other_than_one_unnamed_field_is_refused() {
+    for input in [
+        parse_quote! { enum Shape { Circle(u32, u32) } },
+        parse_quote! { enum Shape { Circle() } },
+    ] {
+        assert_eq!(
+            refusal(&input),
+            "a variant with unnamed fields holds exactly one record: write \
+             `Circle(Record)`, or name the fields as `Circle { name: Type }`"
+        );
+    }
+}
+
+#[test]
+fn a_variant_that_holds_a_record_takes_its_constructor() {
     assert_eq!(
-        refusal(&parse_quote! { enum Shape { Circle(u32) } }),
-        "a literal names each field of a constructor: write the variant as \
-         `Circle { name: Type }`"
+        refusal(&parse_quote! {
+            enum Proposal { #[literal(rename = "Mail")] Email(Draft) }
+        }),
+        "`Email` holds a record, and the record's constructor is the variant's: \
+         remove `rename`, and rename the record instead"
+    );
+    assert_eq!(
+        refusal(&parse_quote! { enum Proposal { Email(#[literal(default)] Draft) } }),
+        "`default` does not apply to an unnamed field; it applies to a named field"
     );
 }
 
@@ -127,6 +147,7 @@ fn every_form_with_a_literal_is_accepted() {
         parse_quote! { struct Marker; },
         parse_quote! { #[literal(new = Tag::new)] struct Tag(String); },
         parse_quote! { enum Verdict { Accept, Revise { reason: String } } },
+        parse_quote! { enum Proposal { Email(Draft), Note { text: String }, Dropped } },
         parse_quote! { struct Raw { r#type: String } },
     ] {
         let input: DeriveInput = input;
@@ -162,5 +183,39 @@ fn a_sum_field_takes_no_other_option() {
     assert_eq!(
         refusal(&parse_quote! { enum Log { Line { #[literal(sum)] shape: Shape } } }),
         "a field of a variant cannot be marked `sum`: mark a field of a struct"
+    );
+}
+
+/// A type that gives `crate = path` names the core only by that path, in
+/// each form.
+#[test]
+fn the_crate_option_names_the_core_by_its_path() {
+    let inputs: [DeriveInput; 4] = [
+        parse_quote! { #[literal(crate = core_lib)] struct Review { by: String } },
+        parse_quote! { #[literal(crate = core_lib)] enum Verdict { Accept, Revise { why: String } } },
+        parse_quote! { #[literal(crate = core_lib)] struct Tag(String); },
+        parse_quote! {
+            #[literal(crate = core_lib)] struct Line { by: String, #[literal(sum)] shape: Shape }
+        },
+    ];
+    for input in inputs {
+        let derived = Derived::parse(&input).expect("a form with a literal");
+        let code = crate::expand::expand(&derived).to_string();
+        assert!(!code.contains("prodrome"), "{code}");
+        assert!(code.contains("core_lib :: literal :: codec"), "{code}");
+    }
+}
+
+#[test]
+fn the_crate_option_applies_to_a_type_only() {
+    assert_eq!(
+        refusal(&parse_quote! { struct Review { #[literal(crate = core_lib)] by: String } }),
+        "`crate` does not apply to a named field; it applies to a struct or an enum"
+    );
+    assert_eq!(
+        refusal(&parse_quote! {
+            #[literal(crate = core_lib, crate = core_lib)] struct Review { by: String }
+        }),
+        "`crate` is given twice"
     );
 }

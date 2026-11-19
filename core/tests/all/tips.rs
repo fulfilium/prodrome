@@ -245,3 +245,12 @@ proptest! {
         prop_assert_eq!(store.tips().expect("derives"), tips_of(&objects));
     }
 }
+
+/// The stored names of a record of heads (SPEC §3). A changed name or order
+/// fails this test.
+#[test]
+fn the_record_of_heads_pins_its_stored_names() {
+    use prodrome::dag::Heads;
+    use prodrome::literal::codec::{assert_pinned, Literal};
+    assert_pinned(Heads::CONSTRUCTORS, "Heads(count, tips)");
+}

@@ -10,6 +10,23 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`codec::assert_pinned`, a pin of a schema's stored names.** A test
+  gives the constructors as text, one `Name(field, …)` on each line, and
+  the function fails unless the declared constructors spell that text. The
+  reference payload, `Heads`, the note schema, the two tag schemas and the
+  test schemas of this repository pin their constructors with it.
+- **A derived sum's variant can hold one record.** A variant whose one
+  unnamed field is a record, as `Email(Draft)`, prints and reads as the
+  record's call, with the record's constructor and fields. Two variants
+  whose constructors have one name are refused when the program compiles.
+  `codec::distinct` is the check.
+- **`TodoId` is a `Literal`, as `Actor` is.** Its literal is its text, and
+  a read checks the text with `TodoId::new`. A host's newtype over a
+  `TodoId` derives its codec.
+- **`#[literal(crate = path)]`, the path of the core in a derived impl.**
+  A program that imports `prodrome-core` under another name gives that
+  name, and needs no `extern crate` alias. The default is `::prodrome`.
+  The option applies to a struct or an enum.
 - **The script machine opens to its host (law 68).**
   `laws::script::run_with` reads the claimed reading under the host's
   policy, and calls the host's check after every step with each actor and
@@ -126,6 +143,27 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`Fields` refuses in the words of a derived read (SPEC law 69).**
+  `Fields::of`, `Fields::among` and `Fields::get` are built on
+  `codec::call`, `codec::call_of` and `codec::read`, the reads that a
+  derived impl makes, so a hand-written read and a derived one word each
+  refusal alike. `Fields::get` reads a field with `Literal::from_field`.
+  `no_arm(sum, name)` takes the name of the sum's type and words its
+  refusal as a derived sum does: `Reject is not one of Verdict's
+  constructors`. `Fields::among` takes the name of the sum too, and
+  `schema::headed::Body` gains `NAME`, the name of the body's type, which
+  `Event::from_value` passes to it. What each read accepts does not change:
+  a property compares the old `Fields` and the new one, and four readers of
+  this repository as they were and as they are, over generated values and
+  changed ones. Only the messages change, and no stored form changes.
+  Every refusal of a field names the field: the default
+  `Literal::from_field` leads a refusal of `from_value` with the field's
+  context (`Heads.count: expected a natural number …`), and so does a
+  derived newtype for its smart constructor's refusal. A refusal inside a
+  nested record reads as a path (`Thread.first: Review.remark must be a
+  string, got …`). `ProdromeError::within` leads a refusal with a context
+  and keeps its kind. `dag::Heads` derives its codec. A breaking change to `Fields::among`,
+  `no_arm` and `Body`.
 - **An inflationary register reads the greatest of all its writes (SPEC
   §6, law 32).** The fold read every register from its frontier, so a
   write below the reading, which the append refuses and a receipt takes as

@@ -69,13 +69,13 @@ impl Literal for Verdict {
     }
 
     fn from_value(value: &Value) -> Result<Self, ProdromeError> {
-        let fields = Fields::among(value, &[ACCEPT, REVISE])?;
+        let fields = Fields::among(value, "Verdict", &[ACCEPT, REVISE])?;
         match fields.name() {
             "Accept" => Ok(Verdict::Accept),
             "Revise" => Ok(Verdict::Revise {
                 reason: fields.get("reason")?,
             }),
-            other => Err(no_arm("a verdict", other)),
+            other => Err(no_arm("Verdict", other)),
         }
     }
 }

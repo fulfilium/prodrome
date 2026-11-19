@@ -21,6 +21,7 @@ mod digest;
 mod digest_reference;
 mod down_set;
 mod events;
+mod fields;
 mod fold_laws;
 mod folds;
 mod fpl_laws;

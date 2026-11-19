@@ -48,6 +48,8 @@ impl Body for Flag {
     type Registers<'a> = One<'a, Bodies<Flag>>;
     type Refusal = std::convert::Infallible;
 
+    const NAME: &'static str = "Flag";
+
     const EVENTS: &'static [Constructor] = &[SET_OFF, SET_ON, VIEWED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
@@ -72,7 +74,7 @@ impl Body for Flag {
             "SetOff" => Flag::Off,
             "SetOn" => Flag::On,
             "Viewed" => Flag::Viewed,
-            other => return Err(prodrome::literal::codec::no_arm("a flag event", other)),
+            other => return Err(prodrome::literal::codec::no_arm(Self::NAME, other)),
         };
         Ok(Event::of(
             fields.get("flag")?,

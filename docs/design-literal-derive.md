@@ -61,7 +61,13 @@ floats differ from CPython's `repr`, which SPEC §2 requires.
   (`CONSTRUCTOR`), the values of the fields, and a read of a call whatever
   its name (`from_call`), which the event layer uses for a payload's record.
 - An enum has one constructor for each variant. A variant has named fields
-  or none.
+  or none, or it holds one record in its one unnamed field. A variant that
+  holds a record prints and reads as the record's call: `Email(Draft)`
+  prints `Email(to='ada')` when the constructor of `Draft` is `Email`. The
+  record's constructor is the variant's, so `rename` does not apply to
+  such a variant. The derive of the enum does not see the record's name,
+  so a check that the compiler evaluates refuses two variants whose
+  constructors have one name (`codec::distinct`).
 - A struct with one unnamed field is a newtype, and its literal is its
   field's.
 
@@ -81,11 +87,21 @@ floats differ from CPython's `repr`, which SPEC §2 requires.
   check that the compiler evaluates, and not by the macro.
 
 The derive refuses, with a message that says what to write: a generic type,
-a struct with two or more unnamed fields, a variant with unnamed fields, an
-enum without variants, a union, two constructors of one sum with one name,
+a struct with two or more unnamed fields, a variant with unnamed fields
+other than one record, an enum without variants, a union, two constructors of one sum with one name,
 two fields of one constructor with one name, a stored name that the
-grammar cannot read, two fields marked `sum` in one struct, and a field
-name that is both the struct's and a variant's.
+grammar cannot read, two fields marked `sum` in one struct, a field name
+that is both the struct's and a variant's, and two variants that hold
+records with one constructor's name.
+
+## The path of the core
+
+The code that the derive writes names the core as `::prodrome`. A program
+that imports `prodrome-core` under another name (`package =
+"prodrome-core"` in its manifest) gives that name with
+`#[literal(crate = path)]` on the type, as `#[serde(crate = "...")]` does
+for serde. The option changes only the paths in the written code, so it
+does not change a print or a read.
 
 ## Stored names
 
@@ -93,9 +109,11 @@ A constructor's name and its fields' names are in every stored object, so a
 change of a name is a change of the stored form. The rule: a stored name is
 the Rust identifier, unless `#[literal(rename = "...")]` gives one. Every
 derived type gives its constructors as data, in `Literal::CONSTRUCTORS`. A
-schema pins the constructors of its types in one test, and a rename that
-changes a stored name fails that test. `core/tests/all/derive.rs` pins the
-reference payload's four constructors. The conformance vectors also hold
+schema pins the constructors of its types in one test with
+`codec::assert_pinned`, which compares them with a text of one
+`Name(field, …)` on each line. A rename that changes a stored name fails
+that test. `core/tests/all/derive.rs` pins the reference payload's four
+constructors, and each schema of this repository pins its own. The conformance vectors also hold
 these names, so a rename fails them too.
 
 Names given only in attributes were not chosen. They would spell each name
@@ -108,10 +126,24 @@ one place.
 A derived read reads each field with `Literal::from_field`, which takes the
 field's context, such as `Note.lines`. A leaf names the context in its
 refusal, as the payload helpers did (`Note.lines must be a tuple`). The
-payload helpers in `payload.rs` are now reads of the same functions, so a
-hand-written read and a derived one give the same messages.
-`Fields::get` keeps its own messages, for the hand-written impls that use
-it.
+payload helpers in `payload.rs` are reads of the same functions, and so are
+`Fields::of`, `Fields::among` and `Fields::get`. A hand-written read and a
+derived one therefore give the same messages. Every refusal of a field
+names the field. A leaf that words its own read, such as `String`, names it
+in its words (`Note.lines must be a tuple`). Any other type reads with
+`from_value`, and the default `from_field` leads the refusal with the field
+(`Heads.count: expected a natural number …`). A refusal inside a nested
+record therefore reads as a path. A sum names its type in its
+refusal, whether it is derived or written by hand with `no_arm`:
+`Reject is not one of Verdict's constructors`.
+
+The words of a refusal are not part of the stored form, and no reader may
+depend on them. The language that a read accepts is part of the stored
+form. When `Fields` took the derive's words, a property compared the old
+`Fields` with the new one, and four readers of this repository as they
+were with the same readers as they are (SPEC law 69,
+`core/tests/all/fields.rs`). Over generated values and values changed in
+up to four places, both accept the same values and read the same value.
 
 Before the hand-written codec of the reference payload was deleted, two
 properties compared it with the derived one (commit "derive Literal, and
@@ -166,8 +198,6 @@ in parallel with the core's other dependencies.
 - `Hash`: it holds its digest twice, as words and as text, so it is not a
   newtype.
 - `Term`: the FPL signature table prints and reads a term.
-- `dag::Heads`: its reads use the messages of `Fields::get`, and the store
-  reports them. A derived impl would change those messages.
 - `Span` in `core/examples/memo_file.rs`: its literal is a tuple, which a
   derived impl does not write.
 - `Verdict` and `Review` in `core/tests/all/codec.rs`, and `Thread` in
@@ -178,3 +208,69 @@ The event layer (`TodoEvent` and the envelopes) stays hand-written. It is
 generic over the payload, and its record kind takes its name from the
 payload. A derive for a generic type, and for the head of an event in
 `schema::headed`, is left for later work.
+
+## Additions for a host's hand-written codecs
+
+An application that adopted the derive kept many of its stored types by
+hand. Most of them read through `Fields`, whose refusals had other words
+than the derive's. The types had the same shape and accepted the same
+literals. The following changes let such types move to the derive. They
+change no print, no stored form, and no language that a read accepts.
+
+- `Fields` refuses in the words of `codec::read` (see "The same bytes and
+  the same refusals"). There is one wording, and no second read mode.
+- `#[literal(crate = path)]` names the core for a program that imports it
+  under another name.
+- `TodoId` is a `Literal`, so a newtype over it derives.
+- A variant can hold one record (see "What the derive writes").
+- `codec::assert_pinned` pins a schema's constructors in a test (see
+  "Stored names").
+
+The figures are from this repository's build, on generated data only.
+
+| | Before | After |
+|---|---|---|
+| `prodrome_wasm.wasm`, `wasm-release`, before `wasm-bindgen` | 1,592,264 bytes | 1,592,267 bytes |
+| Build of `prodrome-derive` after `cargo clean -p prodrome-derive`, runs 2 and 3 | 0.85 s, 0.96 s | 1.11 s, 1.04 s |
+| Build of the core's test binary after a touch of `core/tests/all/derive.rs`, three runs | 10.6 s, 9.3 s, 8.5 s | 10.8 s, 9.6 s, 9.2 s |
+
+The test binary of the second column holds more derived types and more
+tests, so its build time is an upper bound of the cost. The difference is
+within the spread of the runs.
+
+## Shapes that the derive does not take
+
+Each of these shapes still needs a hand-written impl. The list says what
+the derive would need to take it.
+
+- **A literal that is not a call.** A newtype over `Option<Hash>` derives,
+  and prints `None` or the hash. An enum whose variants print `None` and a
+  hash does not derive: the derive prints a variant as a call. It would
+  need a variant that prints as its field's literal, and a read that tries
+  the variants in order, which makes the order of the variants part of the
+  stored form.
+- **An integer.** A newtype over `u32`, `u64` or `usize` derives. A signed
+  integer has no `Literal` impl. It needs one impl for each signed type,
+  beside the unsigned ones in `codec.rs`, and no change to the derive.
+- **A set read in any order.** `BTreeSet` reads only its sorted print, so
+  that a set has one print. A read in any order accepts more literals,
+  which is a second language. A host gives such a field its own codec with
+  `#[literal(with = path)]`, which the derive takes today.
+- **An event head, a body of `schema::headed`.** A record with a
+  `#[literal(sum)]` field prints the same calls as an `Event<B>`. The
+  derive does not write `Body`: its `EVENTS`, `fields` and `parse`. It
+  would need an impl of those three from a derived `Sum`: `EVENTS` from
+  `headed_table` with the key's fields, `at` and `actor` as the head;
+  `fields` from `Sum::arm`; and `parse` from `Sum::from_arm` and three
+  reads of the head. `writes`, `asks` and `admits` stay the host's.
+- **A generic record, such as `Patch<A>`.** The derive refuses a generic
+  type. It would need to add the bound `A: Literal` to each type parameter
+  of the impls. A record with a sum would also need its compile-time check
+  of field names moved into an associated constant, because a `const _`
+  item cannot name a type parameter.
+- **A sum where one variant prints two constructors.** A variant prints
+  one constructor, or the one constructor of the record that it holds. A
+  variant that holds a sum, and prints that sum's constructors, would need
+  the held sum's table in the outer sum's `CONSTRUCTORS`, which a `const`
+  function can join as `headed_table` does, and a read that asks the held
+  sum's table for the name of the call.

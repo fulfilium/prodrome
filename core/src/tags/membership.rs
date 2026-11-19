@@ -133,6 +133,8 @@ impl<S: Tagging> Body for Membership<S> {
     type Registers<'a> = One<'a, Bodies<Self>>;
     type Refusal = std::convert::Infallible;
 
+    const NAME: &'static str = "Membership";
+
     const EVENTS: &'static [Constructor] = &[Self::ADDED, Self::REMOVED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
@@ -150,7 +152,7 @@ impl<S: Tagging> Body for Membership<S> {
         let presence = match fields.name() {
             "Added" => Presence::On,
             "Removed" => Presence::Off,
-            other => return Err(no_arm("a membership event", other)),
+            other => return Err(no_arm(Self::NAME, other)),
         };
         Ok(Event::of(
             Pair {

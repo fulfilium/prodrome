@@ -461,6 +461,8 @@ impl Body for Height {
     type Registers<'a> = One<'a, Rises>;
     type Refusal = std::convert::Infallible;
 
+    const NAME: &'static str = "Height";
+
     const EVENTS: &'static [prodrome::literal::codec::Constructor] = &[RAISED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {

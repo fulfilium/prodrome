@@ -19,7 +19,7 @@ pub enum Place {
     Variant,
     /// A named field of a struct or of a variant.
     Field,
-    /// The one field of a newtype.
+    /// The one field of a newtype, or of a variant that holds a record.
     Inner,
 }
 
@@ -32,16 +32,18 @@ enum Key {
     Skip,
     With,
     Sum,
+    Crate,
 }
 
 impl Key {
-    const ALL: [Key; 6] = [
+    const ALL: [Key; 7] = [
         Key::Rename,
         Key::New,
         Key::Default,
         Key::Skip,
         Key::With,
         Key::Sum,
+        Key::Crate,
     ];
 
     fn word(self) -> &'static str {
@@ -52,6 +54,7 @@ impl Key {
             Key::Skip => "skip",
             Key::With => "with",
             Key::Sum => "sum",
+            Key::Crate => "crate",
         }
     }
 
@@ -61,6 +64,7 @@ impl Key {
             Key::Rename => "a struct with named fields, a variant, or a named field",
             Key::New => "a struct",
             Key::Default | Key::Skip | Key::With | Key::Sum => "a named field",
+            Key::Crate => "a struct or an enum",
         }
     }
 }
@@ -69,9 +73,10 @@ impl Place {
     /// The options that apply at this place.
     fn admits(self) -> &'static [Key] {
         match self {
-            Place::Record => &[Key::Rename, Key::New],
-            Place::Newtype => &[Key::New],
-            Place::Sum | Place::Inner => &[],
+            Place::Record => &[Key::Rename, Key::New, Key::Crate],
+            Place::Newtype => &[Key::New, Key::Crate],
+            Place::Sum => &[Key::Crate],
+            Place::Inner => &[],
             Place::Variant => &[Key::Rename],
             Place::Field => &[Key::Rename, Key::Default, Key::Skip, Key::With, Key::Sum],
         }
@@ -84,7 +89,7 @@ impl Place {
             Place::Sum => "an enum",
             Place::Variant => "a variant",
             Place::Field => "a named field",
-            Place::Inner => "the field of a newtype",
+            Place::Inner => "an unnamed field",
         }
     }
 }
@@ -99,6 +104,9 @@ pub struct Options {
     pub skip: Option<Span>,
     pub with: Option<Path>,
     pub sum: Option<Span>,
+    /// The path of the core, for a program that imports it under another
+    /// name than `prodrome`.
+    pub krate: Option<Path>,
 }
 
 impl Options {
@@ -118,7 +126,8 @@ impl Options {
                     .ok_or_else(|| {
                         meta.error(
                             "unknown option of #[literal]: write one of `rename = \"...\"`, \
-                             `new = path`, `default`, `skip`, `with = path` or `sum`",
+                             `new = path`, `default`, `skip`, `with = path`, `sum` or \
+                             `crate = path`",
                         )
                     })?;
                 if !place.admits().contains(&key) {
@@ -138,6 +147,7 @@ impl Options {
                     Key::Default => set(&mut options.default, span, twice),
                     Key::Skip => set(&mut options.skip, span, twice),
                     Key::Sum => set(&mut options.sum, span, twice),
+                    Key::Crate => set(&mut options.krate, meta.value()?.parse()?, twice),
                 }
             })?;
         }

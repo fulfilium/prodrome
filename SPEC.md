@@ -2173,6 +2173,22 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `climb.rs::a_host_checks_its_own_invariant_after_every_step`,
     `climb.rs::a_host_refusal_stops_the_script_at_its_step`.
 
+Law 69 is the codec's two forms of a read (`literal::codec`), over
+generated values and generated values changed in up to four places.
+
+69. **A read of a field accepts what a read of its value accepts.** A
+    read of a value alone (`Literal::from_value`) and a read of the value
+    of a named field (`Literal::from_field`, which `Fields::get` and a
+    derived read call) accept the same values, and read each one as the
+    same value. Only the words of a refusal differ. A refusal of a field
+    names the field, and keeps the kind of the refusal that it leads. A
+    refusal's words are not stored, and no reader depends on them. `Fields` accepts exactly the
+    calls and fields that it accepted when it worded its own refusals, and
+    so do the readers of this repository that read through it.
+    `fields.rs::fields_accepts_what_it_accepted`,
+    `fields.rs::every_reader_accepts_what_it_accepted`,
+    `fields.rs::a_refusal_within_a_field_keeps_its_kind`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;

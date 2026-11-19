@@ -308,9 +308,7 @@ impl Schema for Proposal {
     }
 
     fn from_value(_: &ProposalVocabulary, value: &Value) -> Result<Proposal, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("a proposal event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         let says = match call.name.as_str() {
             "Proposed" => Says::Proposed(string_field(call, "text")?),
             "Moved" => Says::Moved(State::parse(&string_field(call, "state")?)?),
@@ -322,11 +320,7 @@ impl Schema for Proposal {
                 .ok_or_else(|| ProdromeError::invalid("Attempted.attempt must be an integer"))?,
             ),
             "Tagged" => Says::Tagged(strings(tuple_field(call, "tags")?, "Tagged.tags")?),
-            other => {
-                return Err(ProdromeError::invalid(format!(
-                    "{other} is not a proposal event"
-                )))
-            }
+            other => return Err(prodrome::literal::codec::no_arm("Proposal", other)),
         };
         Ok(Proposal {
             proposal: Id(string_field(call, "proposal")?),
@@ -375,4 +369,19 @@ pub fn a_proposal() -> impl Strategy<Value = Proposal> {
         actor: Actor::new("ana").expect("an actor"),
         says,
     })
+}
+
+/// The stored names of the proposal schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_proposal_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        SIGNATURES,
+        "
+        Attempted(proposal, at, actor, attempt)
+        Moved(proposal, at, actor, state)
+        Proposed(proposal, at, actor, text)
+        Tagged(proposal, at, actor, tags)
+        ",
+    );
 }

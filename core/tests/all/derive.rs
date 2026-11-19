@@ -4,8 +4,8 @@
 
 use std::collections::BTreeSet;
 
-use prodrome::event::{Actor, Hash};
-use prodrome::literal::codec::{text_field, Constructor, Fields, Literal, Record};
+use prodrome::event::{Actor, Hash, TodoId};
+use prodrome::literal::codec::{assert_pinned, text_field, Constructor, Fields, Literal, Record};
 use prodrome::literal::{parse_literal, print_literal, Datetime, ProdromeError, Table, Value};
 use prodrome::reference::{Note, Source, SubTodo, Todo};
 use proptest::prelude::*;
@@ -24,39 +24,34 @@ fn the_reference_payload_pins_its_stored_names() {
         SubTodo::CONSTRUCTORS,
     ]
     .concat();
-    let pinned: [Constructor; 4] = [
-        (
-            "Authored",
-            &[
-                "kind",
-                "created",
-                "body",
-                "spec",
-                "rationale",
-                "category",
-                "waiting_on",
-                "detail",
-                "source",
-                "subtodos",
-                "notes",
-                "note",
-            ],
-        ),
-        (
-            "Source",
-            &[
-                "sender",
-                "subject",
-                "date",
-                "hash",
-                "thread_id",
-                "message_id",
-            ],
-        ),
-        ("Note", &["on", "lines"]),
-        ("SubTodo", &["body", "done"]),
-    ];
-    assert_eq!(vocabulary, pinned);
+    assert_pinned(
+        &vocabulary,
+        "
+        Authored(kind, created, body, spec, rationale, category, waiting_on, detail, source, subtodos, notes, note)
+        Source(sender, subject, date, hash, thread_id, message_id)
+        Note(on, lines)
+        SubTodo(body, done)
+        ",
+    );
+}
+
+/// A pin fails when a field changes its name, and when the fields change
+/// their order.
+#[test]
+fn a_changed_name_or_order_fails_its_pin() {
+    let note: &[Constructor] = &[("Note", &["on", "lines"])];
+    assert_pinned(note, "Note(on, lines)");
+    for pinned in [
+        "Note(on, line)",
+        "Note(lines, on)",
+        "Note(on, lines)\nSeen()",
+    ] {
+        let failed = std::panic::catch_unwind(|| assert_pinned(note, pinned));
+        assert!(
+            failed.is_err(),
+            "{pinned} is not the pin of Note(on, lines)"
+        );
+    }
 }
 
 // --- a neutral schema ---------------------------------------------------------
@@ -190,7 +185,7 @@ const VOCABULARY: Table = Table(&[
     ("Defer", &["until"]),
 ]);
 
-fn a_hash() -> impl Strategy<Value = Hash> {
+pub(crate) fn a_hash() -> impl Strategy<Value = Hash> {
     "[0-9a-f]{64}".prop_map(|text| Hash::new(text).expect("the pattern is a name"))
 }
 
@@ -242,6 +237,30 @@ proptest! {
         let parsed = parse_literal(&print_literal(&value), &VOCABULARY).expect("a print parses");
         prop_assert_eq!(Thread::from_value(&parsed), Ok(thread));
     }
+}
+
+/// A refusal inside a nested record names each field on the path to it.
+#[test]
+fn a_nested_refusal_reads_as_a_path() {
+    let thread = Thread {
+        first: review(),
+        replies: vec![],
+    };
+    let Value::Call(mut call) = thread.to_value() else {
+        panic!("a record prints as a call");
+    };
+    if let Some((_, Value::Call(first))) = call.fields.iter_mut().find(|(name, _)| name == "first")
+    {
+        if let Some((_, remark)) = first.fields.iter_mut().find(|(name, _)| name == "remark") {
+            *remark = Value::Bool(true);
+        }
+    }
+    assert_eq!(
+        Thread::from_value(&Value::Call(call)),
+        Err(ProdromeError::invalid(
+            "Thread.first: Review.remark must be a string, got Bool(true)"
+        ))
+    );
 }
 
 fn review() -> Reviewed {
@@ -334,19 +353,23 @@ fn a_derived_read_names_what_it_refuses() {
     );
     assert_eq!(
         refusal(&with("lines", Value::int(0))),
-        "a review covers at least one line"
+        "Review.lines: a review covers at least one line"
     );
     assert_eq!(
         refusal(&with("verdict", Value::call("Reject", vec![]))),
-        "Reject is not one of Verdict's constructors"
+        "Review.verdict: Reject is not one of Verdict's constructors"
     );
     assert_eq!(
         refusal(&with("verdict", Value::str("Accept"))),
-        "expected a constructor call, got Str(\"Accept\")"
+        "Review.verdict: expected a constructor call, got Str(\"Accept\")"
     );
     assert_eq!(
         refusal(&with("tags", Value::Tuple(vec![Value::str("")]))),
-        "a tag is not empty"
+        "Review.tags: a tag is not empty"
+    );
+    assert_eq!(
+        refusal(&with("of", Value::Tuple(vec![Value::str("f")]))),
+        "Review.of: object name must be 64 lowercase hex, got \"f\""
     );
 }
 
@@ -439,15 +462,19 @@ mod by_hand {
                 },
             },
             "Paused" => Shape::Paused,
-            other => return Err(no_arm("one of Shape's constructors", other)),
+            other => return Err(no_arm("Shape", other)),
         };
         Ok(Line {
             at: datetime_field(call, "at")?,
-            actor: Actor::new(string_field(call, "actor")?)?,
+            actor: Actor::new(string_field(call, "actor")?)
+                .map_err(|refused| refused.within(&format!("{}.actor", call.name)))?,
             shape,
             rests_on: tuple_field(call, "rests_on")?
                 .iter()
-                .map(Hash::from_value)
+                .map(|hash| {
+                    Hash::from_value(hash)
+                        .map_err(|refused| refused.within(&format!("{}.rests_on", call.name)))
+                })
                 .collect::<Result<_, _>>()?,
         })
     }
@@ -456,15 +483,17 @@ mod by_hand {
 /// Every constructor of a line, with the common fields first, as data.
 #[test]
 fn a_record_with_a_sum_lists_each_constructor_with_all_its_fields() {
-    let pinned: [Constructor; 3] = [
-        ("Opened", &["at", "actor", "rests_on", "title"]),
-        ("Closed", &["at", "actor", "rests_on", "why"]),
-        ("Paused", &["at", "actor", "rests_on"]),
-    ];
-    assert_eq!(Line::CONSTRUCTORS, pinned);
+    assert_pinned(
+        Line::CONSTRUCTORS,
+        "
+        Opened(at, actor, rests_on, title)
+        Closed(at, actor, rests_on, why)
+        Paused(at, actor, rests_on)
+        ",
+    );
 }
 
-fn a_datetime() -> impl Strategy<Value = Datetime> {
+pub(crate) fn a_datetime() -> impl Strategy<Value = Datetime> {
     (
         1i32..=9999,
         1u32..=12,
@@ -496,7 +525,7 @@ fn a_line() -> impl Strategy<Value = Line> {
 }
 
 /// A value that a field of a line expects, or one that none expects.
-fn a_leaf() -> impl Strategy<Value = Value> {
+pub(crate) fn a_leaf() -> impl Strategy<Value = Value> {
     prop_oneof![
         Just(Value::None),
         any::<bool>().prop_map(Value::Bool),
@@ -518,7 +547,7 @@ fn a_leaf() -> impl Strategy<Value = Value> {
 
 /// A change to one part of a value.
 #[derive(Debug, Clone)]
-enum Change {
+pub(crate) enum Change {
     /// The part's call loses its field at the index.
     Drop(usize),
     /// The part becomes the leaf.
@@ -527,16 +556,27 @@ enum Change {
     Rename(&'static str),
 }
 
-fn a_change() -> impl Strategy<Value = (usize, Change)> {
+/// A change to the part at an index, which renames a call to one of
+/// `names`.
+pub(crate) fn a_change(names: &[&'static str]) -> impl Strategy<Value = (usize, Change)> {
     (
         any::<usize>(),
         prop_oneof![
             any::<usize>().prop_map(Change::Drop),
             a_leaf().prop_map(Change::Replace),
-            prop::sample::select(vec!["Opened", "Closed", "Paused", "Other"])
-                .prop_map(Change::Rename),
+            prop::sample::select(names.to_vec()).prop_map(Change::Rename),
         ],
     )
+}
+
+/// `value` with each of `changes` applied, in order, to the part at its
+/// index modulo the number of parts.
+pub(crate) fn changed(mut value: Value, changes: &[(usize, Change)]) -> Value {
+    for (index, change) in changes {
+        let mut index = index % parts(&value);
+        apply(&mut value, &mut index, change);
+    }
+    value
 }
 
 fn parts(value: &Value) -> usize {
@@ -590,13 +630,192 @@ proptest! {
     #[test]
     fn a_record_with_a_sum_reads_as_the_hand_written_codec(
         line in a_line(),
-        changes in prop::collection::vec(a_change(), 0..5),
+        changes in prop::collection::vec(a_change(&["Opened", "Closed", "Paused", "Other"]), 0..5),
     ) {
-        let mut value = line.to_value();
-        for (index, change) in &changes {
-            let mut index = index % parts(&value);
-            apply(&mut value, &mut index, change);
-        }
+        let value = changed(line.to_value(), &changes);
         prop_assert_eq!(Line::from_value(&value), by_hand::from_value(&value));
+    }
+}
+
+// --- a program that names the core by another path --------------------------
+
+/// A schema that names the core `renamed`, as a program does that imports
+/// `prodrome-core` under another name. The derive writes `renamed::...`
+/// for each path of the core.
+mod renamed_core {
+    use prodrome as renamed;
+    use renamed::literal::codec::Literal;
+
+    /// A derived record, sum and newtype, each with `crate = renamed`.
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub struct Mark {
+        pub by: Label,
+        pub kind: Kind,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub enum Kind {
+        Seen,
+        Noted { text: String },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub struct Label(pub String);
+}
+
+/// A type that gives `crate = path` prints and reads as the same type
+/// without it.
+#[test]
+fn a_type_that_names_the_core_by_another_path_reads_back() {
+    use renamed_core::{Kind, Label, Mark};
+    let mark = Mark {
+        by: Label("ada".to_owned()),
+        kind: Kind::Noted {
+            text: "one".to_owned(),
+        },
+    };
+    assert_eq!(
+        print_literal(&mark.to_value()),
+        "Mark(by='ada', kind=Noted(text='one'))"
+    );
+    assert_eq!(Mark::from_value(&mark.to_value()), Ok(mark));
+}
+
+// --- a host's newtype over a todo's identifier ------------------------------
+
+/// A host's name for a todo: a newtype over [`TodoId`], which derives its
+/// codec because `TodoId` is a `Literal`.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Ticket(TodoId);
+
+/// A todo's identifier prints as its text, and a read checks the text with
+/// `TodoId::new`, through a newtype over it too.
+#[test]
+fn a_newtype_over_a_todo_id_derives() {
+    let ticket = Ticket(TodoId::new("t-1").expect("a todo id"));
+    assert_eq!(print_literal(&ticket.to_value()), "'t-1'");
+    assert_eq!(Ticket::from_value(&ticket.to_value()), Ok(ticket));
+    assert_eq!(
+        Ticket::from_value(&Value::str("T 1")),
+        Err(ProdromeError::invalid(
+            "todo id must match ^[a-z0-9_-]+$ (nonempty), got \"T 1\""
+        ))
+    );
+    assert_eq!(
+        Ticket::from_field(&Value::None, &"Mark.ticket"),
+        Err(ProdromeError::invalid(
+            "Mark.ticket must be a string, got None"
+        ))
+    );
+}
+
+// --- a sum whose variant holds a record ---------------------------------------
+
+/// A mail that a proposal would send: a record whose stored name is `Email`.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(rename = "Email")]
+struct Draft {
+    to: Actor,
+    subject: String,
+}
+
+/// A note that a proposal would leave.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Memo {
+    lines: Vec<String>,
+}
+
+/// What a proposal would do: two variants that hold a record, and one with
+/// a constructor of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+enum Proposal {
+    Email(Draft),
+    Memo(Memo),
+    Dropped { why: Option<String> },
+}
+
+/// A filed proposal: a record whose sum's variants hold records.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Filed {
+    at: Datetime,
+    #[literal(sum)]
+    proposal: Proposal,
+}
+
+/// The constructors of a sum whose variants hold records are the records'
+/// constructors, in the order of the variants.
+#[test]
+fn a_held_record_gives_the_sum_its_constructor() {
+    assert_pinned(
+        Proposal::CONSTRUCTORS,
+        "
+        Email(to, subject)
+        Memo(lines)
+        Dropped(why)
+        ",
+    );
+    assert_pinned(
+        Filed::CONSTRUCTORS,
+        "
+        Email(at, to, subject)
+        Memo(at, lines)
+        Dropped(at, why)
+        ",
+    );
+    assert_eq!(
+        Proposal::from_value(&Value::call("Draft", vec![])),
+        Err(ProdromeError::invalid(
+            "Draft is not one of Proposal's constructors"
+        ))
+    );
+}
+
+fn a_proposal() -> impl Strategy<Value = Proposal> {
+    prop_oneof![
+        (
+            "[a-z][a-z0-9_-]{0,8}"
+                .prop_map(|text| Actor::new(text).expect("the pattern is an actor")),
+            any::<String>()
+        )
+            .prop_map(|(to, subject)| Proposal::Email(Draft { to, subject })),
+        prop::collection::vec(any::<String>(), 0..3)
+            .prop_map(|lines| Proposal::Memo(Memo { lines })),
+        any::<Option<String>>().prop_map(|why| Proposal::Dropped { why }),
+    ]
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(1024))]
+
+    /// A variant that holds a record prints as the record's call, and a read
+    /// of a call, changed in up to four places, reads that variant exactly
+    /// where the record's own read reads the record.
+    #[test]
+    fn a_held_record_prints_and_reads_as_its_own_call(
+        proposal in a_proposal(),
+        at in a_datetime(),
+        changes in prop::collection::vec(a_change(&["Email", "Memo", "Dropped", "Other"]), 0..5),
+    ) {
+        let value = proposal.to_value();
+        match &proposal {
+            Proposal::Email(draft) => prop_assert_eq!(&value, &draft.to_value()),
+            Proposal::Memo(memo) => prop_assert_eq!(&value, &memo.to_value()),
+            Proposal::Dropped { .. } => {}
+        }
+        prop_assert_eq!(Proposal::from_value(&value), Ok(proposal.clone()));
+        let filed = Filed { at, proposal };
+        prop_assert_eq!(Filed::from_value(&filed.to_value()), Ok(filed));
+
+        let value = changed(value, &changes);
+        let read = Proposal::from_value(&value);
+        let by_name = match value.as_call().map(|call| call.name.as_str()) {
+            Some("Email") => Draft::from_value(&value).map(Proposal::Email),
+            Some("Memo") => Memo::from_value(&value).map(Proposal::Memo),
+            _ => read.clone(),
+        };
+        prop_assert_eq!(read, by_name);
     }
 }

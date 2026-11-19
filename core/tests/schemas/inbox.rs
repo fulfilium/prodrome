@@ -168,20 +168,14 @@ impl Schema for Inbox {
     }
 
     fn from_value(_: &InboxVocabulary, value: &Value) -> Result<Inbox, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("an inbox event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         let says = match call.name.as_str() {
             "Proposed" => Says::Proposed(string_field(call, "text")?),
             "Serves" => Says::Serves {
                 store: string_field(call, "store")?,
                 todo: string_field(call, "todo")?,
             },
-            other => {
-                return Err(ProdromeError::invalid(format!(
-                    "{other} is not an inbox event"
-                )))
-            }
+            other => return Err(prodrome::literal::codec::no_arm("Inbox", other)),
         };
         Ok(Inbox {
             proposal: Id(string_field(call, "proposal")?),
@@ -226,4 +220,17 @@ impl Price for Inbox {
             })
             .collect()
     }
+}
+
+/// The stored names of the inbox schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_inbox_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        SIGNATURES,
+        "
+        Proposed(proposal, at, actor, text)
+        Serves(proposal, at, actor, store, todo)
+        ",
+    );
 }

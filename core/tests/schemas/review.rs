@@ -254,9 +254,7 @@ impl Schema for Review {
     }
 
     fn from_value(_: &ReviewVocabulary, value: &Value) -> Result<Review, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("a review event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         let pr = Pr::new(&string_field(call, "pr")?)?;
         let at = datetime_field(call, "at")?;
         let actor = Actor::new(string_field(call, "actor")?)?;
@@ -273,9 +271,7 @@ impl Schema for Review {
                 actor,
                 phase: Phase::parse(&string_field(call, "phase")?)?,
             }),
-            other => Err(ProdromeError::invalid(format!(
-                "{other} is not a review event"
-            ))),
+            other => Err(prodrome::literal::codec::no_arm("Review", other)),
         }
     }
 
@@ -326,4 +322,17 @@ impl Price for Review {
 
 pub fn day(day: u32) -> Datetime {
     Datetime::new(2026, 10, day, 12, 0, 0, 0).expect("a real instant")
+}
+
+/// The stored names of the review schema. A changed name of a constructor or
+/// a field, or a changed order of the fields, fails this test.
+#[test]
+fn the_review_schema_pins_its_stored_names() {
+    prodrome::literal::codec::assert_pinned(
+        REVIEW_SIGNATURES,
+        "
+        Opened(pr, at, actor, title)
+        Moved(pr, at, actor, phase)
+        ",
+    );
 }

@@ -109,6 +109,25 @@ pub const fn names_field(arms: &[Constructor], name: &str) -> bool {
     false
 }
 
+/// Whether the constructors of `table` have distinct names. A derived sum
+/// whose variant holds a record checks its table with it when the program
+/// compiles.
+#[must_use]
+pub const fn distinct(table: &[Constructor]) -> bool {
+    let mut one = 0;
+    while one < table.len() {
+        let mut other = one + 1;
+        while other < table.len() {
+            if same(table[one].0, table[other].0) {
+                return false;
+            }
+            other += 1;
+        }
+        one += 1;
+    }
+    true
+}
+
 const fn same(a: &str, b: &str) -> bool {
     let (a, b) = (a.as_bytes(), b.as_bytes());
     if a.len() != b.len() {

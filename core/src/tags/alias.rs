@@ -87,6 +87,8 @@ impl<S: Tagging> Body for Alias<S> {
     type Registers<'a> = One<'a, Bodies<Self>>;
     type Refusal = OfItself<S::Tag>;
 
+    const NAME: &'static str = "Alias";
+
     const EVENTS: &'static [Constructor] = &[Self::ALIASED, Self::UNALIASED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
@@ -111,7 +113,7 @@ impl<S: Tagging> Body for Alias<S> {
         let alias = match fields.name() {
             "Aliased" => Alias::As(fields.get("to")?),
             "Unaliased" => Alias::Itself,
-            other => return Err(no_arm("an alias event", other)),
+            other => return Err(no_arm(Self::NAME, other)),
         };
         Event::new(
             fields.get(S::TAG)?,

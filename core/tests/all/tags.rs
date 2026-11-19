@@ -705,3 +705,26 @@ fn the_events_print_with_the_tagging_s_field_names() {
         parse_event(&MembershipVocabulary::default(), &print).expect("parses");
     assert_eq!(parsed, kind);
 }
+
+/// The stored names of the two tag schemas, over notes tagged with labels.
+/// A changed name of a constructor or a field, or a changed order of the
+/// fields, fails this test.
+#[test]
+fn the_tag_schemas_pin_their_stored_names() {
+    use prodrome::literal::codec::assert_pinned;
+    use prodrome::schema::headed::Body;
+    assert_pinned(
+        membership::Membership::<Labels>::EVENTS,
+        "
+        Added(note, label, at, actor)
+        Removed(note, label, at, actor)
+        ",
+    );
+    assert_pinned(
+        Alias::<Labels>::EVENTS,
+        "
+        Aliased(label, at, actor, to)
+        Unaliased(label, at, actor)
+        ",
+    );
+}
