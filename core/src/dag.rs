@@ -18,9 +18,10 @@ pub use reach::Reach;
 
 use crate::change::Change;
 use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
+use crate::fold::Product;
 use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
-use crate::registers::{Genesis, Node};
+use crate::registers::{fold, Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
 use crate::spread::spread;
@@ -553,6 +554,40 @@ impl<E: Schema> Dag<E> {
                         }),
                 ),
                 _ => {}
+            }
+        }
+        findings.extend(self.below_findings());
+        findings
+    }
+
+    /// §6: each write to an inflationary register stands at or above the
+    /// reading of the writes it rests on, as the append requires
+    /// ([`crate::fold::Product::grows`]). Each write is checked against a
+    /// product of its own ancestors in its entity, the history's stream
+    /// being causal, so the check reads the history and not the order in
+    /// which the objects arrived. Of a DAG with no history (a cycle), it
+    /// finds nothing.
+    fn below_findings(&self) -> Vec<Finding> {
+        let Ok(nodes) = self.nodes().or_else(|_| self.interior().nodes()) else {
+            return Vec::new();
+        };
+        let folded = fold(&nodes);
+        let mut findings = Vec::new();
+        for (_, stream) in folded.entities() {
+            for (at, stamp) in stream.iter().enumerate() {
+                let mut beneath = E::Registers::default();
+                for earlier in stream[..at]
+                    .iter()
+                    .filter(|earlier| stamp.descends(earlier))
+                {
+                    beneath.join(earlier);
+                }
+                if let Err(why) = beneath.grows(&stamp.event) {
+                    findings.push(Finding::Below {
+                        write: stamp.name.clone(),
+                        why,
+                    });
+                }
             }
         }
         findings

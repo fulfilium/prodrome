@@ -7,6 +7,7 @@
 //! admits it, and what it supersedes is ancestry alone. No clock and no
 //! linearisation picks a winner; a conflict is its candidates.
 
+mod climb;
 mod frontier;
 mod order;
 mod product;
@@ -16,6 +17,7 @@ mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
 
+pub use climb::Climb;
 pub use frontier::Frontier;
 pub use order::{grows, maximal, Discrete, Inflationary, Order, Total};
 pub use product::Product;
@@ -143,11 +145,11 @@ impl<'a, P: Payload> Product<'a> for Registers<'a, P> {
         }
     }
 
-    fn frontier_mut(&mut self, kind: Kind) -> &mut Frontier<'a, TodoEvent<P>> {
+    fn join_to(&mut self, kind: Kind, stamp: &'a Stamp<TodoEvent<P>>) {
         match kind {
-            Kind::State => &mut self.state,
-            Kind::Spec => &mut self.spec,
-            Kind::Content => &mut self.content,
+            Kind::State => self.state.join(stamp),
+            Kind::Spec => self.spec.join(stamp),
+            Kind::Content => self.content.join(stamp),
         }
     }
 
@@ -162,6 +164,11 @@ impl<'a, P: Payload> Product<'a> for Registers<'a, P> {
     /// No todo register is inflationary: a `Reopened` after a `Completed`
     /// goes back, which is why a todo's conflicts are shown and priced.
     fn grows(&self, _event: &TodoEvent<P>) -> Result<(), ProdromeError> {
+        Ok(())
+    }
+
+    /// No todo register is inflationary, so no reading of one must climb.
+    fn climbed(&self, _earlier: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
 }
@@ -375,7 +382,7 @@ fn earliest<'a, E: Schema>(written: &[&'a Stamp<E>]) -> E::Registers<'a> {
                 .iter()
                 .any(|other| stamp.descends(other) && other.event.writes().any(|r| r == register));
             if !preceded {
-                first.frontier_mut(register).join(stamp);
+                first.join_to(register, stamp);
             }
         }
     }

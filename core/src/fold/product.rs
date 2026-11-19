@@ -12,7 +12,8 @@ use crate::schema::Schema;
 /// product is itself a semilattice, so folding a stream into it is a monoid
 /// action whatever order the writes arrive in (§6.6).
 ///
-/// The registers a write supersedes in are [`Frontier`]s, named by
+/// The registers a write supersedes in are [`Frontier`]s, or, where the
+/// register is inflationary, [`crate::fold::Climb`]s, named by
 /// [`Schema::Register`]; a register that only accumulates (the todo's
 /// tendings, a [`crate::fold::GrowSet`]) is a component too, and is joined by
 /// union. A component reads itself under its [`crate::fold::RegisterType`].
@@ -27,26 +28,37 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     /// before any was joined: an empty product has nothing to read).
     fn registers(&self) -> Vec<<Self::Schema as Schema>::Register>;
 
-    /// The route: `stamp` joined into every register its event writes.
-    fn join(&mut self, stamp: &'a Stamp<Self::Schema>);
+    /// The route: `stamp` joined into every register its event writes. By
+    /// default, [`Product::join_to`] each register that [`Schema::writes`]
+    /// names; a product with a component beside its named registers (the
+    /// todo's tendings) routes the rest itself.
+    fn join(&mut self, stamp: &'a Stamp<Self::Schema>) {
+        for register in stamp.event.writes() {
+            self.join_to(register, stamp);
+        }
+    }
 
     /// The frontier of a register a write supersedes in.
     fn frontier(&self, register: <Self::Schema as Schema>::Register)
         -> &Frontier<'a, Self::Schema>;
 
-    /// The same, to join a write into that register alone: how the fold
+    /// Join `stamp` into the register `register` alone, as that register
+    /// joins a write: how [`Product::join`] routes a write, and how the fold
     /// builds each register's earliest writes (§6.4).
-    fn frontier_mut(
+    fn join_to(
         &mut self,
         register: <Self::Schema as Schema>::Register,
-    ) -> &mut Frontier<'a, Self::Schema>;
+        stamp: &'a Stamp<Self::Schema>,
+    );
 
-    /// A register's READING, by name (design §3): the writes in its frontier
-    /// whose values are maximal under its type's order, each value named by
-    /// the least write carrying it. One write is a value; more is a conflict.
-    /// [`Frontier::reading`] under the register's [`crate::fold::RegisterType`],
-    /// which only the product knows, so a reader that holds a register's name
-    /// alone can read any schema.
+    /// A register's READING, by name (design §3): the writes whose values
+    /// are maximal under its type's order, each value named by the least
+    /// write carrying it. One write is a value; more is a conflict. For a
+    /// register that may go back, the writes are its frontier's
+    /// ([`Frontier::reading`]); for an inflationary register, they are all
+    /// its writes ([`crate::fold::Climb::reading`]). Only the product knows
+    /// the register's [`crate::fold::RegisterType`], so a reader that holds
+    /// a register's name alone can read any schema.
     fn reading(&self, register: <Self::Schema as Schema>::Register)
         -> Vec<&'a Stamp<Self::Schema>>;
 
@@ -59,6 +71,18 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     ///
     /// A write whose value falls below, or beside, the reading it supersedes.
     fn grows(&self, event: &Self::Schema) -> Result<(), ProdromeError>;
+
+    /// Law 32 between two readings of one entity: in every inflationary
+    /// register, each value that `earlier` reads stands at or below a value
+    /// that `self` reads. A register that is not inflationary may go back,
+    /// so a schema with no inflationary register answers `Ok`. For two
+    /// object sets where `earlier`'s is a subset of `self`'s, read under the
+    /// policy where everything binds, this holds for any objects.
+    ///
+    /// # Errors
+    ///
+    /// The first register whose reading fell.
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
 
     /// Every register with more than one write in its frontier, each named
     /// by its writes: what a human settles with the next one.

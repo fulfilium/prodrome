@@ -43,6 +43,9 @@ finally implemented, see `SPEC.md` and `CHANGELOG.md`.
   invariant after every step.
 - [`design-literal-derive.md`](design-literal-derive.md): the design of
   `#[derive(Literal)]`, the routes that were weighed, and the measurements.
+- [`design-inflationary-reading.md`](design-inflationary-reading.md): why
+  an inflationary register reads the greatest of all its writes, how other
+  CRDT libraries define such a register, and what the change costs.
 - [`SIMPLIFY-PLAN.md`](SIMPLIFY-PLAN.md): a plan to remove duplicated code,
   so that the crate has one term functor, one schema, one evaluator, and one
   fold.

@@ -81,7 +81,7 @@ fn day(day: u32) -> Datetime {
 }
 
 /// The same event at the declared schema: its print, parsed there.
-fn declared(schema: &Declaration, event: &Proposal) -> Declared {
+pub(crate) fn declared(schema: &Declaration, event: &Proposal) -> Declared {
     Declared::from_value(schema, &event.to_value()).expect("a proposal event is a declared one")
 }
 

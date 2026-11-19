@@ -13,7 +13,7 @@ use std::collections::BTreeSet;
 
 use prodrome::event::Actor;
 use prodrome::fold::{
-    Discrete, Frontier, Inflationary, Order, Product, Register, RegisterType, Total,
+    Climb, Discrete, Frontier, Inflationary, Order, Product, Register, RegisterType, Total,
 };
 use prodrome::literal::{Call, Datetime, ProdromeError, Signature, Table, Value, Vocabulary};
 use prodrome::payload::{datetime_field, required, string_field, strings, tuple_field};
@@ -208,12 +208,13 @@ impl RegisterType<Proposal> for TextRegister {
     }
 }
 
-/// A proposal's registers: a product of four frontiers.
+/// A proposal's registers: two frontiers, and the two inflationary
+/// registers, which climb.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Registers<'a> {
     attempts: Frontier<'a, Proposal>,
-    state: Frontier<'a, Proposal>,
-    tags: Frontier<'a, Proposal>,
+    state: Climb<'a, Proposal>,
+    tags: Climb<'a, Proposal>,
     text: Frontier<'a, Proposal>,
 }
 
@@ -224,27 +225,21 @@ impl<'a> Product<'a> for Registers<'a> {
         FIELDS.to_vec()
     }
 
-    fn join(&mut self, stamp: &'a Stamp<Proposal>) {
-        for field in stamp.event.writes() {
-            self.frontier_mut(field).join(stamp);
-        }
-    }
-
     fn frontier(&self, field: Field) -> &Frontier<'a, Proposal> {
         match field {
             Field::Attempts => &self.attempts,
-            Field::State => &self.state,
-            Field::Tags => &self.tags,
+            Field::State => self.state.frontier(),
+            Field::Tags => self.tags.frontier(),
             Field::Text => &self.text,
         }
     }
 
-    fn frontier_mut(&mut self, field: Field) -> &mut Frontier<'a, Proposal> {
+    fn join_to(&mut self, field: Field, stamp: &'a Stamp<Proposal>) {
         match field {
-            Field::Attempts => &mut self.attempts,
-            Field::State => &mut self.state,
-            Field::Tags => &mut self.tags,
-            Field::Text => &mut self.text,
+            Field::Attempts => self.attempts.join(stamp),
+            Field::State => self.state.join::<StateRegister>(stamp),
+            Field::Tags => self.tags.join::<TagsRegister>(stamp),
+            Field::Text => self.text.join(stamp),
         }
     }
 
@@ -261,6 +256,12 @@ impl<'a> Product<'a> for Registers<'a> {
     fn grows(&self, event: &Proposal) -> Result<(), ProdromeError> {
         self.state.grows::<StateRegister>(event)?;
         self.tags.grows::<TagsRegister>(event)
+    }
+
+    /// The state and the tags never fall (law 32).
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
+        self.state.climbed::<StateRegister>(&earlier.state)?;
+        self.tags.climbed::<TagsRegister>(&earlier.tags)
     }
 }
 

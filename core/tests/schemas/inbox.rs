@@ -99,12 +99,6 @@ impl<'a> Product<'a> for Registers<'a> {
         vec![Field::Serves, Field::Text]
     }
 
-    fn join(&mut self, stamp: &'a Stamp<Inbox>) {
-        for field in stamp.event.writes() {
-            self.frontier_mut(field).join(stamp);
-        }
-    }
-
     fn frontier(&self, field: Field) -> &Frontier<'a, Inbox> {
         match field {
             Field::Serves => &self.serves,
@@ -112,10 +106,10 @@ impl<'a> Product<'a> for Registers<'a> {
         }
     }
 
-    fn frontier_mut(&mut self, field: Field) -> &mut Frontier<'a, Inbox> {
+    fn join_to(&mut self, field: Field, stamp: &'a Stamp<Inbox>) {
         match field {
-            Field::Serves => &mut self.serves,
-            Field::Text => &mut self.text,
+            Field::Serves => self.serves.join(stamp),
+            Field::Text => self.text.join(stamp),
         }
     }
 
@@ -127,6 +121,10 @@ impl<'a> Product<'a> for Registers<'a> {
     }
 
     fn grows(&self, _: &Inbox) -> Result<(), ProdromeError> {
+        Ok(())
+    }
+
+    fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
 }

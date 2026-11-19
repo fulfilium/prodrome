@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 
 use prodrome::event::Actor;
-use prodrome::fold::{Frontier, Inflationary, Order, Product, Register, RegisterType};
+use prodrome::fold::{Climb, Frontier, Inflationary, Order, Product, RegisterType};
 use prodrome::fpl::{mk_flat, FplError};
 use prodrome::literal::{Call, Datetime, ProdromeError, Signature, Table, Value, Vocabulary};
 use prodrome::payload::{datetime_field, string_field};
@@ -155,12 +155,12 @@ impl RegisterType<Review> for PhaseRegister {
     }
 }
 
-/// A review's registers: a product of one, its phase.
+/// A review's registers: a product of one, its phase, which climbs.
 #[derive(Debug, Clone, PartialEq, Default)]
-pub struct Phases<'a>(Frontier<'a, Review>);
+pub struct Phases<'a>(Climb<'a, Review>);
 
 impl Phases<'_> {
-    /// The reading: the maximal phases of the frontier.
+    /// The reading: the greatest phases of all its writes.
     pub fn phases(&self) -> HashSet<Phase> {
         self.0
             .reading::<PhaseRegister>()
@@ -177,18 +177,12 @@ impl<'a> Product<'a> for Phases<'a> {
         vec![Field::Phase]
     }
 
-    fn join(&mut self, stamp: &'a Stamp<Review>) {
-        if PhaseRegister::value(&stamp.event).is_some() {
-            self.0.join(stamp);
-        }
-    }
-
     fn frontier(&self, _phase: Field) -> &Frontier<'a, Review> {
-        &self.0
+        self.0.frontier()
     }
 
-    fn frontier_mut(&mut self, _phase: Field) -> &mut Frontier<'a, Review> {
-        &mut self.0
+    fn join_to(&mut self, _phase: Field, stamp: &'a Stamp<Review>) {
+        self.0.join::<PhaseRegister>(stamp);
     }
 
     fn reading(&self, _phase: Field) -> Vec<&'a Stamp<Review>> {
@@ -199,6 +193,11 @@ impl<'a> Product<'a> for Phases<'a> {
     /// the phase it supersedes.
     fn grows(&self, event: &Review) -> Result<(), ProdromeError> {
         self.0.grows::<PhaseRegister>(event)
+    }
+
+    /// The phase never falls (law 32).
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
+        self.0.climbed::<PhaseRegister>(&earlier.0)
     }
 }
 

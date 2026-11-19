@@ -2,7 +2,7 @@
 //! `Schema` trait family implemented by interpreting the declaration.
 
 use crate::event::{Actor, Hash};
-use crate::fold::{grows, Frontier, Product, Register};
+use crate::fold::{grows, Climb, Frontier, Product, Register};
 use crate::literal::{Call, Datetime, ProdromeError, Value};
 use crate::payload::required;
 use crate::registers::Stamp;
@@ -209,20 +209,53 @@ impl Schema for Declared {
 }
 
 /// An entity's registers under a declared schema: a product of one
-/// [`Frontier`] per register, each read under its declared order. It learns
-/// the declaration from the first write it joins; before one it holds
-/// nothing, which is every register unwritten.
+/// register per declared register, each read under its declared order. It
+/// learns the declaration from the first write it joins; before one it
+/// holds nothing, which is every register unwritten.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Registers<'a> {
-    frontiers: Vec<Frontier<'a, Declared>>,
+    held: Vec<Held<'a>>,
     unwritten: Frontier<'a, Declared>,
 }
 
-impl Registers<'_> {
-    fn hold(&mut self, slot: Slot) {
-        if self.frontiers.len() <= slot.index() {
-            self.frontiers
-                .resize_with(slot.index() + 1, Frontier::default);
+/// One declared register: a [`Frontier`] where the declaration lets it go
+/// back, and a [`Climb`] where it is declared inflationary.
+#[derive(Debug, Clone, PartialEq)]
+enum Held<'a> {
+    Frontier(Frontier<'a, Declared>),
+    Climb(Climb<'a, Declared>),
+}
+
+impl Held<'_> {
+    /// The register `slot` of `schema`, unwritten.
+    fn of(schema: &Declaration, slot: Slot) -> Self {
+        if schema.inflationary(slot) {
+            Held::Climb(Climb::default())
+        } else {
+            Held::Frontier(Frontier::default())
+        }
+    }
+}
+
+/// The value of a write to the inflationary register `slot`.
+fn climbing<'a>(slot: Slot) -> impl Fn(&'a Stamp<Declared>) -> Climbing<'a> {
+    move |stamp| Climbing(stamp.event.valued(slot))
+}
+
+impl<'a> Registers<'a> {
+    /// Hold every register of `schema` up to `slot`.
+    fn hold(&mut self, schema: &Declaration, slot: Slot) {
+        while self.held.len() <= slot.index() {
+            let next = Slot(self.held.len());
+            self.held.push(Held::of(schema, next));
+        }
+    }
+
+    /// The register `slot`, where it is inflationary and held.
+    fn climb(&self, slot: Slot) -> Option<&Climb<'a, Declared>> {
+        match self.held.get(slot.index()) {
+            Some(Held::Climb(climb)) => Some(climb),
+            Some(Held::Frontier(_)) | None => None,
         }
     }
 }
@@ -231,32 +264,44 @@ impl<'a> Product<'a> for Registers<'a> {
     type Schema = Declared;
 
     fn registers(&self) -> Vec<Slot> {
-        (0..self.frontiers.len()).map(Slot).collect()
+        (0..self.held.len()).map(Slot).collect()
     }
 
     fn join(&mut self, stamp: &'a Stamp<Declared>) {
         if let Some(last) = stamp.event.schema.registers().last() {
-            self.hold(last);
+            self.hold(&stamp.event.schema, last);
         }
         for slot in stamp.event.writes() {
-            self.frontiers[slot.index()].join(stamp);
+            self.join_to(slot, stamp);
         }
     }
 
     fn frontier(&self, slot: Slot) -> &Frontier<'a, Declared> {
-        self.frontiers.get(slot.index()).unwrap_or(&self.unwritten)
+        match self.held.get(slot.index()) {
+            Some(Held::Frontier(frontier)) => frontier,
+            Some(Held::Climb(climb)) => climb.frontier(),
+            None => &self.unwritten,
+        }
     }
 
-    fn frontier_mut(&mut self, slot: Slot) -> &mut Frontier<'a, Declared> {
-        self.hold(slot);
-        &mut self.frontiers[slot.index()]
+    fn join_to(&mut self, slot: Slot, stamp: &'a Stamp<Declared>) {
+        self.hold(&stamp.event.schema, slot);
+        match &mut self.held[slot.index()] {
+            Held::Frontier(frontier) => frontier.join(stamp),
+            Held::Climb(climb) => climb.join_by(stamp, climbing(slot)),
+        }
     }
 
-    /// The frontier's maximal writes under the register's declared order:
-    /// the completion every register is read by.
+    /// The register's maximal writes under its declared order, the
+    /// completion every register is read by: of its frontier, or, where it
+    /// is inflationary, of all its writes.
     fn reading(&self, slot: Slot) -> Vec<&'a Stamp<Declared>> {
-        self.frontier(slot)
-            .read(|stamp: &'a Stamp<Declared>| stamp.event.valued(slot))
+        let valued = |stamp: &'a Stamp<Declared>| stamp.event.valued(slot);
+        match self.held.get(slot.index()) {
+            Some(Held::Frontier(frontier)) => frontier.read(valued),
+            Some(Held::Climb(climb)) => climb.read(valued),
+            None => Vec::new(),
+        }
     }
 
     /// Where `event` writes a register declared inflationary, its value must
@@ -264,17 +309,31 @@ impl<'a> Product<'a> for Registers<'a> {
     /// every inflationary register is held to.
     fn grows(&self, event: &Declared) -> Result<(), ProdromeError> {
         for slot in event.writes() {
-            if !event.schema.inflationary(slot) {
+            let Some(climb) = self.climb(slot) else {
                 continue;
-            }
-            let held: Vec<Climbing<'_>> = self
-                .reading(slot)
+            };
+            let held: Vec<Climbing<'_>> = climb
+                .read(climbing(slot))
                 .into_iter()
-                .map(|stamp| Climbing(stamp.event.valued(slot)))
+                .map(climbing(slot))
                 .collect();
             grows(&held, &Climbing(event.valued(slot))).map_err(|why| {
                 ProdromeError::invalid(format!("{}: {why}", event.schema.register_name(slot)))
             })?;
+        }
+        Ok(())
+    }
+
+    /// Each register declared inflationary reads at or above what it read
+    /// in `earlier`; an unwritten one reads nothing.
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
+        let unwritten = Climb::default();
+        for slot in earlier.registers() {
+            if let Some(then) = earlier.climb(slot) {
+                self.climb(slot)
+                    .unwrap_or(&unwritten)
+                    .climbed_by(then, climbing(slot))?;
+            }
         }
         Ok(())
     }

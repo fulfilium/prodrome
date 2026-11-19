@@ -106,7 +106,11 @@ semilattice homomorphism,
 and the register can be read incrementally, coordination-free (§6). The
 declaration is not trusted. The append path enforces it: an append whose
 value is not `≥` the reading it supersedes is refused, by the store's smart
-constructor, before any object exists.
+constructor, before any object exists. A receipt does not refuse such a
+write, so the reading of an inflationary register is the maximal values of
+ALL its writes, not of its frontier, and the homomorphism holds for any
+object set; [`design-inflationary-reading.md`](design-inflationary-reading.md)
+explains this.
 
 The proposal machine is inflationary. The todo's state register is not
 (`Reopened` after `Completed` goes back), which is precisely why todos need
