@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 2cf61bc097a5aea24d83637a9621a7e5a269cf5ec8f767cc7cadb05999df4725 # shrinks to script = Script [Memory, Memory, Memory]   0: Rotate { by: Ada }   1: Append { by: Cai, of: Ada, writing: Signed, event: Created(todo='alpha', at=datetime(2026, 9, 1, 3, 0, 0), actor='ada', text='t983', note='') }   2: Rotate { by: Ada }   3: Sync { from: Ada, to: Cai } 

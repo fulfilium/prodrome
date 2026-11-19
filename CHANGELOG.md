@@ -10,6 +10,18 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`laws::script`, the script law (SPEC law 68).** A machine drives three
+  replicas (in memory, an overlay, or on disk) through a random script of
+  steps: appends with and without faults, partial and whole syncs in any
+  order, refused receipts, key revocations, reads at instants and through a
+  cache, readings recorded at down-sets, snapshots, forgets and flushes.
+  After every step it checks every invariant of law 68. It is generic over
+  a schema, behind the `laws` feature, and `docs/script-law.md` shows an
+  application how to run it. The core runs it over the todo schema and the
+  tag set's two schemas, and a nightly run calls a longer run.
+  `snapshot::attest` is the store's rule for what a snapshot attests, which
+  `EventStore::snapshot` now calls. No stored constructor changes.
+
 - **`prodrome-github` completes the roadmap items that a merged pull request
   names.** A pull request's description names each item that it completes
   in a line `Completes: <id>`. For a `pull_request` payload,

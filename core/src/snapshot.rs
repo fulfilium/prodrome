@@ -1,4 +1,5 @@
-use crate::event::{field, hashes, hashes_value, optional_hash, sorted_distinct, Hash};
+use crate::dag::Dag;
+use crate::event::{field, hashes, hashes_value, optional_hash, sorted_distinct, Envelope, Hash};
 use crate::literal::{Call, ProdromeError, Value};
 use crate::payload::string_field;
 
@@ -47,5 +48,40 @@ impl Snapshot {
             hashes(call, "tips")?,
             optional_hash(call, "previous")?,
         )
+    }
+}
+
+/// What a writer attests of a prodrome: the snapshot that already attests
+/// its tips, or a new one to write.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Attestation {
+    /// The last snapshot among the tips, with nothing written since it.
+    Standing(Hash),
+    /// A snapshot of the tips, chained to the last snapshot among them.
+    Fresh(Snapshot),
+}
+
+/// What a writer attests of the prodrome `genesis` begins in `dag` (SPEC
+/// §3's `snapshot()`): the prodrome's tips, without the last snapshot
+/// among them, which is the new snapshot's `previous`. With no other tip,
+/// that snapshot is the answer and nothing new is attested.
+///
+/// # Errors
+///
+/// A `dag` that does not linearise, and a snapshot that [`mk_snapshot`]
+/// refuses.
+pub fn attest<E>(dag: &Dag<E>, genesis: Hash) -> Result<Attestation, ProdromeError> {
+    let tips = dag.tips_in(&dag.key(&genesis));
+    let previous =
+        dag.linearise()?.iter().rev().find(|name| {
+            tips.contains(*name) && matches!(dag.get(name), Some(Envelope::Snapshot(_)))
+        });
+    let tips: Vec<Hash> = tips
+        .into_iter()
+        .filter(|tip| Some(tip) != previous)
+        .collect();
+    match previous {
+        Some(previous) if tips.is_empty() => Ok(Attestation::Standing(previous.clone())),
+        previous => mk_snapshot(genesis, tips, previous.cloned()).map(Attestation::Fresh),
     }
 }

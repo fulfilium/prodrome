@@ -21,6 +21,8 @@ specification.
 - [`roadmap.md`](roadmap.md) explains the roadmap branch, how issues become
   roadmap items, and how to add items.
 - [`viewer.md`](viewer.md) explains the browser viewer and GitHub Pages.
+- [`script-law.md`](script-law.md) explains how to run the script law
+  (SPEC law 68) over an application's own schema.
 - [`github-agent.md`](github-agent.md) explains the issue mirror and the
   pricing bot, and the limits of trust in them.
 
@@ -36,6 +38,9 @@ finally implemented, see `SPEC.md` and `CHANGELOG.md`.
 - [`design-register-types.md`](design-register-types.md): a design for typed
   registers. Events are stored without a schema, and a program applies a
   schema when it reads the events.
+- [`design-script-law.md`](design-script-law.md): a design for the script
+  law, which drives three replicas through random steps and checks every
+  invariant after every step.
 - [`SIMPLIFY-PLAN.md`](SIMPLIFY-PLAN.md): a plan to remove duplicated code,
   so that the crate has one term functor, one schema, one evaluator, and one
   fold.

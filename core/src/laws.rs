@@ -18,6 +18,9 @@
 //!   of any two kinds. The kit does not check law 35's clauses on appends in
 //!   memory and on overlays.
 //!
+//! - [`script`]: law 68, several replicas driven through a random script of
+//!   steps, with every invariant checked after every step.
+//!
 //! [`history`] builds a history from events, [`holding`] a store in memory
 //! that holds a history, and [`Shuffle`] says how [`free`] reorders and
 //! splits one. The module is behind the `laws` feature, which is off by
@@ -30,6 +33,7 @@ mod holding;
 mod printed;
 mod reading;
 mod schema;
+pub mod script;
 mod shuffle;
 mod synced;
 

@@ -8,7 +8,8 @@ use std::fmt::Debug;
 use crate::dag::Dag;
 use crate::event::Hash;
 use crate::fold::{read, Product};
-use crate::policy::Everything;
+use crate::fpl::Instant;
+use crate::policy::{Everything, Policy};
 use crate::registers::{Folded, Genesis};
 use crate::schema::Schema;
 
@@ -16,15 +17,25 @@ use crate::schema::Schema;
 type Register<E> = (<E as Schema>::Register, Vec<Hash>, Vec<Hash>);
 
 /// Every entity's registers, by genesis and key.
+#[derive(Debug, Clone, PartialEq)]
 pub(super) struct Registers<E: Schema>(BTreeMap<(Genesis, E::Key), Vec<Register<E>>>);
+
+/// Every field is a name, a key or a register's name, each `Eq`.
+impl<E: Schema> Eq for Registers<E> {}
 
 impl<E: Schema> Registers<E> {
     /// The registers of every entity `folded` holds, each read whole.
     pub(super) fn of(folded: &Folded<E>) -> Self {
+        Registers::at(folded, None, &Everything)
+    }
+
+    /// The registers of every entity `folded` holds, each read at `at`
+    /// (`None`: ever) under `policy`.
+    pub(super) fn at(folded: &Folded<E>, at: Option<Instant>, policy: &impl Policy<E>) -> Self {
         let mut out = BTreeMap::new();
         for (genesis, prodrome) in folded.prodromes() {
             for (key, stream) in prodrome {
-                let registers = read(stream, None, &Everything);
+                let registers = read(stream, at, policy);
                 let each = registers
                     .registers()
                     .into_iter()
@@ -116,7 +127,7 @@ impl<E: Schema> Replicated<E> {
 }
 
 /// Two sets of names, by what each holds that the other does not.
-fn sets<T: Ord + Debug>(what: &str, got: &BTreeSet<T>, want: &BTreeSet<T>) -> String {
+pub(super) fn sets<T: Ord + Debug>(what: &str, got: &BTreeSet<T>, want: &BTreeSet<T>) -> String {
     let extra: Vec<&T> = got.difference(want).collect();
     let missing: Vec<&T> = want.difference(got).collect();
     format!("{what}: {extra:?} not expected, {missing:?} missing")

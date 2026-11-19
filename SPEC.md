@@ -2019,6 +2019,61 @@ under names that the test chooses.
     `redundant_deps.rs::the_deps_rule_is_the_closure_rule`,
     `redundant_deps.rs::a_dep_on_a_cycle_lies_beneath_itself`.
 
+Law 68 is a script of steps over three replicas (`laws::script`), over
+the todo schema and the tag set's two schemas. Three actors each hold a
+replica: a store in memory, an overlay over one, or a store on disk.
+
+68. **A script keeps every invariant after every step.** A step is one of
+    these: an append, signed by the actor's current key, unsigned, given a
+    signature that does not verify, or written with a dep on a write to
+    another entity, by the actor or by another replica under the actor's
+    name; a receipt of chosen objects of another replica, one at a time,
+    in any order and with duplicates; a sync of everything; a sync of
+    every replica with every other; an offer of a print that does not hash
+    to its name, that does not parse, or that rests on a print no replica
+    has, beside an object that the replica lacks; a revocation of the
+    actor's key, whose deps are the replica's tips, and a new key that a
+    root registers and that signs every object of the actor that the
+    replica holds; a read at an instant, afresh or through a cache keyed
+    by the instant and the name of the replica's tips; a reading recorded
+    at the replica's tips; a snapshot; a forget of a key of the cache; and
+    an overlay's flush. After every step these hold. (a) Each replica's
+    kept fold is the fold of what it holds, and its tips and heads are its
+    history's. (b) What each replica answered that it took, applied in
+    order to an empty shadow, is what the replica holds, and folds alike.
+    (c) `verify` finds exactly the faults of the script that the replica
+    holds, and each object of a keyed actor that no signature in the
+    replica proves. The script computes the second set from its own record
+    of keys and revocations, with sets of names and not with the DAG. In a
+    script with no fault, the union of the replicas has no finding. (d)
+    Replicas that hold the same objects read alike, claimed and confirmed.
+    (e) A reading recorded at a set of tips reads alike, with the policy
+    taken at the down-set of the tips, in every replica that holds the
+    tips, however the replica grew. (f) A reading that the cache holds is
+    the fresh reading of every replica whose tips its key names. At the
+    step itself, an append or a receipt made a second time takes nothing,
+    a refused receipt takes nothing, and after a sync of every replica
+    with every other, every replica holds the same objects.
+    A signature rests on what it signs, and a receipt takes only what the
+    chosen objects rest on. So a replica can hold an object of a keyed
+    actor without the signature that proves it, and `verify` reports the
+    object as unsigned there until the signature arrives.
+    A reading at an instant is a function of the object set and the
+    instant (§6). A change dated after the instant does not change it (law
+    2). A change dated at or before the instant changes it when the change
+    arrives, however late. A reading at a down-set does not change.
+    When one actor appends an add, a removal and the same add in one tick,
+    the second add is the first add's event, so the append writes nothing
+    and the removal stands (law 20). Another replica that held the same
+    heads of the entity writes the same object for the add. A replica that
+    held other heads writes a twin, which the removal does not supersede.
+    `script.rs::every_step_of_a_todo_script_keeps_every_invariant`,
+    `script.rs::an_honest_todo_script_verifies_clean`,
+    `script.rs::every_step_of_a_membership_script_keeps_every_invariant`,
+    `script.rs::every_step_of_an_alias_script_keeps_every_invariant`,
+    `script.rs::a_late_change_moves_a_reading_at_an_instant_and_not_one_at_a_down_set`,
+    `script.rs::an_add_a_remove_and_an_add_in_one_tick`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;
