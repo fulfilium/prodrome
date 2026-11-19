@@ -10,6 +10,16 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The script machine opens to its host (law 68).**
+  `laws::script::run_with` reads the claimed reading under the host's
+  policy, and calls the host's check after every step with each actor and
+  what its replica holds, read-only, so that an application checks its own
+  invariants on the same scripts. `laws::script::run` is `run_with` with
+  the policy `Everything` and no check. `laws::Registers`, the reading that
+  the laws compare, is public, and `laws::script::long_run` runs many
+  scripts and returns their `Rate`, scripts and steps per second.
+  `docs/script-law.md` shows the three with an example.
+
 - **`#[derive(Literal)]`, in the new crate `prodrome-derive`.** The core
   re-exports it as `prodrome::literal::codec::Literal`. It writes the
   `Literal` impl of a struct with named fields (one constructor), an enum

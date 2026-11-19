@@ -16,22 +16,27 @@ use crate::schema::Schema;
 /// One register: its name, its frontier and its reading, as object names.
 type Register<E> = (<E as Schema>::Register, Vec<Hash>, Vec<Hash>);
 
-/// Every entity's registers, by genesis and key.
+/// Every entity's registers, by genesis and key: each register's name, its
+/// frontier and its reading, as object names. Two folds read alike exactly
+/// when their `Registers` are equal, and [`Registers::differs`] names the
+/// first place where they part.
 #[derive(Debug, Clone, PartialEq)]
-pub(super) struct Registers<E: Schema>(BTreeMap<(Genesis, E::Key), Vec<Register<E>>>);
+pub struct Registers<E: Schema>(BTreeMap<(Genesis, E::Key), Vec<Register<E>>>);
 
 /// Every field is a name, a key or a register's name, each `Eq`.
 impl<E: Schema> Eq for Registers<E> {}
 
 impl<E: Schema> Registers<E> {
     /// The registers of every entity `folded` holds, each read whole.
-    pub(super) fn of(folded: &Folded<E>) -> Self {
+    #[must_use]
+    pub fn of(folded: &Folded<E>) -> Self {
         Registers::at(folded, None, &Everything)
     }
 
     /// The registers of every entity `folded` holds, each read at `at`
     /// (`None`: ever) under `policy`.
-    pub(super) fn at(folded: &Folded<E>, at: Option<Instant>, policy: &impl Policy<E>) -> Self {
+    #[must_use]
+    pub fn at(folded: &Folded<E>, at: Option<Instant>, policy: &impl Policy<E>) -> Self {
         let mut out = BTreeMap::new();
         for (genesis, prodrome) in folded.prodromes() {
             for (key, stream) in prodrome {
@@ -56,7 +61,8 @@ impl<E: Schema> Registers<E> {
 
     /// The first entity or register where `self` and `expected` part, with
     /// both sides; `None` where they agree.
-    pub(super) fn differs(&self, expected: &Self) -> Option<String> {
+    #[must_use]
+    pub fn differs(&self, expected: &Self) -> Option<String> {
         let entities: BTreeSet<&(Genesis, E::Key)> =
             self.0.keys().chain(expected.0.keys()).collect();
         for entity in entities {

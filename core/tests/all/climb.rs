@@ -9,7 +9,9 @@
 //! has two inflationary registers, its state under a partial order and its
 //! tags under inclusion, and two that may go back.
 
+use std::cell::Cell;
 use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 use prodrome::dag::{Dag, Finding};
 use prodrome::event::{canonical_envelope, seal_hash, Envelope, Hash};
@@ -17,12 +19,13 @@ use prodrome::fold::sole::{One, Only, Sole};
 use prodrome::fold::{maximal, read, Climb, Inflationary, Order, Product, RegisterType};
 use prodrome::genesis::mk_genesis;
 use prodrome::laws::script::{self, a_script, an_honest_script, Kind, Script, Step, Who, Writing};
+use prodrome::laws::Broken;
 use prodrome::literal::codec::Fields;
 use prodrome::literal::{Datetime, ProdromeError, Value};
-use prodrome::policy::Everything;
+use prodrome::policy::{Everything, Policy, Standing, Untrusted};
 use prodrome::registers::{fold, Folded, Stamp};
 use prodrome::schema::headed::{Body, Event as HeadedEvent};
-use prodrome::store::{sync, MemoryStore, Replica};
+use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
 use crate::common::draw::{a_draw, history};
@@ -514,4 +517,107 @@ fn a_sole_inflationary_register_reads_the_greatest_of_all_its_writes() {
         dag.verify(&Everything).as_slice(),
         [Finding::Below { .. }]
     ));
+}
+
+/// A host's own invariant, checked by the script machine after every step
+/// ([`script::run_with`]): in an honest script, each replica reads every
+/// inflationary register as its frontier reads it (law 32).
+fn reads_its_frontier(who: Who, held: &Held<Proposal>) -> Result<(), Broken> {
+    for (key, stream) in held.folded.entities() {
+        let registers = read(stream, None, &Everything);
+        let names = |stamps: Vec<&Stamp<Proposal>>| -> Vec<Hash> {
+            stamps.into_iter().map(|stamp| stamp.name.clone()).collect()
+        };
+        let state = names(registers.frontier(Field::State).reading::<StateRegister>());
+        let tags = names(registers.frontier(Field::Tags).reading::<TagsRegister>());
+        if names(registers.reading(Field::State)) != state
+            || names(registers.reading(Field::Tags)) != tags
+        {
+            return Err(Broken {
+                law: 32,
+                what: format!("{}: {key:?} does not read its frontier", who.name()),
+            });
+        }
+    }
+    Ok(())
+}
+
+/// A policy that binds everything and counts the writes it was asked
+/// about.
+#[derive(Debug, Clone, Default)]
+struct Counted(Rc<Cell<usize>>);
+
+impl Policy<Proposal> for Counted {
+    fn standing(&self, _: &Hash, _: &Proposal) -> Standing {
+        self.0.set(self.0.get() + 1);
+        Standing::Binds
+    }
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(32))]
+
+    /// Law 68 with a host's check after every step: no honest proposal
+    /// script moves a reading from what its frontier reads (law 32).
+    #[test]
+    fn a_host_checks_its_own_invariant_after_every_step(
+        script in an_honest_script(a_proposal_write, STEPS),
+    ) {
+        script::run_with(&ProposalVocabulary, &script, &Everything, reads_its_frontier)
+            .map_err(failed)?;
+    }
+
+    /// Law 68 under a host's policy, where only `ada` and `cai` bind: every
+    /// invariant holds, the claimed reading being the policy's.
+    #[test]
+    fn a_script_keeps_every_invariant_under_a_host_policy(
+        script in a_script(a_proposal_write, STEPS),
+    ) {
+        let policy = Untrusted::of([Who::Ben.actor()]);
+        script::run_with(&ProposalVocabulary, &script, &policy, |_, _| Ok(()))
+            .map_err(failed)?;
+    }
+}
+
+/// The host's check sees each actor's replica after every step, and its
+/// refusal stops the script at that step; the claimed reading is read
+/// under the host's policy.
+#[test]
+fn a_host_refusal_stops_the_script_at_its_step() {
+    let script = Script {
+        kinds: [Kind::Memory, Kind::Overlay, Kind::Disk],
+        steps: vec![
+            Step::Append {
+                by: Who::Ben,
+                of: Who::Ben,
+                event: moved(Who::Ben, 1, State::Unknown),
+                writing: Writing::Signed,
+            },
+            Step::SyncAll,
+        ],
+    };
+    let mut seen = BTreeSet::new();
+    let broken = script::run_with(&ProposalVocabulary, &script, &Everything, |who, held| {
+        seen.insert(who);
+        if who == Who::Cai && held.dag.objects().len() > 1 {
+            Err(Broken {
+                law: 0,
+                what: "cai holds a write".to_owned(),
+            })
+        } else {
+            Ok(())
+        }
+    })
+    .expect_err("the host refuses");
+    assert_eq!(seen, Who::ALL.into_iter().collect());
+    assert_eq!(broken.law, 0);
+    assert_eq!(broken.what, "at step 1: cai holds a write");
+
+    let policy = Counted::default();
+    script::run_with(&ProposalVocabulary, &script, &policy, |_, _| Ok(()))
+        .expect("the script keeps every invariant");
+    assert!(
+        policy.0.get() > 0,
+        "the machine reads under the host's policy"
+    );
 }

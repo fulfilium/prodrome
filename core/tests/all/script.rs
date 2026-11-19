@@ -5,9 +5,6 @@
 //! and arrive after readings at later instants. Specs reference other todos
 //! and `Absent`, so the writes link.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::time::Instant;
-
 use prodrome::event::{
     canonical_envelope, mk_cancelled, mk_completed, mk_created, mk_reopened, mk_tended, seal_hash,
     Envelope, TodoEvent, TodoId,
@@ -69,26 +66,18 @@ proptest! {
 }
 
 /// Law 68 over many more scripts, for the nightly run: `cargo test -p
-/// prodrome-core --test all script::a_long_run -- --ignored`.
+/// prodrome-core --test all script::a_long_run -- --ignored`. It prints the
+/// rate ([`script::long_run`]).
 #[test]
 #[ignore = "the nightly run calls it"]
 fn a_long_run_of_todo_scripts_keeps_every_invariant() {
-    let mut runner = proptest::test_runner::TestRunner::new(crate::common::cases::cases(1024));
-    let started = Instant::now();
-    let (scripts, steps) = (AtomicUsize::new(0), AtomicUsize::new(0));
-    let result = runner.run(&a_script(a_todo_write, 2 * STEPS), |script| {
-        steps.fetch_add(runs(&script)?.steps, Ordering::Relaxed);
-        scripts.fetch_add(1, Ordering::Relaxed);
-        Ok(())
-    });
-    println!(
-        "{} scripts, {} steps, in {:.1} s",
-        scripts.load(Ordering::Relaxed),
-        steps.load(Ordering::Relaxed),
-        started.elapsed().as_secs_f64()
-    );
-    if let Err(failure) = result {
-        panic!("{failure}");
+    match script::long_run(
+        &a_script(a_todo_write, 2 * STEPS),
+        crate::common::cases::cases(1024),
+        |script| script::run(&TodoVocabulary::default(), script),
+    ) {
+        Ok(rate) => println!("{rate}"),
+        Err(failure) => panic!("{failure}"),
     }
 }
 

@@ -20,12 +20,12 @@ use crate::laws::reading::Registers;
 use crate::laws::Broken;
 use crate::literal::ProdromeError;
 use crate::memo::{self, Cache, Key, Lookup, Lru};
-use crate::policy::Everything;
+use crate::policy::{Everything, Policy};
 use crate::registers::{deps_for, extend, fold, heads, Folded};
 use crate::schema::Schema;
 use crate::sign::{mk_key_revoked, Checks, KeyAdded, Proof, Registrar, Signed};
 use crate::snapshot::{attest, mk_snapshot, Attestation};
-use crate::store::{accept, Replica};
+use crate::store::{accept, Held, Replica};
 
 /// How many readings the cache keeps: few, so that it evicts.
 const KEPT: usize = 6;
@@ -65,7 +65,7 @@ struct Seen<E: Schema> {
     reading: Reading<E>,
 }
 
-pub(super) struct Machine<E: Schema> {
+pub(super) struct Machine<E: Schema, P> {
     genesis: Hash,
     /// Every print that the script made or a replica wrote.
     wire: BTreeMap<Hash, Vec<u8>>,
@@ -83,6 +83,8 @@ pub(super) struct Machine<E: Schema> {
     /// Each fault the script wrote: the object, and what `verify` finds.
     faults: BTreeMap<Hash, Finding>,
     conduct: Conduct,
+    /// The host's policy, under which the claimed reading is read.
+    policy: P,
     /// What each replica, by its label, held at the last check: its
     /// readings must not fall since (law 32).
     climbed: BTreeMap<String, Arc<Folded<E>>>,
@@ -123,13 +125,14 @@ fn frontier(tips: &BTreeSet<Hash>) -> Hash {
     memo::name(b"laws::script frontier", tips)
 }
 
-impl<E: Schema> Machine<E> {
+impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
     /// Replicas of `kinds` at the schema `vocabulary`, each holding one
-    /// genesis, for a script of `conduct`.
+    /// genesis, for a script of `conduct`, read under `policy`.
     pub(super) fn new(
         vocabulary: &E::Vocabulary,
         kinds: [super::Kind; 3],
         conduct: Conduct,
+        policy: P,
     ) -> Result<Self, Broken> {
         let scratch = Scratch::new();
         let replicas = [0, 1, 2].map(|n| Kept::new(kinds[n], vocabulary, &scratch, n));
@@ -150,6 +153,7 @@ impl<E: Schema> Machine<E> {
             keys: Keys::default(),
             faults: BTreeMap::new(),
             conduct,
+            policy,
             climbed: BTreeMap::new(),
             _scratch: scratch,
         };
@@ -200,7 +204,7 @@ impl<E: Schema> Machine<E> {
             Step::Record { by, at } => {
                 let held = self.held(*by)?;
                 let at = instant(&held.dag, *at);
-                let reading = Reading::at_down_set(&held.dag, &held.tips, at)
+                let reading = Reading::at_down_set(&held.dag, &held.tips, at, &self.policy)
                     .map_err(|what| Broken::of(43, what))?;
                 self.records.push(Record {
                     step: n,
@@ -238,7 +242,7 @@ impl<E: Schema> Machine<E> {
         }
     }
 
-    fn held(&self, who: Who) -> Result<crate::store::Held<E>, Broken> {
+    fn held(&self, who: Who) -> Result<Held<E>, Broken> {
         self.replicas[who.index()]
             .held()
             .map_err(failed(68, "a replica does not read"))
@@ -660,7 +664,7 @@ impl<E: Schema> Machine<E> {
         let held = self.held(by)?;
         let at = instant(&held.dag, at);
         let nodes = held.dag.nodes().map_err(failed(43, "a history"))?;
-        let fresh = Reading::of(&held.dag, &fold(&nodes), at);
+        let fresh = Reading::of(&held.dag, &fold(&nodes), at, &self.policy);
         let roots = Registrar::Roots(roots().into());
         if Proof::through(&held.dag, &roots, &self.checks) != Proof::of(&held.dag, &roots) {
             return Err(Broken::of(49, "a proof through the table is not the proof"));
@@ -707,8 +711,8 @@ impl<E: Schema> Machine<E> {
         self.receive(by, [name.clone()].into())?;
         let held = self.held(by)?;
         let tips: BTreeSet<Hash> = [name].into();
-        let reading =
-            Reading::at_down_set(&held.dag, &tips, None).map_err(|what| Broken::of(28, what))?;
+        let reading = Reading::at_down_set(&held.dag, &tips, None, &self.policy)
+            .map_err(|what| Broken::of(28, what))?;
         self.records.push(Record {
             step: n,
             tips,
@@ -719,11 +723,18 @@ impl<E: Schema> Machine<E> {
     }
 
     /// Every invariant, after a step.
-    pub(super) fn check(&mut self) -> Result<(), Broken> {
+    /// Then the host's own invariants: `host` is called with each actor
+    /// and what its replica holds, and its first refusal is the script's.
+    pub(super) fn check(
+        &mut self,
+        host: &mut impl FnMut(Who, &Held<E>) -> Result<(), Broken>,
+    ) -> Result<(), Broken> {
         let mut seen = Vec::new();
+        let mut actors = Vec::new();
         for who in Who::ALL {
             let kept = &self.replicas[who.index()];
             let findings = kept.verify().map_err(failed(68, "a verify"))?;
+            actors.push((who, seen.len()));
             seen.push(self.view(
                 who.name().to_owned(),
                 kept,
@@ -748,7 +759,19 @@ impl<E: Schema> Machine<E> {
         self.climb(&seen)?;
         alike(&seen)?;
         self.recorded(&seen)?;
-        self.cached(&seen)
+        self.cached(&seen)?;
+        for (who, at) in actors {
+            let view = &seen[at];
+            host(
+                who,
+                &Held {
+                    dag: Arc::clone(&view.dag),
+                    folded: Arc::clone(&view.folded),
+                    tips: view.tips.clone(),
+                },
+            )?;
+        }
+        Ok(())
     }
 
     /// In an honest script, the union of the replicas verifies clean: a
@@ -849,7 +872,7 @@ impl<E: Schema> Machine<E> {
             ));
         }
         Ok(Seen {
-            reading: Reading::of(&held.dag, &held.folded, None),
+            reading: Reading::of(&held.dag, &held.folded, None, &self.policy),
             tips: held.tips,
             dag: held.dag,
             folded: held.folded,
@@ -881,7 +904,7 @@ impl<E: Schema> Machine<E> {
                 .iter()
                 .filter(|view| record.tips.iter().all(|tip| view.dag.get(tip).is_some()))
             {
-                let now = Reading::at_down_set(&view.dag, &record.tips, record.at)
+                let now = Reading::at_down_set(&view.dag, &record.tips, record.at, &self.policy)
                     .map_err(|what| Broken::of(43, what))?;
                 if let Some(difference) = now.differs(&record.reading) {
                     return Err(Broken::of(
@@ -907,7 +930,7 @@ impl<E: Schema> Machine<E> {
                 .filter(|view| frontier(&view.tips) == key.argument)
             {
                 let nodes = view.dag.nodes().map_err(failed(43, "a history"))?;
-                let fresh = Reading::of(&view.dag, &fold(&nodes), at);
+                let fresh = Reading::of(&view.dag, &fold(&nodes), at, &self.policy);
                 if let Some(difference) = kept.differs(&fresh) {
                     return Err(Broken::of(
                         51,

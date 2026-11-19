@@ -2163,7 +2163,10 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `script.rs::a_partial_sync_can_take_a_signed_write_without_its_signature`,
     `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`,
     `climb.rs::every_step_of_a_proposal_script_keeps_every_invariant`,
-    `climb.rs::an_honest_proposal_script_verifies_clean`.
+    `climb.rs::an_honest_proposal_script_verifies_clean`,
+    `climb.rs::a_script_keeps_every_invariant_under_a_host_policy`,
+    `climb.rs::a_host_checks_its_own_invariant_after_every_step`,
+    `climb.rs::a_host_refusal_stops_the_script_at_its_step`.
 
 ## 10. Non-goals
 
