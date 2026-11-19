@@ -128,7 +128,12 @@ field's context, such as `Note.lines`. A leaf names the context in its
 refusal, as the payload helpers did (`Note.lines must be a tuple`). The
 payload helpers in `payload.rs` are reads of the same functions, and so are
 `Fields::of`, `Fields::among` and `Fields::get`. A hand-written read and a
-derived one therefore give the same messages. A sum names its type in its
+derived one therefore give the same messages. Every refusal of a field
+names the field. A leaf that words its own read, such as `String`, names it
+in its words (`Note.lines must be a tuple`). Any other type reads with
+`from_value`, and the default `from_field` leads the refusal with the field
+(`Heads.count: expected a natural number …`). A refusal inside a nested
+record therefore reads as a path. A sum names its type in its
 refusal, whether it is derived or written by hand with `no_arm`:
 `Reject is not one of Verdict's constructors`.
 

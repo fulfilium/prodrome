@@ -322,7 +322,8 @@ fn expand_newtype(core: &Core, ident: &Ident, newtype: &Newtype) -> TokenStream 
                 context: &dyn ::std::fmt::Display,
             ) -> ::std::result::Result<Self, #literal::ProdromeError> {
                 let inner = <#inner as #codec::Literal>::from_field(value, context)?;
-                #build
+                let built: ::std::result::Result<Self, #literal::ProdromeError> = #build;
+                built.map_err(|refused| refused.within(context))
             }
         }
     }

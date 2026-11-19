@@ -239,6 +239,30 @@ proptest! {
     }
 }
 
+/// A refusal inside a nested record names each field on the path to it.
+#[test]
+fn a_nested_refusal_reads_as_a_path() {
+    let thread = Thread {
+        first: review(),
+        replies: vec![],
+    };
+    let Value::Call(mut call) = thread.to_value() else {
+        panic!("a record prints as a call");
+    };
+    if let Some((_, Value::Call(first))) = call.fields.iter_mut().find(|(name, _)| name == "first")
+    {
+        if let Some((_, remark)) = first.fields.iter_mut().find(|(name, _)| name == "remark") {
+            *remark = Value::Bool(true);
+        }
+    }
+    assert_eq!(
+        Thread::from_value(&Value::Call(call)),
+        Err(ProdromeError::invalid(
+            "Thread.first: Review.remark must be a string, got Bool(true)"
+        ))
+    );
+}
+
 fn review() -> Reviewed {
     Reviewed {
         reviewer: Actor::new("ada").expect("an actor"),
@@ -329,19 +353,23 @@ fn a_derived_read_names_what_it_refuses() {
     );
     assert_eq!(
         refusal(&with("lines", Value::int(0))),
-        "a review covers at least one line"
+        "Review.lines: a review covers at least one line"
     );
     assert_eq!(
         refusal(&with("verdict", Value::call("Reject", vec![]))),
-        "Reject is not one of Verdict's constructors"
+        "Review.verdict: Reject is not one of Verdict's constructors"
     );
     assert_eq!(
         refusal(&with("verdict", Value::str("Accept"))),
-        "expected a constructor call, got Str(\"Accept\")"
+        "Review.verdict: expected a constructor call, got Str(\"Accept\")"
     );
     assert_eq!(
         refusal(&with("tags", Value::Tuple(vec![Value::str("")]))),
-        "a tag is not empty"
+        "Review.tags: a tag is not empty"
+    );
+    assert_eq!(
+        refusal(&with("of", Value::Tuple(vec![Value::str("f")]))),
+        "Review.of: object name must be 64 lowercase hex, got \"f\""
     );
 }
 
@@ -438,11 +466,15 @@ mod by_hand {
         };
         Ok(Line {
             at: datetime_field(call, "at")?,
-            actor: Actor::new(string_field(call, "actor")?)?,
+            actor: Actor::new(string_field(call, "actor")?)
+                .map_err(|refused| refused.within(&format!("{}.actor", call.name)))?,
             shape,
             rests_on: tuple_field(call, "rests_on")?
                 .iter()
-                .map(Hash::from_value)
+                .map(|hash| {
+                    Hash::from_value(hash)
+                        .map_err(|refused| refused.within(&format!("{}.rests_on", call.name)))
+                })
                 .collect::<Result<_, _>>()?,
         })
     }

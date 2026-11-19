@@ -156,7 +156,13 @@ constructor's fields never change, in any release.
   a property compares the old `Fields` and the new one, and four readers of
   this repository as they were and as they are, over generated values and
   changed ones. Only the messages change, and no stored form changes.
-  `dag::Heads` derives its codec. A breaking change to `Fields::among`,
+  Every refusal of a field names the field: the default
+  `Literal::from_field` leads a refusal of `from_value` with the field's
+  context (`Heads.count: expected a natural number …`), and so does a
+  derived newtype for its smart constructor's refusal. A refusal inside a
+  nested record reads as a path (`Thread.first: Review.remark must be a
+  string, got …`). `ProdromeError::within` leads a refusal with a context
+  and keeps its kind. `dag::Heads` derives its codec. A breaking change to `Fields::among`,
   `no_arm` and `Body`.
 - **An inflationary register reads the greatest of all its writes (SPEC
   §6, law 32).** The fold read every register from its frontier, so a

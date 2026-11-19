@@ -79,14 +79,19 @@ pub trait Literal: Sized {
     fn from_value(value: &Value) -> Result<Self, ProdromeError>;
 
     /// Reads a value back from its literal, the value of the field
-    /// `context`. A leaf names the context in its refusal, as
-    /// `Note.lines must be a tuple`. The default is [`Literal::from_value`],
-    /// whose refusal a composite value already names.
+    /// `context`. Every refusal names the context. A leaf that words its own
+    /// read names it in its words, as `Note.lines must be a tuple`. The
+    /// default reads with [`Literal::from_value`], and leads its refusal
+    /// with the context, as `Heads.count: expected a natural number …`. A
+    /// refusal inside a nested record therefore reads as a path:
+    /// `Thread.first: Review.remark must be a string, got …`. The refusal
+    /// keeps its kind ([`ProdromeError::within`]).
     ///
     /// # Errors
-    /// A [`ProdromeError`] that names the part of `value` that does not read.
-    fn from_field(value: &Value, _context: &dyn Display) -> Result<Self, ProdromeError> {
-        Self::from_value(value)
+    /// A [`ProdromeError`] that names the field and the part of `value`
+    /// that does not read.
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        Self::from_value(value).map_err(|refused| refused.within(context))
     }
 }
 

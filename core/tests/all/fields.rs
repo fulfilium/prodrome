@@ -168,6 +168,19 @@ fn agree<T: PartialEq + Debug>(
     Ok(())
 }
 
+/// A refusal of the field `f` of a call of `C` names the field: as `C.f`,
+/// or as the field that the call lacks.
+fn names_the_field<T>(read: &Result<T, ProdromeError>) -> Result<(), TestCaseError> {
+    if let Err(refused) = read {
+        let message = refused.to_string();
+        prop_assert!(
+            message.starts_with("C.f") || message == "C(...) is missing f",
+            "{message}"
+        );
+    }
+    Ok(())
+}
+
 /// A derived sum, for a field whose type is a derived impl.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
 enum Shape {
@@ -190,7 +203,9 @@ fn every_get_agrees(call: &Value) -> Result<(), TestCaseError> {
     let after = Fields::of(call, ("C", &["f"])).map_err(fail)?;
     macro_rules! each {
         ($($ty:ty),+ $(,)?) => {$(
-            agree(before.get::<$ty>("f"), after.get::<$ty>("f"))?;
+            let read = after.get::<$ty>("f");
+            names_the_field(&read)?;
+            agree(before.get::<$ty>("f"), read)?;
         )+};
     }
     each!(
@@ -337,7 +352,7 @@ proptest! {
 
     /// Law 69: `Fields::of` and `Fields::among` accept the calls that they
     /// accepted before, and `Fields::get` reads each field type as it read
-    /// it before.
+    /// it before. Each refusal of a field names the field.
     #[test]
     fn fields_accepts_what_it_accepted(value in a_value(), field in prop::option::of(a_value())) {
         prop_assert_eq!(
@@ -401,6 +416,26 @@ fn fields_refuses_in_the_words_of_a_derived_read() {
         "C.f must be a string, got Int(Int { negative: false, digits: \"1\" })"
     );
     assert_eq!(
+        fields
+            .get::<u32>("f")
+            .map_err(|refused| refused.to_string()),
+        Ok(1)
+    );
+    let text = Value::call("C", vec![("f".to_owned(), Value::str("one"))]);
+    let fields = Fields::of(&text, ("C", &["f"])).expect("a call of C");
+    assert_eq!(
+        fields
+            .get::<u32>("f")
+            .map_err(|refused| refused.to_string()),
+        Err("C.f: expected a natural number of at most 4294967295, got Str(\"one\")".to_owned())
+    );
+    assert_eq!(
+        fields
+            .get::<Actor>("f")
+            .map_err(|refused| refused.to_string()),
+        Ok(Actor::new("one").expect("an actor"))
+    );
+    assert_eq!(
         refusal(Fields::of(&call, ("D", &[])).map(|_| String::new())),
         "expected a D(...), got Some(Call { name: \"C\", fields: [(\"f\", Int(Int { \
          negative: false, digits: \"1\" }))] })"
@@ -435,5 +470,22 @@ fn an_unknown_event_names_the_body() {
         Err(ProdromeError::invalid(
             "Other is not one of Membership's constructors"
         ))
+    );
+}
+
+/// A refusal led by a context keeps its kind.
+#[test]
+fn a_refusal_within_a_field_keeps_its_kind() {
+    assert_eq!(
+        ProdromeError::parse("x").within(&"C.f"),
+        ProdromeError::parse("C.f: x")
+    );
+    assert_eq!(
+        ProdromeError::invalid("x").within(&"C.f"),
+        ProdromeError::invalid("C.f: x")
+    );
+    assert_eq!(
+        ProdromeError::Store("x".to_owned()).within(&"C.f"),
+        ProdromeError::Store("C.f: x".to_owned())
     );
 }

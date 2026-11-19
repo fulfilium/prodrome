@@ -52,6 +52,24 @@ impl ProdromeError {
         ProdromeError::Invalid(message.into())
     }
 
+    /// The same refusal, of the same kind, with its message led by
+    /// `context`: `Review.lines: a review covers at least one line`. A read
+    /// of a field names the field so ([`codec::Literal::from_field`]).
+    #[must_use]
+    pub fn within(self, context: &dyn std::fmt::Display) -> Self {
+        match self {
+            ProdromeError::Parse(message) => ProdromeError::Parse(format!("{context}: {message}")),
+            ProdromeError::Invalid(message) => {
+                ProdromeError::Invalid(format!("{context}: {message}"))
+            }
+            ProdromeError::Store(message) => ProdromeError::Store(format!("{context}: {message}")),
+            ProdromeError::Io { path, message } => ProdromeError::Io {
+                path,
+                message: format!("{context}: {message}"),
+            },
+        }
+    }
+
     /// The failure of an input or output on the file at `path`.
     pub(crate) fn io(path: &std::path::Path, error: &std::io::Error) -> Self {
         ProdromeError::Io {

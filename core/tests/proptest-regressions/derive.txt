@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 36976027c9042c1d249bfebcdc0f64f016a5cbee0f2d66f28fdca51ed96d322f # shrinks to line = Line { at: Datetime { year: 1, month: 1, day: 1, hour: 0, minute: 0, second: 0, microsecond: 0 }, actor: Actor("a"), shape: Opened { title: "" }, rests_on: [Hash("0aa000aaa000aaaa00000aaa000aaad369e8a7f9ff48ca9ff5f6eea368be7353")] }, changes = [(6561620999906679448, Replace(Tuple([Str("ff40fca3d0e4635fe05f20c61edefcd9d16af4f89694d047d06b5854fcdff7dc"), Str("a4a0abcfb2c1b76a33b8efcff67d6dda3fcfd08d4730ddccce6a54108ffe6e94")]))), (2095913268958816812, Rename("Other")), (5595613263005745533, Drop(15598086699302525761))]
