@@ -338,6 +338,14 @@ struct Inserted<'a> {
     local: Ident,
 }
 
+/// How a read sets a member of the value that it builds.
+enum Member {
+    /// From the local variable that holds the member's read.
+    Read(Ident),
+    /// To the member type's `Default`: the member is skipped.
+    Default,
+}
+
 /// The expression that builds the value `path` from the local variables of
 /// `fields` and of `inserted`, in declaration order.
 fn build(
@@ -346,17 +354,16 @@ fn build(
     path: &TokenStream,
     build: &Build,
 ) -> TokenStream {
-    // Each member with its value: `None` for a skipped field.
-    let mut members: Vec<(&Ident, Option<Ident>)> = Vec::new();
+    let mut members: Vec<(&Ident, Member)> = Vec::new();
     for (index, field) in fields.iter().enumerate() {
         for insert in inserted.iter().filter(|insert| insert.position == index) {
-            members.push((insert.member, Some(insert.local.clone())));
+            members.push((insert.member, Member::Read(insert.local.clone())));
         }
         members.push((
             &field.ident,
             match field.role {
-                Role::Stored(_) => Some(local(index)),
-                Role::Skipped => None,
+                Role::Stored(_) => Member::Read(local(index)),
+                Role::Skipped => Member::Default,
             },
         ));
     }
@@ -364,18 +371,21 @@ fn build(
         .iter()
         .filter(|insert| insert.position == fields.len())
     {
-        members.push((insert.member, Some(insert.local.clone())));
+        members.push((insert.member, Member::Read(insert.local.clone())));
     }
     match build {
         Build::Fields => {
             let members = members.iter().map(|(member, value)| match value {
-                Some(local) => quote!(#member: #local),
-                None => quote!(#member: ::std::default::Default::default()),
+                Member::Read(local) => quote!(#member: #local),
+                Member::Default => quote!(#member: ::std::default::Default::default()),
             });
             quote!(::std::result::Result::Ok(#path { #(#members),* }))
         }
         Build::New(function) => {
-            let locals = members.iter().filter_map(|(_, value)| value.as_ref());
+            let locals = members.iter().filter_map(|(_, value)| match value {
+                Member::Read(local) => Some(local),
+                Member::Default => None,
+            });
             quote!(#function(#(#locals),*))
         }
     }

@@ -141,44 +141,7 @@ impl Derived {
         }
         let shape = match &input.data {
             Data::Struct(data) => match &data.fields {
-                Fields::Named(_) | Fields::Unit => {
-                    let options = Options::read(&input.attrs, Place::Record)?;
-                    let (fields, marked) = fields_of(&data.fields)?;
-                    match marked.as_slice() {
-                        [] => Shape::Record(Record {
-                            constructor: constructor(&ident, options.rename, fields)?,
-                            build: build(options.new),
-                        }),
-                        [sum] => {
-                            if let Some(rename) = options.rename {
-                                return Err(Error::new(
-                                    rename.span(),
-                                    format!(
-                                        "the variants of the field marked `sum` name the                                          constructors of `{ident}`: remove `rename`, and                                          rename a variant instead"
-                                    ),
-                                ));
-                            }
-                            distinct_fields(&ident.to_string(), &fields)?;
-                            Shape::Headed(Headed {
-                                fields,
-                                sum: SumField {
-                                    ident: sum.ident.clone(),
-                                    ty: sum.ty.clone(),
-                                    position: sum.position,
-                                },
-                                build: build(options.new),
-                            })
-                        }
-                        [_, second, ..] => {
-                            return Err(Error::new(
-                                second.span,
-                                format!(
-                                    "two fields of `{ident}` are marked `sum`, and only one                                      variant can name a constructor: mark one field `sum`,                                      and make the other an ordinary field"
-                                ),
-                            ))
-                        }
-                    }
-                }
+                Fields::Named(_) | Fields::Unit => record_shape(&ident, input, &data.fields)?,
                 Fields::Unnamed(fields) => {
                     let options = Options::read(&input.attrs, Place::Newtype)?;
                     match fields.unnamed.iter().collect::<Vec<_>>().as_slice() {
@@ -231,7 +194,8 @@ impl Derived {
                         if let Some(sum) = marked.first() {
                             return Err(Error::new(
                                 sum.span,
-                                "a field of a variant cannot be marked `sum`: mark a field                                  of a struct",
+                                "a field of a variant cannot be marked `sum`: mark a field \
+                                 of a struct",
                             ));
                         }
                         Ok(Variant {
@@ -251,6 +215,47 @@ impl Derived {
             }
         };
         Ok(Derived { ident, shape })
+    }
+}
+
+/// The shape of the struct `ident` with named fields: a record, or a record
+/// with a sum where one field is marked `sum`.
+fn record_shape(ident: &Ident, input: &DeriveInput, fields: &Fields) -> Result<Shape> {
+    let options = Options::read(&input.attrs, Place::Record)?;
+    let (fields, marked) = fields_of(fields)?;
+    match marked.as_slice() {
+        [] => Ok(Shape::Record(Record {
+            constructor: constructor(ident, options.rename, fields)?,
+            build: build(options.new),
+        })),
+        [sum] => {
+            if let Some(rename) = options.rename {
+                return Err(Error::new(
+                    rename.span(),
+                    format!(
+                        "the variants of the field marked `sum` name the constructors of \
+                         `{ident}`: remove `rename`, and rename a variant instead"
+                    ),
+                ));
+            }
+            distinct_fields(&ident.to_string(), &fields)?;
+            Ok(Shape::Headed(Headed {
+                fields,
+                sum: SumField {
+                    ident: sum.ident.clone(),
+                    ty: sum.ty.clone(),
+                    position: sum.position,
+                },
+                build: build(options.new),
+            }))
+        }
+        [_, second, ..] => Err(Error::new(
+            second.span,
+            format!(
+                "two fields of `{ident}` are marked `sum`, and only one variant can name a \
+                 constructor: mark one field `sum`, and make the other an ordinary field"
+            ),
+        )),
     }
 }
 
