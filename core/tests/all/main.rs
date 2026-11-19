@@ -50,6 +50,7 @@ mod rests_on;
 mod review;
 mod schedule;
 mod schema_laws;
+mod script;
 mod series_vectors;
 mod sets;
 mod signatures;

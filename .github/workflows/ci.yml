@@ -89,6 +89,11 @@ jobs:
           fi
           nix develop --command cargo --version
           nix develop --command bash -euo pipefail -c "$RUN"
+      # The nightly run also runs the long run of the script law (SPEC law
+      # 68): about 1,000 scripts of up to 80 steps, some minutes.
+      - name: The script law, long
+        if: github.event_name == 'schedule' && matrix.check == 'test'
+        run: nix develop --command cargo test --locked -p prodrome-core --test all script::a_long_run -- --ignored --nocapture
       # THE ROADMAP IS DATA, ON ITS OWN BRANCH, AND THIS IS THE CHECK THAT THE
       # CODE STILL READS IT. The binary is built from this commit and pointed
       # at the `roadmap-data` branch: `verify` says every object rehashes to
