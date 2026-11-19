@@ -17,7 +17,7 @@ use std::fmt::Debug;
 
 use chrono::NaiveDate;
 use prodrome::dag::Heads;
-use prodrome::event::{Actor, Hash};
+use prodrome::event::{Actor, Hash, TodoId};
 use prodrome::literal::codec::{Constructor, Fields, Literal};
 use prodrome::literal::{Datetime, ProdromeError, Value};
 use prodrome::schema::headed::Constructors;
@@ -202,6 +202,7 @@ fn every_get_agrees(call: &Value) -> Result<(), TestCaseError> {
         u64,
         usize,
         Actor,
+        TodoId,
         Hash,
         Label,
         crate::tags::Note,

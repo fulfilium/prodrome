@@ -152,7 +152,10 @@ impl std::fmt::Display for Hash {
 }
 
 newtype_str! {
-    /// A todo's identifier: `^[a-z0-9_-]+$`.
+    /// A todo's identifier: `^[a-z0-9_-]+$`. Its literal is its text, which
+    /// a read checks with [`TodoId::new`].
+    #[derive(Literal)]
+    #[literal(new = TodoId::new)]
     TodoId
 }
 

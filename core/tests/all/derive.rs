@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use prodrome::event::{Actor, Hash};
+use prodrome::event::{Actor, Hash, TodoId};
 use prodrome::literal::codec::{text_field, Constructor, Fields, Literal, Record};
 use prodrome::literal::{parse_literal, print_literal, Datetime, ProdromeError, Table, Value};
 use prodrome::reference::{Note, Source, SubTodo, Todo};
@@ -653,4 +653,32 @@ fn a_type_that_names_the_core_by_another_path_reads_back() {
         "Mark(by='ada', kind=Noted(text='one'))"
     );
     assert_eq!(Mark::from_value(&mark.to_value()), Ok(mark));
+}
+
+// --- a host's newtype over a todo's identifier ------------------------------
+
+/// A host's name for a todo: a newtype over [`TodoId`], which derives its
+/// codec because `TodoId` is a `Literal`.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Ticket(TodoId);
+
+/// A todo's identifier prints as its text, and a read checks the text with
+/// `TodoId::new`, through a newtype over it too.
+#[test]
+fn a_newtype_over_a_todo_id_derives() {
+    let ticket = Ticket(TodoId::new("t-1").expect("a todo id"));
+    assert_eq!(print_literal(&ticket.to_value()), "'t-1'");
+    assert_eq!(Ticket::from_value(&ticket.to_value()), Ok(ticket));
+    assert_eq!(
+        Ticket::from_value(&Value::str("T 1")),
+        Err(ProdromeError::invalid(
+            "todo id must match ^[a-z0-9_-]+$ (nonempty), got \"T 1\""
+        ))
+    );
+    assert_eq!(
+        Ticket::from_field(&Value::None, &"Mark.ticket"),
+        Err(ProdromeError::invalid(
+            "Mark.ticket must be a string, got None"
+        ))
+    );
 }

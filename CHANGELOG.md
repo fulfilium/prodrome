@@ -10,6 +10,9 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`TodoId` is a `Literal`, as `Actor` is.** Its literal is its text, and
+  a read checks the text with `TodoId::new`. A host's newtype over a
+  `TodoId` derives its codec.
 - **`#[literal(crate = path)]`, the path of the core in a derived impl.**
   A program that imports `prodrome-core` under another name gives that
   name, and needs no `extern crate` alias. The default is `::prodrome`.
