@@ -280,10 +280,9 @@ impl<E: Schema> Memory<E> {
         }
         Ok(self
             .folded()?
-            .prodromes()
-            .get(prodrome)
-            .and_then(|entities| entities.get(event.key()))
-            .and_then(|stream| stream.iter().find(|stamp| twins.contains(&stamp.name)))
+            .stream(prodrome, event.key())
+            .iter()
+            .find(|stamp| twins.contains(&stamp.name))
             .map(|stamp| stamp.name.clone()))
     }
 

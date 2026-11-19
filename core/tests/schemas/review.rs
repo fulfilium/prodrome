@@ -51,7 +51,7 @@ impl Phase {
         }
     }
 
-    fn parse(text: &str) -> Result<Phase, ProdromeError> {
+    pub fn parse(text: &str) -> Result<Phase, ProdromeError> {
         PHASES
             .into_iter()
             .find(|phase| phase.as_str() == text)

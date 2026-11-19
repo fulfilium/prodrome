@@ -420,8 +420,9 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
     }
 
     /// `by` writes `event` as a change whose deps are its entity's heads,
-    /// where the append refuses `event` because it falls below the reading
-    /// of an inflationary register. The replica receives the change, as it
+    /// where the append refuses `event` because it does not stand on the
+    /// reading of an inflationary register, the empty reading of an entity
+    /// with no write included. The replica receives the change, as it
     /// receives any valid object. `None` where the append takes `event`.
     fn below(&mut self, by: Who, event: &E) -> Result<Option<Hash>, Broken> {
         let held = self.held(by)?;
@@ -429,13 +430,7 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
         let Err(why) = deps_for(&held.folded, &prodrome, event) else {
             return Ok(None);
         };
-        let deps = held
-            .folded
-            .prodromes()
-            .get(&prodrome)
-            .and_then(|entities| entities.get(event.key()))
-            .map(|stream| heads(stream))
-            .unwrap_or_default();
+        let deps = heads(held.folded.stream(&prodrome, event.key()));
         let change = Envelope::Change(
             mk_change(self.genesis.clone(), deps, event.clone())
                 .map_err(failed(68, "a change below its reading"))?,
@@ -948,12 +943,7 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
 fn climbed<E: Schema>(then: &Folded<E>, now: &Folded<E>) -> Result<(), String> {
     for (genesis, prodrome) in then.prodromes() {
         for (key, earlier) in prodrome {
-            let later = now
-                .prodromes()
-                .get(genesis)
-                .and_then(|entities| entities.get(key))
-                .map_or(&[][..], Vec::as_slice);
-            read(later, None, &Everything)
+            read(now.stream(genesis, key), None, &Everything)
                 .climbed(&read(earlier, None, &Everything))
                 .map_err(|fell| format!("entity {key:?}: {fell}"))?;
         }

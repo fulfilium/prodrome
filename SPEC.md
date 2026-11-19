@@ -295,9 +295,15 @@ since this grammar has tuples and no mapping.
     registers `event` writes, so a writer's add and complete of one entity
     were recorded as concurrent; objects written then keep their bytes and
     read as they did.)
-  - A write to an INFLATIONARY register (§6) whose value is not `≥` the
-    reading it supersedes is refused before any object carries it, by the
-    same structural reading. Of the todo's registers only the tendings are
+  - A write to an INFLATIONARY register (§6) that is below, or does not
+    stand on, the reading it supersedes is refused before any object
+    carries it, by the same structural reading. The empty reading is
+    included: the first write to an entity is asked against the reading of
+    no writes. A write is below the reading where its value is not `≥` the
+    reading under the register's order. A schema MAY refuse more than its
+    order does, for example a value that stands only on one named value
+    beneath it. The append refuses exactly the writes that `verify` finds
+    `Below` (law 70). Of the todo's registers only the tendings are
     inflationary, and a `Tended` supersedes nothing, so no event of §4 is
     refused; a schema whose register supersedes and is inflationary is held
     to it (law 32). A receipt takes such a write all the same, when another
@@ -352,9 +358,10 @@ since this grammar has tuples and no mapping.
   that the store lacks, a `Signed` that does not verify, an object
   whose actor has a key in its prodrome and which no key of that actor's
   proves (§5's proof, every key object counted), and a write to an
-  inflationary register (§6) whose value is not `≥` the reading of the
-  writes to its entity that it rests on, which an append would have refused
-  (`Below`, law 32). There is no unreachable object and no stale
+  inflationary register (§6) that is below, or does not stand on, the
+  reading of the writes to its entity that it rests on, the empty reading
+  of a first write included, which an append would have refused (`Below`,
+  laws 32 and 70). There is no unreachable object and no stale
   head to report: every object is a tip or beneath one, and no tip rests on
   another.
 - **`fsck`** is `verify` after QUARANTINE: every file of `objects/` whose
@@ -2167,6 +2174,8 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `script.rs::an_add_a_remove_and_an_add_in_one_tick`,
     `script.rs::a_partial_sync_can_take_a_signed_write_without_its_signature`,
     `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`,
+    `floored.rs::every_step_of_a_floored_script_keeps_every_invariant`,
+    `floored.rs::an_honest_floored_script_verifies_clean`,
     `climb.rs::every_step_of_a_proposal_script_keeps_every_invariant`,
     `climb.rs::an_honest_proposal_script_verifies_clean`,
     `climb.rs::a_script_keeps_every_invariant_under_a_host_policy`,
@@ -2188,6 +2197,34 @@ generated values and generated values changed in up to four places.
     `fields.rs::fields_accepts_what_it_accepted`,
     `fields.rs::every_reader_accepts_what_it_accepted`,
     `fields.rs::a_refusal_within_a_field_keeps_its_kind`.
+
+Law 70 is §3's append and §3's `verify` on one write, over generated
+appends to the floored review schema (`core/tests/schemas/floored.rs`) and
+to the proposal schema. The floored review schema refuses a write by a rule
+that its order does not state: a merge stands only on a review. A schema
+whose refusal is its order admits every value on the empty reading, so its
+first writes cannot show what an append asks of a first write. The script
+machine (law 68) checks the same law over the floored review schema, with
+faults and without.
+
+70. **The append refuses exactly what `verify` finds.** For every schema,
+    an append of a write asks the schema's refusal (`Product::grows`) of
+    the product of every write to the entity that the writer holds, and
+    `verify` asks it of the product of the writes to the entity beneath
+    the write. The deps of an appended write are the heads of its entity,
+    so the two products hold the same writes in every inflationary
+    register, and the refusal reads only those registers. For the first write to an
+    entity, the product is the empty product, and both ask the refusal of
+    it. So an append takes a write exactly when `verify` finds nothing for
+    the write in the store that results, and a store that appends alone
+    wrote verifies clean. A write that the append refuses, built as a
+    change on its entity's heads and received, is the one write that
+    `verify` finds `Below`.
+    `floored.rs::the_append_refuses_what_verify_finds_in_a_floored_review`,
+    `floored.rs::the_append_refuses_what_verify_finds_in_a_proposal`,
+    `floored.rs::a_merge_as_the_first_write_is_refused`,
+    `floored.rs::every_step_of_a_floored_script_keeps_every_invariant`,
+    `floored.rs::an_honest_floored_script_verifies_clean`.
 
 ## 10. Non-goals
 

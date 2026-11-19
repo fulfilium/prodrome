@@ -93,12 +93,12 @@ pub(crate) fn at(minute: u32) -> Datetime {
 }
 
 /// The genesis of a store at schema `E`, the same on every replica.
-fn genesis<E: Schema>() -> Envelope<E> {
+pub(crate) fn genesis<E: Schema>() -> Envelope<E> {
     Envelope::Genesis(mk_genesis("tags", &"0".repeat(32)).expect("a genesis"))
 }
 
 /// A store at schema `E` holding its genesis.
-fn begun<E: Schema<Vocabulary: Default>>() -> MemoryStore<E> {
+pub(crate) fn begun<E: Schema<Vocabulary: Default>>() -> MemoryStore<E> {
     let store = MemoryStore::default();
     let genesis = genesis::<E>();
     let print = canonical_envelope(&genesis).into_bytes();
