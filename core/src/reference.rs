@@ -19,11 +19,9 @@
 //! interprets them.
 
 use crate::event::{mk_record, newtype_str, Name, TodoEvent};
-use crate::literal::{Call, Datetime, ProdromeError, Value};
-use crate::payload::{
-    bool_field, datetime_field, expect_call, spec_field, string_field, string_or_empty, strings,
-    tuple_field, tuple_or_empty, Payload,
-};
+use crate::literal::codec::{blank, text, Constructor, Literal, Record};
+use crate::literal::{Datetime, ProdromeError};
+use crate::payload::Payload;
 use crate::term::Term;
 
 newtype_str! {
@@ -31,11 +29,13 @@ newtype_str! {
     /// from [`StringSource`] because `]` is structure in one and `"` in the
     /// other, so a value of one language in a field of the other is a bug the
     /// reparse would catch late.
+    #[derive(Default, Literal)]
     MarkupSource
 }
 
 newtype_str! {
     /// Typst STRING source — the inside of a `".."` literal.
+    #[derive(Default, Literal)]
     StringSource
 }
 
@@ -95,6 +95,10 @@ impl NoteSite {
     }
 
     /// The parse boundary: a stored literal arrives as a bare string.
+    ///
+    /// # Errors
+    ///
+    /// The text is not the word of a site.
     pub fn parse(text: &str) -> Result<NoteSite, ProdromeError> {
         NoteSite::ALL
             .into_iter()
@@ -107,47 +111,79 @@ impl NoteSite {
     }
 }
 
+/// A site prints as its word.
+impl AsRef<str> for NoteSite {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
+// THE STORED FORMS. Each type below derives `Literal`, so its constructor's
+// name, its fields' names and their order are the declaration's, and the
+// print and the read follow from them. A read gives each field to the
+// type's smart constructor (`new`), in field order, so it refuses what the
+// smart constructor refuses. A field marked `default` reads as `''`, `()`
+// or `None` where a call lacks it. `core/tests/all/derive.rs` pins the
+// constructors, so a rename that changes a stored name fails a test.
+
 /// The message a todo came from. `date` is a day; the three identifiers are
 /// `""` when the era that authored the todo did not record them.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
 pub struct Source {
     pub sender: StringSource,
     pub subject: StringSource,
     pub date: Datetime,
+    #[literal(default)]
     pub hash: StringSource,
+    #[literal(default)]
     pub thread_id: StringSource,
+    #[literal(default)]
     pub message_id: StringSource,
 }
 
 /// A comment run attached to one field of a record.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(new = mk_note)]
 pub struct Note {
+    #[literal(with = text)]
     pub on: NoteSite,
     pub lines: Vec<String>,
 }
 
 /// A checklist item inside a todo: no id, no history of its own.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(new = mk_subtodo)]
 pub struct SubTodo {
     pub body: String,
     pub done: bool,
 }
 
 /// THE PAYLOAD: everything this host attaches to a todo, beyond the `todo`,
-/// `at` and `actor` the core owns.
-#[derive(Debug, Clone, PartialEq)]
+/// `at` and `actor` the core owns. Its record kind is `Authored`.
+#[derive(Debug, Clone, PartialEq, Literal)]
+#[literal(rename = "Authored", new = mk_todo)]
 pub struct Todo {
+    #[literal(with = text)]
     pub kind: Name,
     pub created: Datetime,
+    #[literal(with = text)]
     pub body: MarkupSource,
     pub spec: Option<Term>,
+    #[literal(default)]
     pub rationale: Vec<String>,
+    #[literal(default, with = blank)]
     pub category: Option<Name>,
+    #[literal(default, with = text)]
     pub waiting_on: StringSource,
+    #[literal(default, with = text)]
     pub detail: MarkupSource,
+    #[literal(default)]
     pub source: Option<Source>,
+    #[literal(default)]
     pub subtodos: Vec<SubTodo>,
+    #[literal(default)]
     pub notes: Vec<Note>,
+    #[literal(default)]
     pub note: String,
 }
 
@@ -171,46 +207,60 @@ pub fn mk_source(
     }
 }
 
-pub fn mk_note(on: &str, lines: Vec<String>) -> Result<Note, ProdromeError> {
+/// A note on the site `on`.
+///
+/// # Errors
+///
+/// `lines` is empty, or `on` is not the word of a site, in that order.
+pub fn mk_note(on: impl AsRef<str>, lines: Vec<String>) -> Result<Note, ProdromeError> {
     if lines.is_empty() {
         return Err(ProdromeError::invalid(
             "Note.lines must be nonempty — an empty note is not a note",
         ));
     }
     Ok(Note {
-        on: NoteSite::parse(on)?,
+        on: NoteSite::parse(on.as_ref())?,
         lines,
     })
 }
 
-pub fn mk_subtodo(body: &str, done: bool) -> Result<SubTodo, ProdromeError> {
+/// A checklist item.
+///
+/// # Errors
+///
+/// `body` is blank.
+pub fn mk_subtodo(body: impl Into<String>, done: bool) -> Result<SubTodo, ProdromeError> {
+    let body = body.into();
     if body.trim().is_empty() {
         return Err(ProdromeError::invalid("SubTodo.body cannot be empty"));
     }
-    Ok(SubTodo {
-        body: body.to_owned(),
-        done,
-    })
+    Ok(SubTodo { body, done })
 }
 
 /// Every field of this payload, in declared order. Long by construction: the
 /// shipped field set is frozen, so a builder that let one be forgotten would be
 /// a way to print a different object under the same name.
+///
+/// # Errors
+///
+/// `body` is blank, `kind` is not an identifier, or `category` is neither
+/// `""` nor an identifier, in that order.
 #[allow(clippy::too_many_arguments)]
 pub fn mk_todo(
-    kind: &str,
+    kind: impl Into<String>,
     created: Datetime,
-    body: &str,
+    body: impl Into<String>,
     spec: Option<Term>,
     rationale: Vec<String>,
-    category: &str,
-    waiting_on: &str,
-    detail: &str,
+    category: impl Into<String>,
+    waiting_on: impl Into<String>,
+    detail: impl Into<String>,
     source: Option<Source>,
     subtodos: Vec<SubTodo>,
     notes: Vec<Note>,
-    note: &str,
+    note: impl Into<String>,
 ) -> Result<Todo, ProdromeError> {
+    let body = body.into();
     if body.trim().is_empty() {
         return Err(ProdromeError::invalid("Authored.body cannot be empty"));
     }
@@ -226,7 +276,7 @@ pub fn mk_todo(
         source,
         subtodos,
         notes,
-        note: note.to_owned(),
+        note: note.into(),
     })
 }
 
@@ -262,180 +312,11 @@ pub fn mk_authored(
     )
 }
 
-// --- the literal round trip --------------------------------------------------
-
-fn text(value: impl Into<String>) -> Value {
-    Value::Str(value.into())
-}
-
-fn optional_text(value: Option<&Name>) -> Value {
-    Value::Str(
-        value
-            .map(|name| name.as_str().to_owned())
-            .unwrap_or_default(),
-    )
-}
-
-fn tuple_of<T>(items: &[T], each: impl Fn(&T) -> Value) -> Value {
-    Value::Tuple(items.iter().map(each).collect())
-}
-
-fn field(name: &str, value: Value) -> (String, Value) {
-    (name.to_owned(), value)
-}
-
-impl Source {
-    pub fn to_value(&self) -> Value {
-        Value::call(
-            "Source",
-            vec![
-                field("sender", text(self.sender.as_str())),
-                field("subject", text(self.subject.as_str())),
-                field("date", Value::Datetime(self.date)),
-                field("hash", text(self.hash.as_str())),
-                field("thread_id", text(self.thread_id.as_str())),
-                field("message_id", text(self.message_id.as_str())),
-            ],
-        )
-    }
-}
-
-impl Note {
-    pub fn to_value(&self) -> Value {
-        Value::call(
-            "Note",
-            vec![
-                field("on", text(self.on.as_str())),
-                field("lines", tuple_of(&self.lines, |line| text(line.clone()))),
-            ],
-        )
-    }
-}
-
-impl SubTodo {
-    pub fn to_value(&self) -> Value {
-        Value::call(
-            "SubTodo",
-            vec![
-                field("body", text(self.body.clone())),
-                field("done", Value::Bool(self.done)),
-            ],
-        )
-    }
-}
-
-fn source_from_value(value: &Value) -> Result<Source, ProdromeError> {
-    let call = expect_call(value, "Source")?;
-    Ok(mk_source(
-        &string_field(call, "sender")?,
-        &string_field(call, "subject")?,
-        datetime_field(call, "date")?,
-        &string_or_empty(call, "hash")?,
-        &string_or_empty(call, "thread_id")?,
-        &string_or_empty(call, "message_id")?,
-    ))
-}
-
-fn note_from_value(value: &Value) -> Result<Note, ProdromeError> {
-    let call = expect_call(value, "Note")?;
-    mk_note(
-        &string_field(call, "on")?,
-        strings(tuple_field(call, "lines")?, "Note.lines")?,
-    )
-}
-
-fn subtodo_from_value(value: &Value) -> Result<SubTodo, ProdromeError> {
-    let call = expect_call(value, "SubTodo")?;
-    mk_subtodo(&string_field(call, "body")?, bool_field(call, "done")?)
-}
+// --- the payload -------------------------------------------------------------
 
 impl Payload for Todo {
-    const KIND: &'static str = "Authored";
-
-    const FIELDS: &'static [&'static str] = &[
-        "kind",
-        "created",
-        "body",
-        "spec",
-        "rationale",
-        "category",
-        "waiting_on",
-        "detail",
-        "source",
-        "subtodos",
-        "notes",
-        "note",
-    ];
-
-    const VOCABULARY: &'static [(&'static str, &'static [&'static str])] = &[
-        (
-            "Source",
-            &[
-                "sender",
-                "subject",
-                "date",
-                "hash",
-                "thread_id",
-                "message_id",
-            ],
-        ),
-        ("Note", &["on", "lines"]),
-        ("SubTodo", &["body", "done"]),
-    ];
-
-    fn fields(&self) -> Vec<(&'static str, Value)> {
-        vec![
-            ("kind", text(self.kind.as_str())),
-            ("created", Value::Datetime(self.created)),
-            ("body", text(self.body.as_str())),
-            (
-                "spec",
-                self.spec
-                    .as_ref()
-                    .map_or(Value::None, |spec| spec.to_value()),
-            ),
-            (
-                "rationale",
-                tuple_of(&self.rationale, |line| text(line.clone())),
-            ),
-            ("category", optional_text(self.category.as_ref())),
-            ("waiting_on", text(self.waiting_on.as_str())),
-            ("detail", text(self.detail.as_str())),
-            (
-                "source",
-                self.source.as_ref().map_or(Value::None, Source::to_value),
-            ),
-            ("subtodos", tuple_of(&self.subtodos, SubTodo::to_value)),
-            ("notes", tuple_of(&self.notes, Note::to_value)),
-            ("note", text(self.note.clone())),
-        ]
-    }
-
-    fn from_fields(call: &Call) -> Result<Todo, ProdromeError> {
-        mk_todo(
-            &string_field(call, "kind")?,
-            datetime_field(call, "created")?,
-            &string_field(call, "body")?,
-            spec_field(call, "spec")?,
-            strings(tuple_or_empty(call, "rationale")?, "Authored.rationale")?,
-            &string_or_empty(call, "category")?,
-            &string_or_empty(call, "waiting_on")?,
-            &string_or_empty(call, "detail")?,
-            match call.field("source") {
-                None | Some(Value::None) => None,
-                Some(other) => Some(source_from_value(other)?),
-            },
-            tuple_or_empty(call, "subtodos")?
-                .iter()
-                .map(subtodo_from_value)
-                .collect::<Result<Vec<_>, _>>()?,
-            tuple_or_empty(call, "notes")?
-                .iter()
-                .map(note_from_value)
-                .collect::<Result<Vec<_>, _>>()?,
-            &string_or_empty(call, "note")?,
-        )
-    }
+    const VOCABULARY: &'static [Constructor] =
+        &[Source::CONSTRUCTOR, Note::CONSTRUCTOR, SubTodo::CONSTRUCTOR];
 
     fn spec(&self) -> Option<&Term> {
         self.spec.as_ref()
@@ -520,7 +401,7 @@ mod tests {
         let named: Vec<&str> = todo.fields().into_iter().map(|(name, _)| name).collect();
         assert_eq!(
             named,
-            Todo::FIELDS,
+            Todo::CONSTRUCTOR.1,
             "fields() answers with FIELDS, in order"
         );
     }
@@ -541,6 +422,9 @@ mod tests {
         for (name, _) in Todo::VOCABULARY {
             assert!(!core.contains(name), "{name} is one of the core's names");
         }
-        assert!(!core.contains(&Todo::KIND));
+        assert!(!core.contains(&Todo::CONSTRUCTOR.0));
     }
 }
+
+#[cfg(test)]
+mod hand_written;

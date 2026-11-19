@@ -1,0 +1,29 @@
+[package]
+name = "prodrome-derive"
+description = "The derive macro of prodrome-core's literal codec"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["derive", "event-sourcing", "content-addressed", "database"]
+categories = ["database-implementations", "encoding"]
+
+# A procedural macro: the compiler runs it, and no code of this crate is in
+# a program that uses the derive. The derive writes code that calls
+# `prodrome::literal::codec`, so a program that uses it depends on
+# `prodrome-core`, which re-exports the derive as
+# `prodrome::literal::codec::Literal`.
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1"
+quote = "1"
+# Version 2, which the core already builds for its other dependencies.
+syn = "2"
+
+[dev-dependencies]
+# The examples on the derive's page use the core's codec.
+prodrome-core = { path = "../core" }

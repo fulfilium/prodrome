@@ -32,12 +32,12 @@ pub const TODO_SIGNATURES: &[(&str, &[&str])] = &[
 
 /// The todo schema's whitelist: §7's terms (a spec nests in a `SpecRevised`
 /// or a record), the six kinds, and the PAYLOAD's record kind, whose fields
-/// are `todo, at, actor` and then `P::FIELDS`, with the constructors those
+/// are `todo, at, actor` and then the payload's, with the constructors those
 /// fields nest. The core's names win: a payload that named its record
 /// `Created` would be unreachable, not in force.
 #[derive(Debug, Clone)]
 pub struct TodoVocabulary<P> {
-    /// `todo, at, actor` then `P::FIELDS`, owned: the one signature that is
+    /// `todo, at, actor` then the payload's fields, owned: the one signature that is
     /// not a compile-time table.
     record: Vec<&'static str>,
     payload: PhantomData<P>,
@@ -60,7 +60,7 @@ impl<P: Payload> Vocabulary for TodoVocabulary<P> {
         if let Some(signature) = Table(TODO_SIGNATURES).find(name) {
             return Some(signature);
         }
-        if name == P::KIND {
+        if name == P::CONSTRUCTOR.0 {
             return Some(Signature::Fields(&self.record));
         }
         Table(P::VOCABULARY).find(name)

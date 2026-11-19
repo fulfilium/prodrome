@@ -19,6 +19,11 @@
 //!   that word. The macro [`word_literal!`](crate::word_literal) implements
 //!   this for a type.
 //!
+//! - `#[derive(Literal)]` writes the impl for a record, a sum or a newtype
+//!   from the type's declaration. [`record`](mod@record) holds the reads
+//!   that a derived impl makes, and [`text`] and [`blank`] are two field
+//!   codecs for `#[literal(with = ...)]`.
+//!
 //! The module depends on no schema. A schema's `to_value` and `from_value`
 //! ([`crate::schema::Schema`]) can use it to print and read their events'
 //! fields.
@@ -32,13 +37,33 @@ use chrono::NaiveDate;
 
 use super::{Call, Datetime, Int, ProdromeError, Value};
 
+pub mod blank;
+pub mod record;
+pub mod text;
+
+pub use prodrome_derive::Literal;
+pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
+
 /// A constructor's name and its fields in printed order. A [`super::Table`]
 /// is a list of them.
 pub type Constructor = (&'static str, &'static [&'static str]);
 
 /// A type with one stored literal form, which reads back exactly:
 /// `from_value(&x.to_value()) == Ok(x)`.
+///
+/// A read has two forms. [`Literal::from_value`] reads a value on its own,
+/// and [`Fields::get`] names the field in its refusal.
+/// [`Literal::from_field`] reads the value of a field whose context, such
+/// as `Note.lines`, the caller gives; a derived impl reads each field this
+/// way, so its refusals are the core's (SPEC §4).
 pub trait Literal: Sized {
+    /// The constructors that the type declares, each with its fields in
+    /// print order: one for a record, and one for each variant of a sum. A
+    /// leaf, a container and a newtype declare none. A schema pins the
+    /// constructors of its types in a test, so that a renamed constructor or
+    /// field fails the test.
+    const CONSTRUCTORS: &'static [Constructor] = &[];
+
     /// The literal of `self`.
     fn to_value(&self) -> Value;
 
@@ -47,6 +72,17 @@ pub trait Literal: Sized {
     /// # Errors
     /// A [`ProdromeError`] that names the part of `value` that does not read.
     fn from_value(value: &Value) -> Result<Self, ProdromeError>;
+
+    /// Reads a value back from its literal, the value of the field
+    /// `context`. A leaf names the context in its refusal, as
+    /// `Note.lines must be a tuple`. The default is [`Literal::from_value`],
+    /// whose refusal a composite value already names.
+    ///
+    /// # Errors
+    /// A [`ProdromeError`] that names the part of `value` that does not read.
+    fn from_field(value: &Value, _context: &dyn Display) -> Result<Self, ProdromeError> {
+        Self::from_value(value)
+    }
 }
 
 /// The call of `constructor` with `values`, one value for each field, in the
@@ -146,12 +182,7 @@ impl<'v> Fields<'v> {
 /// # Errors
 /// The value is not a call.
 pub fn arm(value: &Value) -> Result<&str, ProdromeError> {
-    value
-        .as_call()
-        .map(|call| call.name.as_str())
-        .ok_or_else(|| {
-            ProdromeError::invalid(format!("expected a constructor call, got {value:?}"))
-        })
+    call(value).map(|call| call.name.as_str())
 }
 
 /// The error for a constructor `name` that is not a variant of the sum
@@ -285,6 +316,12 @@ impl Literal for String {
             .map(str::to_owned)
             .ok_or_else(|| ProdromeError::invalid(format!("expected a string, got {value:?}")))
     }
+
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        value.as_str().map(str::to_owned).ok_or_else(|| {
+            ProdromeError::invalid(format!("{context} must be a string, got {value:?}"))
+        })
+    }
 }
 
 impl Literal for bool {
@@ -297,6 +334,15 @@ impl Literal for bool {
             Value::Bool(flag) => Ok(*flag),
             other => Err(ProdromeError::invalid(format!(
                 "expected a bool, got {other:?}"
+            ))),
+        }
+    }
+
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        match value {
+            Value::Bool(flag) => Ok(*flag),
+            other => Err(ProdromeError::invalid(format!(
+                "{context} must be a bool, got {other:?}"
             ))),
         }
     }
@@ -344,6 +390,15 @@ impl Literal for Datetime {
             ))),
         }
     }
+
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        match value {
+            Value::Datetime(at) => Ok(*at),
+            other => Err(ProdromeError::invalid(format!(
+                "{context} must be a datetime, got {other:?}"
+            ))),
+        }
+    }
 }
 
 /// A day prints as its ISO 8601 text, `YYYY-MM-DD`.
@@ -370,6 +425,13 @@ impl<T: Literal> Literal for Option<T> {
             other => T::from_value(other).map(Some),
         }
     }
+
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        match value {
+            Value::None => Ok(None),
+            other => T::from_field(other, context).map(Some),
+        }
+    }
 }
 
 impl<T: Literal> Literal for Vec<T> {
@@ -385,6 +447,24 @@ impl<T: Literal> Literal for Vec<T> {
             .map(T::from_value)
             .collect()
     }
+
+    fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
+        tuple(value, context)?
+            .iter()
+            .map(|item| T::from_field(item, context))
+            .collect()
+    }
+}
+
+/// The items of `value`, the value of the field `context`.
+///
+/// # Errors
+///
+/// `value` is not a tuple.
+pub fn tuple<'v>(value: &'v Value, context: &dyn Display) -> Result<&'v [Value], ProdromeError> {
+    value
+        .as_tuple()
+        .ok_or_else(|| ProdromeError::invalid(format!("{context} must be a tuple")))
 }
 
 /// A set prints as a tuple, sorted, with each member once. A read refuses

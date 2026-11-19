@@ -17,6 +17,7 @@ use prodrome::event::{
     Envelope, Hash, TodoEvent, ENVELOPE_SIGNATURES,
 };
 use prodrome::genesis::mk_genesis;
+use prodrome::literal::codec::Record;
 use prodrome::payload::Payload;
 use prodrome::policy::{Policy, Untrusted};
 use prodrome::reference::Todo;
@@ -122,7 +123,7 @@ fn the_corpus_uses_the_closed_vocabulary_and_every_spec_it_carries_evaluates() {
                 .iter()
                 .chain(TODO_SIGNATURES)
                 .any(|(name, _)| name == kind)
-                || *kind == Todo::KIND,
+                || *kind == Todo::CONSTRUCTOR.0,
             "{kind} is outside SPEC §4"
         );
     }
@@ -186,7 +187,7 @@ fn the_vocabulary_is_exactly_the_spec_s() {
                 .chain(Todo::VOCABULARY.iter())
                 .map(|(name, _)| *name),
         )
-        .chain(std::iter::once(Todo::KIND))
+        .chain(std::iter::once(Todo::CONSTRUCTOR.0))
         .collect();
     names.sort_unstable();
     assert_eq!(

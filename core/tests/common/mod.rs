@@ -365,7 +365,7 @@ impl Draft {
             )),
             1 | 2 => {
                 let subtodos = (0..self.items)
-                    .map(|i| ok(mk_subtodo(&format!("item {i}"), i % 3 == 0)))
+                    .map(|i| ok(mk_subtodo(format!("item {i}"), i % 3 == 0)))
                     .collect();
                 ok(mk_authored(
                     self.todo,

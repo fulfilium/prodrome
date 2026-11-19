@@ -510,7 +510,7 @@ mod tests {
 
     fn authored(todo: &str, day: u32, actor: &str, spec: Option<Term>, items: usize) -> Event {
         let subtodos = (0..items)
-            .map(|i| mk_subtodo(&format!("item {i}"), false).expect("valid"))
+            .map(|i| mk_subtodo(format!("item {i}"), false).expect("valid"))
             .collect();
         mk_authored(
             todo,

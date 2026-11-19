@@ -25,6 +25,7 @@
 
 use std::fmt::Debug;
 
+use crate::literal::codec::{self, Constructor, Literal, Record};
 use crate::literal::{Call, Datetime, ProdromeError, Value};
 use crate::term::Term;
 
@@ -39,45 +40,31 @@ use crate::term::Term;
 ///
 /// # The contract
 ///
-/// - [`Payload::KIND`] and [`Payload::FIELDS`] are the STORED SHAPE. The
-///   printer emits `KIND(todo=…, at=…, actor=…, <FIELDS in order>)`, and
-///   [`Payload::fields`] must answer with exactly `FIELDS`, in that order, for
-///   every value. A disagreement is a print that does not parse back.
+/// - The payload is a [`Record`], and its constructor is the STORED SHAPE:
+///   the printer emits `KIND(todo=…, at=…, actor=…, <the fields in order>)`,
+///   where `KIND` and the fields are [`Record::CONSTRUCTOR`]'s, and the
+///   values are [`Record::values`]. `#[derive(Literal)]` writes the record
+///   from the struct, so the names and the values agree by construction.
 /// - [`Payload::VOCABULARY`] is every OTHER constructor a payload's fields may
 ///   nest, with its declared field order. §2's whitelist is the core's names
 ///   (§4's lifecycle kinds, §7's terms) plus these, so it is still a whitelist.
-///   None of these names may be one of the core's.
-/// - [`Payload::from_fields`] is the PARSE BOUNDARY, the way `mk_*` is for the
+///   None of these names may be one of the core's. A derived type gives its
+///   own as [`Literal::CONSTRUCTORS`].
+/// - [`Record::from_call`] is the PARSE BOUNDARY, the way `mk_*` is for the
 ///   core's kinds: it refuses what a smart constructor would refuse, and its
-///   error is the parse error.
+///   error is the parse error. A derived record calls the smart constructor
+///   that `#[literal(new = ...)]` names.
 /// - [`Payload::spec`] and [`Payload::checklist_len`] are the ONLY readings §6
 ///   takes. `flatten` (§6.4) reads both, the spec register (§6.2, §6.6) the
 ///   first; nothing else in the core looks inside a payload at all.
 ///
 /// `PartialEq` and not `Eq`: a spec is an FPL [`Term`], and a term holds
 /// floats.
-pub trait Payload: Clone + PartialEq + Debug + Send + Sync + 'static {
-    /// The record constructor's name — the reference payload's is `"Authored"`.
-    const KIND: &'static str;
-
-    /// The payload's fields, in DECLARED ORDER, following the core's `todo`,
-    /// `at` and `actor`. This is the stored field order and it is frozen.
-    const FIELDS: &'static [&'static str];
-
+pub trait Payload: Record + Clone + PartialEq + Debug + Send + Sync + 'static {
     /// Every other constructor the payload's fields use, with its own declared
     /// field order — the reference payload's `Source`, `SubTodo` and `Note`.
     /// Empty for a payload of plain values.
-    const VOCABULARY: &'static [(&'static str, &'static [&'static str])];
-
-    /// The payload as literal values, in [`Payload::FIELDS`]'s order. What the
-    /// canonical printer emits after the three fields the core owns.
-    fn fields(&self) -> Vec<(&'static str, Value)>;
-
-    /// The parse: a stored record's call, validated into a payload. `call`
-    /// carries `todo`, `at` and `actor` too — the core has already read those —
-    /// and the helpers in this module are the same ones the core's own kinds
-    /// are parsed with.
-    fn from_fields(call: &Call) -> Result<Self, ProdromeError>;
+    const VOCABULARY: &'static [Constructor];
 
     /// The spec this record prices its todo by, if it carries one (§6.2, §6.4).
     fn spec(&self) -> Option<&Term>;
@@ -93,78 +80,57 @@ pub trait Payload: Clone + PartialEq + Debug + Send + Sync + 'static {
 pub const RECORD_PREFIX: &[&str] = &["todo", "at", "actor"];
 
 /// The record kind's whole declared field order — [`RECORD_PREFIX`] then
-/// `P::FIELDS`. What the §2 parser binds a stored record against.
+/// the payload's fields. What the §2 parser binds a stored record against.
 pub fn record_signature<P: Payload>() -> Vec<&'static str> {
     let mut fields = RECORD_PREFIX.to_vec();
-    fields.extend_from_slice(P::FIELDS);
+    fields.extend_from_slice(P::CONSTRUCTOR.1);
     fields
 }
 
 // --- reading a stored call --------------------------------------------------
 //
-// The helpers every `from_fields` wants, public because a HOST writes one:
-// implementing `Payload` outside this crate should not mean reimplementing the
-// refusals the core's own kinds are parsed with.
+// The helpers a hand-written read wants, public because a HOST may write one:
+// implementing a read outside this crate should not mean reimplementing the
+// refusals the core's own kinds are parsed with. Each is a read of
+// `literal::codec`, which a derived `Literal` impl makes too, so a derived
+// read and a hand-written one refuse with the same messages.
 
 /// A field that must be there.
 pub fn required<'a>(call: &'a Call, name: &str) -> Result<&'a Value, ProdromeError> {
-    call.field(name)
-        .ok_or_else(|| ProdromeError::invalid(format!("{}(...) is missing {name}", call.name)))
+    codec::required(call, name)
 }
 
 pub fn as_string(value: &Value, context: &str) -> Result<String, ProdromeError> {
-    value
-        .as_str()
-        .map(str::to_owned)
-        .ok_or_else(|| ProdromeError::invalid(format!("{context} must be a string, got {value:?}")))
+    String::from_field(value, &context)
 }
 
 pub fn string_field(call: &Call, name: &str) -> Result<String, ProdromeError> {
-    as_string(required(call, name)?, &format!("{}.{name}", call.name))
+    codec::read(call, name, String::from_field)
 }
 
 /// A shipped string field where `""` means absent: a missing field reads as
 /// `""` too, which is how a hand-written literal with the trailing defaults
 /// omitted parses the same as the canonical print of the same value.
 pub fn string_or_empty(call: &Call, name: &str) -> Result<String, ProdromeError> {
-    match call.field(name) {
-        None => Ok(String::new()),
-        Some(value) => as_string(value, &format!("{}.{name}", call.name)),
-    }
+    codec::read_or_default(call, name, String::from_field)
 }
 
 pub fn datetime_field(call: &Call, name: &str) -> Result<Datetime, ProdromeError> {
-    match required(call, name)? {
-        Value::Datetime(at) => Ok(*at),
-        other => Err(ProdromeError::invalid(format!(
-            "{}.{name} must be a datetime, got {other:?}",
-            call.name
-        ))),
-    }
+    codec::read(call, name, Datetime::from_field)
 }
 
 pub fn bool_field(call: &Call, name: &str) -> Result<bool, ProdromeError> {
-    match required(call, name)? {
-        Value::Bool(flag) => Ok(*flag),
-        other => Err(ProdromeError::invalid(format!(
-            "{}.{name} must be a bool, got {other:?}",
-            call.name
-        ))),
-    }
+    codec::read(call, name, bool::from_field)
 }
 
 pub fn tuple_field<'a>(call: &'a Call, name: &str) -> Result<&'a [Value], ProdromeError> {
-    required(call, name)?
-        .as_tuple()
-        .ok_or_else(|| ProdromeError::invalid(format!("{}.{name} must be a tuple", call.name)))
+    codec::tuple(required(call, name)?, &format_args!("{}.{name}", call.name))
 }
 
 pub fn tuple_or_empty<'a>(call: &'a Call, name: &str) -> Result<&'a [Value], ProdromeError> {
     match call.field(name) {
         None => Ok(&[]),
-        Some(value) => value
-            .as_tuple()
-            .ok_or_else(|| ProdromeError::invalid(format!("{}.{name} must be a tuple", call.name))),
+        Some(value) => codec::tuple(value, &format_args!("{}.{name}", call.name)),
     }
 }
 
@@ -175,18 +141,10 @@ pub fn strings(items: &[Value], context: &str) -> Result<Vec<String>, ProdromeEr
 /// A field that is a §7 term or `None` — an optional spec, the one payload
 /// field the core reads.
 pub fn spec_field(call: &Call, name: &str) -> Result<Option<Term>, ProdromeError> {
-    match required(call, name)? {
-        Value::None => Ok(None),
-        other => Ok(Some(Term::from_value(other)?)),
-    }
+    codec::read(call, name, Option::<Term>::from_field)
 }
 
 /// A nested constructor call of a named kind — a payload's own records.
 pub fn expect_call<'a>(value: &'a Value, name: &str) -> Result<&'a Call, ProdromeError> {
-    match value.as_call() {
-        Some(call) if call.name == name => Ok(call),
-        other => Err(ProdromeError::invalid(format!(
-            "expected a {name}(...), got {other:?}"
-        ))),
-    }
+    codec::call_of(value, name)
 }
