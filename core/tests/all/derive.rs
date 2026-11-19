@@ -190,7 +190,7 @@ const VOCABULARY: Table = Table(&[
     ("Defer", &["until"]),
 ]);
 
-fn a_hash() -> impl Strategy<Value = Hash> {
+pub(crate) fn a_hash() -> impl Strategy<Value = Hash> {
     "[0-9a-f]{64}".prop_map(|text| Hash::new(text).expect("the pattern is a name"))
 }
 
@@ -439,7 +439,7 @@ mod by_hand {
                 },
             },
             "Paused" => Shape::Paused,
-            other => return Err(no_arm("one of Shape's constructors", other)),
+            other => return Err(no_arm("Shape", other)),
         };
         Ok(Line {
             at: datetime_field(call, "at")?,
@@ -464,7 +464,7 @@ fn a_record_with_a_sum_lists_each_constructor_with_all_its_fields() {
     assert_eq!(Line::CONSTRUCTORS, pinned);
 }
 
-fn a_datetime() -> impl Strategy<Value = Datetime> {
+pub(crate) fn a_datetime() -> impl Strategy<Value = Datetime> {
     (
         1i32..=9999,
         1u32..=12,
@@ -496,7 +496,7 @@ fn a_line() -> impl Strategy<Value = Line> {
 }
 
 /// A value that a field of a line expects, or one that none expects.
-fn a_leaf() -> impl Strategy<Value = Value> {
+pub(crate) fn a_leaf() -> impl Strategy<Value = Value> {
     prop_oneof![
         Just(Value::None),
         any::<bool>().prop_map(Value::Bool),
@@ -518,7 +518,7 @@ fn a_leaf() -> impl Strategy<Value = Value> {
 
 /// A change to one part of a value.
 #[derive(Debug, Clone)]
-enum Change {
+pub(crate) enum Change {
     /// The part's call loses its field at the index.
     Drop(usize),
     /// The part becomes the leaf.
@@ -527,16 +527,27 @@ enum Change {
     Rename(&'static str),
 }
 
-fn a_change() -> impl Strategy<Value = (usize, Change)> {
+/// A change to the part at an index, which renames a call to one of
+/// `names`.
+pub(crate) fn a_change(names: &[&'static str]) -> impl Strategy<Value = (usize, Change)> {
     (
         any::<usize>(),
         prop_oneof![
             any::<usize>().prop_map(Change::Drop),
             a_leaf().prop_map(Change::Replace),
-            prop::sample::select(vec!["Opened", "Closed", "Paused", "Other"])
-                .prop_map(Change::Rename),
+            prop::sample::select(names.to_vec()).prop_map(Change::Rename),
         ],
     )
+}
+
+/// `value` with each of `changes` applied, in order, to the part at its
+/// index modulo the number of parts.
+pub(crate) fn changed(mut value: Value, changes: &[(usize, Change)]) -> Value {
+    for (index, change) in changes {
+        let mut index = index % parts(&value);
+        apply(&mut value, &mut index, change);
+    }
+    value
 }
 
 fn parts(value: &Value) -> usize {
@@ -590,13 +601,9 @@ proptest! {
     #[test]
     fn a_record_with_a_sum_reads_as_the_hand_written_codec(
         line in a_line(),
-        changes in prop::collection::vec(a_change(), 0..5),
+        changes in prop::collection::vec(a_change(&["Opened", "Closed", "Paused", "Other"]), 0..5),
     ) {
-        let mut value = line.to_value();
-        for (index, change) in &changes {
-            let mut index = index % parts(&value);
-            apply(&mut value, &mut index, change);
-        }
+        let value = changed(line.to_value(), &changes);
         prop_assert_eq!(Line::from_value(&value), by_hand::from_value(&value));
     }
 }

@@ -154,14 +154,9 @@ impl<I: Schema> Schema for Holder<I> {
     }
 
     fn from_value(_: &HolderVocabulary, value: &Value) -> Result<Holder<I>, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("a holder event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         if call.name != "Placed" {
-            return Err(ProdromeError::invalid(format!(
-                "{} is not a holder event",
-                call.name
-            )));
+            return Err(prodrome::literal::codec::no_arm("Holder", &call.name));
         }
         Ok(Holder {
             shelf: Shelf::new(&string_field(call, "shelf")?)?,

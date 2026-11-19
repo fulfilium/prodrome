@@ -116,6 +116,20 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`Fields` refuses in the words of a derived read (SPEC law 69).**
+  `Fields::of`, `Fields::among` and `Fields::get` are built on
+  `codec::call`, `codec::call_of` and `codec::read`, the reads that a
+  derived impl makes, so a hand-written read and a derived one word each
+  refusal alike. `Fields::get` reads a field with `Literal::from_field`.
+  `no_arm(sum, name)` takes the name of the sum's type and words its
+  refusal as a derived sum does: `Reject is not one of Verdict's
+  constructors`. `Fields::among` takes the name of the sum too, and
+  `schema::headed::Body` gains `NAME`, the name of the body's type, which
+  `Event::from_value` passes to it. What each read accepts does not change:
+  a property compares the old `Fields` and the new one, and four readers of
+  this repository as they were and as they are, over generated values and
+  changed ones. Only the messages change, and no stored form changes.
+  A breaking change to `Fields::among`, `no_arm` and `Body`.
 - **`Payload` requires `Record`, and loses `KIND`, `FIELDS`, `fields` and
   `from_fields`.** `Record::CONSTRUCTOR` gives the record kind's name and
   fields, `Record::values` the values, and `Record::from_call` the read. A

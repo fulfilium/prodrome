@@ -48,6 +48,8 @@ impl Body for Entry {
     type Registers<'a> = One<'a, Whole<Note>>;
     type Refusal = Unnamed;
 
+    const NAME: &'static str = "Entry";
+
     const EVENTS: &'static [Constructor] = &[TITLED, VIEWED];
 
     fn writes(&self) -> impl Iterator<Item = Only> {
@@ -77,7 +79,7 @@ impl Body for Entry {
         let entry = match fields.name() {
             "Titled" => Entry::Titled(fields.get("title")?),
             "Viewed" => Entry::Viewed,
-            other => return Err(prodrome::literal::codec::no_arm("a note event", other)),
+            other => return Err(prodrome::literal::codec::no_arm(Self::NAME, other)),
         };
         Event::new(
             fields.get("note")?,

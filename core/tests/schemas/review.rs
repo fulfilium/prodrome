@@ -251,9 +251,7 @@ impl Schema for Review {
     }
 
     fn from_value(_: &ReviewVocabulary, value: &Value) -> Result<Review, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("a review event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         let pr = Pr::new(&string_field(call, "pr")?)?;
         let at = datetime_field(call, "at")?;
         let actor = Actor::new(string_field(call, "actor")?)?;
@@ -270,9 +268,7 @@ impl Schema for Review {
                 actor,
                 phase: Phase::parse(&string_field(call, "phase")?)?,
             }),
-            other => Err(ProdromeError::invalid(format!(
-                "{other} is not a review event"
-            ))),
+            other => Err(prodrome::literal::codec::no_arm("Review", other)),
         }
     }
 

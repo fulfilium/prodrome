@@ -118,7 +118,7 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
             }
         }
     });
-    let what = format!("one of {ident}'s constructors");
+    let what = ident.to_string();
     quote! {
         impl #codec::Sum for #ident {
             fn arm(&self) -> (#codec::Constructor, ::std::vec::Vec<#literal::Value>) {

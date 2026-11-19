@@ -53,11 +53,12 @@ pub type Constructor = (&'static str, &'static [&'static str]);
 /// A type with one stored literal form, which reads back exactly:
 /// `from_value(&x.to_value()) == Ok(x)`.
 ///
-/// A read has two forms. [`Literal::from_value`] reads a value on its own,
-/// and [`Fields::get`] names the field in its refusal.
+/// A read has two forms. [`Literal::from_value`] reads a value on its own.
 /// [`Literal::from_field`] reads the value of a field whose context, such
-/// as `Note.lines`, the caller gives; a derived impl reads each field this
-/// way, so its refusals are the core's (SPEC §4).
+/// as `Note.lines`, the caller gives. A derived impl and [`Fields::get`]
+/// read each field this way, so their refusals are the core's (SPEC §4).
+/// The two forms accept the same values, and read each one as the same
+/// value. Only the words of a refusal differ.
 pub trait Literal: Sized {
     /// The constructors that the type declares, each with its fields in
     /// print order: one for a record, and one for each variant of a sum. A
@@ -116,26 +117,37 @@ pub fn headed(head: Vec<(&'static str, Value)>, body: Constructor, values: Vec<V
     )
 }
 
-/// The fields of a call of one constructor, read by name.
+/// The fields of a call of one constructor, read by name, for a
+/// hand-written impl.
+///
+/// The reads are the ones that a derived impl makes: [`call`],
+/// [`call_of`] and [`read`] with the field type's [`Literal::from_field`],
+/// and [`no_arm`] for a constructor that a sum does not have. So a
+/// hand-written read and a derived one refuse a value in the same words.
 #[derive(Debug, Clone, Copy)]
 pub struct Fields<'v> {
     call: &'v Call,
 }
 
 impl<'v> Fields<'v> {
-    /// Reads `value` as a call of one of `constructors`. A reader of a sum
-    /// uses it, for example of an event schema's events.
+    /// Reads `value` as a call of one of `constructors`, the constructors
+    /// of the sum `sum`. A reader of a sum uses it, for example of an event
+    /// schema's events.
     ///
     /// # Errors
     /// The value is not a call, or it calls a constructor that is not in
     /// `constructors`.
-    pub fn among(value: &'v Value, constructors: &[Constructor]) -> Result<Self, ProdromeError> {
-        let name = arm(value)?;
-        let constructor = constructors
-            .iter()
-            .find(|(named, _)| *named == name)
-            .ok_or_else(|| ProdromeError::invalid(format!("{name} is not one of this schema's")))?;
-        Self::of(value, *constructor)
+    pub fn among(
+        value: &'v Value,
+        sum: &str,
+        constructors: &[Constructor],
+    ) -> Result<Self, ProdromeError> {
+        let call = call(value)?;
+        if constructors.iter().any(|(name, _)| *name == call.name) {
+            Ok(Self { call })
+        } else {
+            Err(no_arm(sum, &call.name))
+        }
     }
 
     /// Reads `value` as a call of `constructor`.
@@ -143,13 +155,7 @@ impl<'v> Fields<'v> {
     /// # Errors
     /// The value is not a call of that constructor's name.
     pub fn of(value: &'v Value, constructor: Constructor) -> Result<Self, ProdromeError> {
-        match value.as_call() {
-            Some(call) if call.name == constructor.0 => Ok(Self { call }),
-            _ => Err(ProdromeError::invalid(format!(
-                "expected {}(...), got {value:?}",
-                constructor.0
-            ))),
-        }
+        call_of(value, constructor.0).map(|call| Self { call })
     }
 
     /// The call, for a reader of a field that is not a [`Literal`].
@@ -170,12 +176,7 @@ impl<'v> Fields<'v> {
     /// The field is absent, or it does not read as a `T`. The error names the
     /// field.
     pub fn get<T: Literal>(&self, name: &str) -> Result<T, ProdromeError> {
-        let value = self.call.field(name).ok_or_else(|| {
-            ProdromeError::invalid(format!("{}(...) has no field {name}", self.call.name))
-        })?;
-        T::from_value(value).map_err(|failed| {
-            ProdromeError::invalid(format!("{}.{name}: {failed}", self.call.name))
-        })
+        read(self.call, name, T::from_field)
     }
 }
 
@@ -188,10 +189,11 @@ pub fn arm(value: &Value) -> Result<&str, ProdromeError> {
 }
 
 /// The error for a constructor `name` that is not a variant of the sum
-/// `what`.
+/// `sum`: `Reject is not one of Verdict's constructors`. A derived sum and
+/// a hand-written one refuse with it.
 #[must_use]
-pub fn no_arm(what: &str, name: &str) -> ProdromeError {
-    ProdromeError::invalid(format!("{name} is not {what}"))
+pub fn no_arm(sum: &str, name: &str) -> ProdromeError {
+    ProdromeError::invalid(format!("{name} is not one of {sum}'s constructors"))
 }
 
 /// Reads a leaf whose literal is its text: `value` must be a string, and

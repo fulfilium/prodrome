@@ -71,6 +71,11 @@ pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
     /// [`std::convert::Infallible`] for a schema that refuses nothing.
     type Refusal: Display;
 
+    /// The name of the body's type, which a refusal of an unknown event
+    /// constructor names, as [`no_arm`](crate::literal::codec::no_arm)
+    /// words it: `Other is not one of Entry's constructors`.
+    const NAME: &'static str;
+
     /// Each event constructor. Its fields are the key's fields, then `at`
     /// and `actor`, then the body's fields. No constructor is named
     /// `Sealed`, `Woven`, `Genesis`, `Change` or `Snapshot`, because a
@@ -220,7 +225,7 @@ impl<B: Body> Schema for Event<B> {
     }
 
     fn from_value(_: &Constructors<B>, value: &Value) -> Result<Self, ProdromeError> {
-        B::parse(&Fields::among(value, B::EVENTS)?)
+        B::parse(&Fields::among(value, B::NAME, B::EVENTS)?)
     }
 
     fn key(&self) -> &B::Key {

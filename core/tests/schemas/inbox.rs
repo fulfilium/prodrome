@@ -166,20 +166,14 @@ impl Schema for Inbox {
     }
 
     fn from_value(_: &InboxVocabulary, value: &Value) -> Result<Inbox, ProdromeError> {
-        let call: &Call = value
-            .as_call()
-            .ok_or_else(|| ProdromeError::invalid("an inbox event is a constructor call"))?;
+        let call: &Call = prodrome::literal::codec::call(value)?;
         let says = match call.name.as_str() {
             "Proposed" => Says::Proposed(string_field(call, "text")?),
             "Serves" => Says::Serves {
                 store: string_field(call, "store")?,
                 todo: string_field(call, "todo")?,
             },
-            other => {
-                return Err(ProdromeError::invalid(format!(
-                    "{other} is not an inbox event"
-                )))
-            }
+            other => return Err(prodrome::literal::codec::no_arm("Inbox", other)),
         };
         Ok(Inbox {
             proposal: Id(string_field(call, "proposal")?),

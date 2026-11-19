@@ -108,10 +108,19 @@ one place.
 A derived read reads each field with `Literal::from_field`, which takes the
 field's context, such as `Note.lines`. A leaf names the context in its
 refusal, as the payload helpers did (`Note.lines must be a tuple`). The
-payload helpers in `payload.rs` are now reads of the same functions, so a
-hand-written read and a derived one give the same messages.
-`Fields::get` keeps its own messages, for the hand-written impls that use
-it.
+payload helpers in `payload.rs` are reads of the same functions, and so are
+`Fields::of`, `Fields::among` and `Fields::get`. A hand-written read and a
+derived one therefore give the same messages. A sum names its type in its
+refusal, whether it is derived or written by hand with `no_arm`:
+`Reject is not one of Verdict's constructors`.
+
+The words of a refusal are not part of the stored form, and no reader may
+depend on them. The language that a read accepts is part of the stored
+form. When `Fields` took the derive's words, a property compared the old
+`Fields` with the new one, and four readers of this repository as they
+were with the same readers as they are (SPEC law 69,
+`core/tests/all/fields.rs`). Over generated values and values changed in
+up to four places, both accept the same values and read the same value.
 
 Before the hand-written codec of the reference payload was deleted, two
 properties compared it with the derived one (commit "derive Literal, and

@@ -2122,6 +2122,20 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `script.rs::a_partial_sync_can_take_a_signed_write_without_its_signature`,
     `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`.
 
+Law 69 is the codec's two forms of a read (`literal::codec`), over
+generated values and generated values changed in up to four places.
+
+69. **A read of a field accepts what a read of its value accepts.** A
+    read of a value alone (`Literal::from_value`) and a read of the value
+    of a named field (`Literal::from_field`, which `Fields::get` and a
+    derived read call) accept the same values, and read each one as the
+    same value. Only the words of a refusal differ. A refusal's words are
+    not stored, and no reader depends on them. `Fields` accepts exactly the
+    calls and fields that it accepted when it worded its own refusals, and
+    so do the readers of this repository that read through it.
+    `fields.rs::fields_accepts_what_it_accepted`,
+    `fields.rs::every_reader_accepts_what_it_accepted`.
+
 ## 10. Non-goals
 
 A clock in the merge; a second evaluator; a rendering as a source of truth;
