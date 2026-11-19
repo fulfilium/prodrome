@@ -65,11 +65,27 @@ floats differ from CPython's `repr`, which SPEC §2 requires.
 - A struct with one unnamed field is a newtype, and its literal is its
   field's.
 
+- A struct with named fields, one of which is marked `#[literal(sum)]`,
+  has one constructor for each variant of that field's enum. Each
+  constructor's fields are the struct's other fields, in declaration order,
+  then the variant's fields: `Opened(at, actor, rests_on, title)` and
+  `Closed(at, actor, rests_on, why)`. This is the shape of an event whose
+  kinds share leading fields. The derive writes the trait `Sum` for every
+  enum: the constructor and the values of a variant, and a read of the
+  variant that a call names. The struct prints with `codec::headed` and
+  reads the variant first, then its own fields. Its `CONSTRUCTORS` lists
+  each constructor with all its fields. `const` functions in
+  `codec/sum.rs` build that table when the program compiles, because the
+  struct's derive does not see the enum's fields. For the same reason, a
+  field name that is both the struct's and a variant's is refused by a
+  check that the compiler evaluates, and not by the macro.
+
 The derive refuses, with a message that says what to write: a generic type,
 a struct with two or more unnamed fields, a variant with unnamed fields, an
 enum without variants, a union, two constructors of one sum with one name,
-two fields of one constructor with one name, and a stored name that the
-grammar cannot read.
+two fields of one constructor with one name, a stored name that the
+grammar cannot read, two fields marked `sum` in one struct, and a field
+name that is both the struct's and a variant's.
 
 ## Stored names
 
@@ -115,6 +131,14 @@ gave more than 60 different refusals, among them each refusal of the smart
 constructors. The read of the whole payload was compared only for a call
 named `Authored`, because the event layer reads a payload only from such a
 call.
+
+A record with a sum is proved the same way, against a hand-written codec
+that stays in `core/tests/all/derive.rs`: a table of fields for each shape
+and two matches. The two codecs print the same values, and they read the
+same lines changed in up to four places, refusals and messages included.
+Both properties passed 100,000 cases each in a release build. In a sample
+of 20,000 changed lines, 47% read as a line, and the rest gave 26 different
+refusals.
 
 ## Measurements
 

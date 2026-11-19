@@ -34,6 +34,12 @@ use syn::{parse_macro_input, DeriveInput};
 ///   variant has.
 /// - **A newtype**, a struct with one unnamed field, prints and reads as
 ///   its field.
+/// - **A record with a sum**, a struct with named fields of which one is
+///   marked `#[literal(sum)]`, has one constructor for each variant of that
+///   field's enum. Each constructor's fields are the struct's other fields
+///   in declaration order, then the variant's fields. A read reads the
+///   variant first, so a call of an unknown name is refused before any
+///   field.
 ///
 /// Each field prints and reads through its type's `Literal` impl, whether
 /// that impl is derived or written by hand. A derived type is a `Literal`
@@ -70,6 +76,8 @@ use syn::{parse_macro_input, DeriveInput};
 ///   `prodrome::literal::codec::text_field` and
 ///   `prodrome::literal::codec::blank_field`
 ///   are two such modules.
+/// - `#[literal(sum)]` on one field of a struct: the field's enum names the
+///   constructor (see "A record with a sum").
 /// - `#[literal(new = path)]` on a struct: a read calls
 ///   `path(field, ...) -> Result<Self, ProdromeError>` with the stored fields
 ///   in print order, so that a smart constructor checks the value. With
@@ -82,7 +90,11 @@ use syn::{parse_macro_input, DeriveInput};
 /// says what to write: a generic type, a struct with two or more unnamed
 /// fields, a variant with unnamed fields, an enum with no variants, a union,
 /// two constructors of a sum with one name, two fields of a constructor
-/// with one name, and a stored name that the literal grammar cannot read.
+/// with one name, a stored name that the literal grammar cannot read, two
+/// fields marked `sum` in one struct, and a field name that is both one of
+/// the struct's and one of a variant's. The last refusal is a check that
+/// the compiler evaluates, because the struct's derive does not see the
+/// enum's fields; its message names the field.
 ///
 /// ```compile_fail
 /// #[derive(prodrome::literal::codec::Literal)]
@@ -104,6 +116,22 @@ use syn::{parse_macro_input, DeriveInput};
 ///     Accept,
 ///     #[literal(rename = "Accept")]
 ///     Approve,
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use prodrome::literal::codec::Literal;
+///
+/// #[derive(Literal)]
+/// enum Shape {
+///     Opened { at: String },
+/// }
+///
+/// #[derive(Literal)]
+/// struct Line {
+///     at: String,
+///     #[literal(sum)]
+///     shape: Shape,
 /// }
 /// ```
 ///
@@ -167,6 +195,38 @@ use syn::{parse_macro_input, DeriveInput};
 ///     &[("Accept", &[][..]), ("Revise", &["reason"][..])]
 /// );
 /// assert_eq!(Verdict::from_value(&verdict.to_value()), Ok(verdict));
+/// ```
+/// # A record with a sum
+///
+/// ```
+/// use prodrome::literal::codec::Literal;
+/// use prodrome::literal::print_literal;
+///
+/// /// What a line of a log says.
+/// #[derive(Debug, PartialEq, Literal)]
+/// enum Shape {
+///     Opened { title: String },
+///     Paused,
+/// }
+///
+/// /// A line of a log: the fields of every line, and its shape.
+/// #[derive(Debug, PartialEq, Literal)]
+/// struct Line {
+///     actor: String,
+///     #[literal(sum)]
+///     shape: Shape,
+/// }
+///
+/// let line = Line {
+///     actor: "ada".to_owned(),
+///     shape: Shape::Opened { title: "draft".to_owned() },
+/// };
+/// assert_eq!(print_literal(&line.to_value()), "Opened(actor='ada', title='draft')");
+/// assert_eq!(
+///     Line::CONSTRUCTORS,
+///     &[("Opened", &["actor", "title"][..]), ("Paused", &["actor"][..])]
+/// );
+/// assert_eq!(Line::from_value(&line.to_value()), Ok(line));
 /// ```
 #[proc_macro_derive(Literal, attributes(literal))]
 pub fn derive_literal(input: TokenStream) -> TokenStream {

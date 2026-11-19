@@ -39,10 +39,12 @@ use super::{Call, Datetime, Int, ProdromeError, Value};
 
 pub mod blank_field;
 mod record;
+mod sum;
 pub mod text_field;
 
 pub use prodrome_derive::Literal;
 pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
+pub use sum::{headed_len, headed_names, headed_table, names_field, Sum};
 
 /// A constructor's name and its fields in printed order. A [`super::Table`]
 /// is a list of them.

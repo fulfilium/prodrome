@@ -6,7 +6,7 @@ use std::collections::BTreeSet;
 
 use prodrome::event::{Actor, Hash};
 use prodrome::literal::codec::{text_field, Constructor, Fields, Literal, Record};
-use prodrome::literal::{parse_literal, print_literal, ProdromeError, Table, Value};
+use prodrome::literal::{parse_literal, print_literal, Datetime, ProdromeError, Table, Value};
 use prodrome::reference::{Note, Source, SubTodo, Todo};
 use proptest::prelude::*;
 
@@ -367,4 +367,236 @@ fn a_field_with_its_own_codec_reads_through_the_smart_constructor() {
         Labelled::from_value(&empty),
         Err(ProdromeError::invalid("a tag is not empty"))
     );
+}
+
+// --- a record whose sum names its constructor ------------------------------
+
+/// What a line of a log of work says: a sum whose variant names the
+/// constructor of the line that holds it.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+enum Shape {
+    Opened { title: String },
+    Closed { why: Option<String> },
+    Paused,
+}
+
+/// A line of a log of work: the fields common to every line, and the shape
+/// of the line. It prints as `Opened(at, actor, rests_on, title)`,
+/// `Closed(at, actor, rests_on, why)` or `Paused(at, actor, rests_on)`.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Line {
+    at: Datetime,
+    actor: Actor,
+    #[literal(sum)]
+    shape: Shape,
+    rests_on: Vec<Hash>,
+}
+
+/// The same codec, written by hand: a table of fields for each shape and two
+/// matches, with the core's reads.
+mod by_hand {
+    use super::*;
+    use prodrome::literal::codec::{call, headed, no_arm};
+    use prodrome::payload::{as_string, datetime_field, required, string_field, tuple_field};
+
+    pub fn to_value(line: &Line) -> Value {
+        let head = vec![
+            ("at", Value::Datetime(line.at)),
+            ("actor", Value::str(line.actor.as_str())),
+            (
+                "rests_on",
+                Value::Tuple(
+                    line.rests_on
+                        .iter()
+                        .map(|hash| Value::str(hash.as_str()))
+                        .collect(),
+                ),
+            ),
+        ];
+        match &line.shape {
+            Shape::Opened { title } => {
+                headed(head, ("Opened", &["title"]), vec![Value::str(title)])
+            }
+            Shape::Closed { why } => headed(
+                head,
+                ("Closed", &["why"]),
+                vec![why.as_ref().map_or(Value::None, Value::str)],
+            ),
+            Shape::Paused => headed(head, ("Paused", &[]), vec![]),
+        }
+    }
+
+    pub fn from_value(value: &Value) -> Result<Line, ProdromeError> {
+        let call = call(value)?;
+        let shape = match call.name.as_str() {
+            "Opened" => Shape::Opened {
+                title: string_field(call, "title")?,
+            },
+            "Closed" => Shape::Closed {
+                why: match required(call, "why")? {
+                    Value::None => None,
+                    other => Some(as_string(other, &format!("{}.why", call.name))?),
+                },
+            },
+            "Paused" => Shape::Paused,
+            other => return Err(no_arm("one of Shape's constructors", other)),
+        };
+        Ok(Line {
+            at: datetime_field(call, "at")?,
+            actor: Actor::new(string_field(call, "actor")?)?,
+            shape,
+            rests_on: tuple_field(call, "rests_on")?
+                .iter()
+                .map(Hash::from_value)
+                .collect::<Result<_, _>>()?,
+        })
+    }
+}
+
+/// Every constructor of a line, with the common fields first, as data.
+#[test]
+fn a_record_with_a_sum_lists_each_constructor_with_all_its_fields() {
+    let pinned: [Constructor; 3] = [
+        ("Opened", &["at", "actor", "rests_on", "title"]),
+        ("Closed", &["at", "actor", "rests_on", "why"]),
+        ("Paused", &["at", "actor", "rests_on"]),
+    ];
+    assert_eq!(Line::CONSTRUCTORS, pinned);
+}
+
+fn a_datetime() -> impl Strategy<Value = Datetime> {
+    (
+        1i32..=9999,
+        1u32..=12,
+        1u32..=28,
+        0u32..24,
+        0u32..60,
+        0u32..60,
+    )
+        .prop_map(|(y, mo, d, h, mi, s)| Datetime::new(y, mo, d, h, mi, s, 0).expect("in range"))
+}
+
+fn a_line() -> impl Strategy<Value = Line> {
+    (
+        a_datetime(),
+        "[a-z][a-z0-9_-]{0,8}".prop_map(|text| Actor::new(text).expect("the pattern is an actor")),
+        prop_oneof![
+            any::<String>().prop_map(|title| Shape::Opened { title }),
+            any::<Option<String>>().prop_map(|why| Shape::Closed { why }),
+            Just(Shape::Paused),
+        ],
+        prop::collection::vec(a_hash(), 0..3),
+    )
+        .prop_map(|(at, actor, shape, rests_on)| Line {
+            at,
+            actor,
+            shape,
+            rests_on,
+        })
+}
+
+/// A value that a field of a line expects, or one that none expects.
+fn a_leaf() -> impl Strategy<Value = Value> {
+    prop_oneof![
+        Just(Value::None),
+        any::<bool>().prop_map(Value::Bool),
+        any::<i64>().prop_map(Value::int),
+        prop_oneof![
+            Just(String::new()),
+            Just("Ada".to_owned()),
+            "[a-z]{1,4}",
+            "[0-9a-f]{64}"
+        ]
+        .prop_map(Value::Str),
+        a_datetime().prop_map(Value::Datetime),
+        Just(Value::Tuple(vec![])),
+        prop::collection::vec(a_hash().prop_map(|hash| Value::str(hash.as_str())), 1..3)
+            .prop_map(Value::Tuple),
+        Just(Value::call("Paused", vec![])),
+    ]
+}
+
+/// A change to one part of a value.
+#[derive(Debug, Clone)]
+enum Change {
+    /// The part's call loses its field at the index.
+    Drop(usize),
+    /// The part becomes the leaf.
+    Replace(Value),
+    /// The part's call takes the name.
+    Rename(&'static str),
+}
+
+fn a_change() -> impl Strategy<Value = (usize, Change)> {
+    (
+        any::<usize>(),
+        prop_oneof![
+            any::<usize>().prop_map(Change::Drop),
+            a_leaf().prop_map(Change::Replace),
+            prop::sample::select(vec!["Opened", "Closed", "Paused", "Other"])
+                .prop_map(Change::Rename),
+        ],
+    )
+}
+
+fn parts(value: &Value) -> usize {
+    1 + match value {
+        Value::Tuple(items) => items.iter().map(parts).sum(),
+        Value::Call(call) => call.fields.iter().map(|(_, value)| parts(value)).sum(),
+        _ => 0,
+    }
+}
+
+/// Applies `change` to the part at `index`, in preorder.
+fn apply(value: &mut Value, index: &mut usize, change: &Change) {
+    if *index == 0 {
+        match (change, &mut *value) {
+            (Change::Replace(leaf), _) => *value = leaf.clone(),
+            (Change::Drop(at), Value::Call(call)) if !call.fields.is_empty() => {
+                let at = at % call.fields.len();
+                call.fields.remove(at);
+            }
+            (Change::Rename(name), Value::Call(call)) => call.name = (*name).to_owned(),
+            _ => {}
+        }
+        *index = usize::MAX;
+        return;
+    }
+    *index -= 1;
+    match value {
+        Value::Tuple(items) => items.iter_mut().for_each(|item| apply(item, index, change)),
+        Value::Call(call) => call
+            .fields
+            .iter_mut()
+            .for_each(|(_, value)| apply(value, index, change)),
+        _ => {}
+    }
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(2048))]
+
+    /// The derived print of a record with a sum is the hand-written print,
+    /// and the derived read reads it back.
+    #[test]
+    fn a_record_with_a_sum_prints_as_the_hand_written_codec(line in a_line()) {
+        prop_assert_eq!(line.to_value(), by_hand::to_value(&line));
+        prop_assert_eq!(Line::from_value(&line.to_value()), Ok(line));
+    }
+
+    /// The derived read of a line changed in up to four places is the
+    /// hand-written read: the same line, or the same refusal with the same
+    /// message.
+    #[test]
+    fn a_record_with_a_sum_reads_as_the_hand_written_codec(
+        line in a_line(),
+        changes in prop::collection::vec(a_change(), 0..5),
+    ) {
+        let mut value = line.to_value();
+        for (index, change) in &changes {
+            let mut index = index % parts(&value);
+            apply(&mut value, &mut index, change);
+        }
+        prop_assert_eq!(Line::from_value(&value), by_hand::from_value(&value));
+    }
 }

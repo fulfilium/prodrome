@@ -133,3 +133,34 @@ fn every_form_with_a_literal_is_accepted() {
         assert!(Derived::parse(&input).is_ok(), "{}", input.ident);
     }
 }
+
+#[test]
+fn two_fields_marked_sum_are_refused() {
+    assert_eq!(
+        refusal(&parse_quote! {
+            struct Line { #[literal(sum)] shape: Shape, #[literal(sum)] mood: Mood }
+        }),
+        "two fields of `Line` are marked `sum`, and only one variant can name a \
+         constructor: mark one field `sum`, and make the other an ordinary field"
+    );
+}
+
+#[test]
+fn a_sum_field_takes_no_other_option() {
+    assert_eq!(
+        refusal(&parse_quote! { struct Line { #[literal(sum, default)] shape: Shape } }),
+        "the field marked `sum` is read from the constructor's name: remove `rename`, \
+         `default`, `skip` and `with` from it"
+    );
+    assert_eq!(
+        refusal(&parse_quote! {
+            #[literal(rename = "Entry")] struct Line { #[literal(sum)] shape: Shape }
+        }),
+        "the variants of the field marked `sum` name the constructors of `Line`: remove \
+         `rename`, and rename a variant instead"
+    );
+    assert_eq!(
+        refusal(&parse_quote! { enum Log { Line { #[literal(sum)] shape: Shape } } }),
+        "a field of a variant cannot be marked `sum`: mark a field of a struct"
+    );
+}

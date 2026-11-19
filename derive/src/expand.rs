@@ -8,7 +8,8 @@ use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
 
 use crate::shape::{
-    Absent, Build, Codec, Constructor, Derived, Field, Newtype, Record, Role, Shape, Variant,
+    Absent, Build, Codec, Constructor, Derived, Field, Headed, Newtype, Record, Role, Shape,
+    Variant,
 };
 
 /// The impls for `derived`.
@@ -16,6 +17,7 @@ pub fn expand(derived: &Derived) -> TokenStream {
     let ident = &derived.ident;
     match &derived.shape {
         Shape::Record(record) => expand_record(ident, record),
+        Shape::Headed(headed) => expand_headed(ident, headed),
         Shape::Sum(variants) => expand_sum(ident, variants),
         Shape::Newtype(newtype) => expand_newtype(ident, newtype),
     }
@@ -38,7 +40,13 @@ fn expand_record(ident: &Ident, record: &Record) -> TokenStream {
         let member = &field.ident;
         print(field, &quote!(&self.#member))
     });
-    let (reads, build) = read(&record.constructor, &quote!(Self), &record.build);
+    let reads = reads(&record.constructor.fields);
+    let build = build(
+        &record.constructor.fields,
+        &[],
+        &quote!(Self),
+        &record.build,
+    );
     quote! {
         impl #codec::Record for #ident {
             const CONSTRUCTOR: #codec::Constructor = #table;
@@ -90,13 +98,19 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
             .enumerate()
             .filter_map(|(index, field)| print(field, &local(index).to_token_stream()));
         quote! {
-            Self::#tag { #(#binds,)* .. } => #codec::record(#table, ::std::vec![#(#prints),*]),
+            Self::#tag { #(#binds,)* .. } => (#table, ::std::vec![#(#prints),*]),
         }
     });
     let arms_read = variants.iter().map(|variant| {
         let tag = &variant.ident;
         let name = &variant.constructor.name;
-        let (reads, build) = read(&variant.constructor, &quote!(Self::#tag), &Build::Fields);
+        let reads = reads(&variant.constructor.fields);
+        let build = build(
+            &variant.constructor.fields,
+            &[],
+            &quote!(Self::#tag),
+            &Build::Fields,
+        );
         quote! {
             #name => {
                 #reads
@@ -106,23 +120,111 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
     });
     let what = format!("one of {ident}'s constructors");
     quote! {
+        impl #codec::Sum for #ident {
+            fn arm(&self) -> (#codec::Constructor, ::std::vec::Vec<#literal::Value>) {
+                match self {
+                    #(#arms_print)*
+                }
+            }
+
+            fn from_arm(
+                call: &#literal::Call,
+            ) -> ::std::result::Result<Self, #literal::ProdromeError> {
+                match call.name.as_str() {
+                    #(#arms_read)*
+                    other => ::std::result::Result::Err(#codec::no_arm(#what, other)),
+                }
+            }
+        }
+
         impl #codec::Literal for #ident {
             const CONSTRUCTORS: &'static [#codec::Constructor] = &[#(#tables),*];
 
             fn to_value(&self) -> #literal::Value {
-                match self {
-                    #(#arms_print)*
-                }
+                let (constructor, values) = <Self as #codec::Sum>::arm(self);
+                #codec::record(constructor, values)
+            }
+
+            fn from_value(
+                value: &#literal::Value,
+            ) -> ::std::result::Result<Self, #literal::ProdromeError> {
+                <Self as #codec::Sum>::from_arm(#codec::call(value)?)
+            }
+        }
+    }
+}
+
+fn expand_headed(ident: &Ident, headed: &Headed) -> TokenStream {
+    let codec = codec();
+    let literal = literal();
+    let sum = &headed.sum.ty;
+    let sum_member = &headed.sum.ident;
+    let stored: Vec<(&Field, &String)> = headed
+        .fields
+        .iter()
+        .filter_map(|field| match &field.role {
+            Role::Stored(stored) => Some((field, &stored.name)),
+            Role::Skipped => None,
+        })
+        .collect();
+    let head_names = stored.iter().map(|(_, name)| name);
+    let head = stored.iter().map(|(field, name)| {
+        let member = &field.ident;
+        let value = print(field, &quote!(&self.#member));
+        quote!((#name, #value))
+    });
+    let checks = stored.iter().map(|(_, name)| {
+        let message = format!(
+            "the field `{name}` of `{ident}` is also a field of a variant of its sum: \
+             give one of them another name with #[literal(rename = \"...\")]"
+        );
+        quote! {
+            ::std::assert!(
+                !#codec::names_field(<#sum as #codec::Literal>::CONSTRUCTORS, #name),
+                #message
+            );
+        }
+    });
+    let reads = reads(&headed.fields);
+    let sum_local = format_ident!("field_sum");
+    let build = build(
+        &headed.fields,
+        &[Inserted {
+            position: headed.sum.position,
+            member: sum_member,
+            local: sum_local.clone(),
+        }],
+        &quote!(Self),
+        &headed.build,
+    );
+    quote! {
+        const _: () = {
+            #(#checks)*
+        };
+
+        impl #codec::Literal for #ident {
+            const CONSTRUCTORS: &'static [#codec::Constructor] = {
+                const ARMS: &[#codec::Constructor] = <#sum as #codec::Literal>::CONSTRUCTORS;
+                const HEAD: &[&str] = &[#(#head_names),*];
+                const NAMES: [&str; #codec::headed_len(HEAD, ARMS)] =
+                    #codec::headed_names(HEAD, ARMS);
+                const TABLE: [#codec::Constructor; ARMS.len()] =
+                    #codec::headed_table(&NAMES, HEAD.len(), ARMS);
+                &TABLE
+            };
+
+            fn to_value(&self) -> #literal::Value {
+                let (constructor, values) = <#sum as #codec::Sum>::arm(&self.#sum_member);
+                #codec::headed(::std::vec![#(#head),*], constructor, values)
             }
 
             fn from_value(
                 value: &#literal::Value,
             ) -> ::std::result::Result<Self, #literal::ProdromeError> {
                 let call = #codec::call(value)?;
-                match call.name.as_str() {
-                    #(#arms_read)*
-                    other => ::std::result::Result::Err(#codec::no_arm(#what, other)),
-                }
+                let #sum_local = <#sum as #codec::Sum>::from_arm(call)?;
+                #reads
+                #build
             }
         }
     }
@@ -202,64 +304,79 @@ fn print(field: &Field, place: &TokenStream) -> Option<TokenStream> {
     }
 }
 
-/// The statements that read each stored field of `constructor` from
-/// `call` into its local variable, and the expression that builds the
-/// value `path` from them.
-fn read(
-    constructor: &Constructor,
+/// The statements that read each stored field of `fields` from `call`
+/// into its local variable.
+fn reads(fields: &[Field]) -> TokenStream {
+    let codec = codec();
+    let reads = fields.iter().enumerate().filter_map(|(index, field)| {
+        let stored = match &field.role {
+            Role::Stored(stored) => stored,
+            Role::Skipped => return None,
+        };
+        let ty = &field.ty;
+        let name = &stored.name;
+        let reader = match &stored.codec {
+            Codec::Literal => quote!(<#ty as #codec::Literal>::from_field),
+            Codec::With(module) => quote!(#module::from_field),
+        };
+        let local = local(index);
+        Some(match stored.absent {
+            Absent::Refused => quote!(let #local = #codec::read(call, #name, #reader)?;),
+            Absent::Default => {
+                quote!(let #local = #codec::read_or_default(call, #name, #reader)?;)
+            }
+        })
+    });
+    quote!(#(#reads)*)
+}
+
+/// A field that a read sets apart from `fields`: the field `member`, after
+/// the first `position` of `fields`, holding the local variable `local`.
+struct Inserted<'a> {
+    position: usize,
+    member: &'a Ident,
+    local: Ident,
+}
+
+/// The expression that builds the value `path` from the local variables of
+/// `fields` and of `inserted`, in declaration order.
+fn build(
+    fields: &[Field],
+    inserted: &[Inserted<'_>],
     path: &TokenStream,
     build: &Build,
-) -> (TokenStream, TokenStream) {
-    let codec = codec();
-    let reads = constructor
-        .fields
+) -> TokenStream {
+    // Each member with its value: `None` for a skipped field.
+    let mut members: Vec<(&Ident, Option<Ident>)> = Vec::new();
+    for (index, field) in fields.iter().enumerate() {
+        for insert in inserted.iter().filter(|insert| insert.position == index) {
+            members.push((insert.member, Some(insert.local.clone())));
+        }
+        members.push((
+            &field.ident,
+            match field.role {
+                Role::Stored(_) => Some(local(index)),
+                Role::Skipped => None,
+            },
+        ));
+    }
+    for insert in inserted
         .iter()
-        .enumerate()
-        .filter_map(|(index, field)| {
-            let stored = match &field.role {
-                Role::Stored(stored) => stored,
-                Role::Skipped => return None,
-            };
-            let ty = &field.ty;
-            let name = &stored.name;
-            let reader = match &stored.codec {
-                Codec::Literal => quote!(<#ty as #codec::Literal>::from_field),
-                Codec::With(module) => quote!(#module::from_field),
-            };
-            let local = local(index);
-            Some(match stored.absent {
-                Absent::Refused => quote!(let #local = #codec::read(call, #name, #reader)?;),
-                Absent::Default => {
-                    quote!(let #local = #codec::read_or_default(call, #name, #reader)?;)
-                }
-            })
-        });
-    let reads = quote!(#(#reads)*);
-    let build = match build {
+        .filter(|insert| insert.position == fields.len())
+    {
+        members.push((insert.member, Some(insert.local.clone())));
+    }
+    match build {
         Build::Fields => {
-            let members = constructor.fields.iter().enumerate().map(|(index, field)| {
-                let member = &field.ident;
-                match field.role {
-                    Role::Stored(_) => {
-                        let local = local(index);
-                        quote!(#member: #local)
-                    }
-                    Role::Skipped => quote!(#member: ::std::default::Default::default()),
-                }
+            let members = members.iter().map(|(member, value)| match value {
+                Some(local) => quote!(#member: #local),
+                None => quote!(#member: ::std::default::Default::default()),
             });
             quote!(::std::result::Result::Ok(#path { #(#members),* }))
         }
         Build::New(function) => {
-            let locals = constructor
-                .fields
-                .iter()
-                .enumerate()
-                .filter_map(|(index, field)| match field.role {
-                    Role::Stored(_) => Some(local(index)),
-                    Role::Skipped => None,
-                });
+            let locals = members.iter().filter_map(|(_, value)| value.as_ref());
             quote!(#function(#(#locals),*))
         }
-    };
-    (reads, build)
+    }
 }

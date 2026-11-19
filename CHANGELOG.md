@@ -17,7 +17,10 @@ constructor's fields never change, in any release.
   declaration. The options `rename`, `default`, `skip`, `with` and `new`
   keep a stored name, read a missing field as its default, leave a field
   out, give a field its own codec, and send the fields to a smart
-  constructor. `Literal::CONSTRUCTORS` gives each derived type's
+  constructor. A struct that marks one field `#[literal(sum)]` has one
+  constructor for each variant of that field's enum, with the struct's
+  other fields first, as an event whose kinds share leading fields does.
+  `Literal::CONSTRUCTORS` gives each derived type's
   constructors as data, so that a test can pin them. The reference payload
   and `Actor` derive their codec. Their prints and their reads, refusals
   and messages included, do not change, and no stored constructor changes.

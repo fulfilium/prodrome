@@ -31,10 +31,18 @@ enum Key {
     Default,
     Skip,
     With,
+    Sum,
 }
 
 impl Key {
-    const ALL: [Key; 5] = [Key::Rename, Key::New, Key::Default, Key::Skip, Key::With];
+    const ALL: [Key; 6] = [
+        Key::Rename,
+        Key::New,
+        Key::Default,
+        Key::Skip,
+        Key::With,
+        Key::Sum,
+    ];
 
     fn word(self) -> &'static str {
         match self {
@@ -43,6 +51,7 @@ impl Key {
             Key::Default => "default",
             Key::Skip => "skip",
             Key::With => "with",
+            Key::Sum => "sum",
         }
     }
 
@@ -51,7 +60,7 @@ impl Key {
         match self {
             Key::Rename => "a struct with named fields, a variant, or a named field",
             Key::New => "a struct",
-            Key::Default | Key::Skip | Key::With => "a named field",
+            Key::Default | Key::Skip | Key::With | Key::Sum => "a named field",
         }
     }
 }
@@ -64,7 +73,7 @@ impl Place {
             Place::Newtype => &[Key::New],
             Place::Sum | Place::Inner => &[],
             Place::Variant => &[Key::Rename],
-            Place::Field => &[Key::Rename, Key::Default, Key::Skip, Key::With],
+            Place::Field => &[Key::Rename, Key::Default, Key::Skip, Key::With, Key::Sum],
         }
     }
 
@@ -89,6 +98,7 @@ pub struct Options {
     pub default: Option<Span>,
     pub skip: Option<Span>,
     pub with: Option<Path>,
+    pub sum: Option<Span>,
 }
 
 impl Options {
@@ -108,7 +118,7 @@ impl Options {
                     .ok_or_else(|| {
                         meta.error(
                             "unknown option of #[literal]: write one of `rename = \"...\"`, \
-                             `new = path`, `default`, `skip` or `with = path`",
+                             `new = path`, `default`, `skip`, `with = path` or `sum`",
                         )
                     })?;
                 if !place.admits().contains(&key) {
@@ -127,6 +137,7 @@ impl Options {
                     Key::With => set(&mut options.with, meta.value()?.parse()?, twice),
                     Key::Default => set(&mut options.default, span, twice),
                     Key::Skip => set(&mut options.skip, span, twice),
+                    Key::Sum => set(&mut options.sum, span, twice),
                 }
             })?;
         }

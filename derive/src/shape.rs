@@ -17,10 +17,13 @@ pub struct Derived {
     pub shape: Shape,
 }
 
-/// The three forms that a derived literal takes.
+/// The forms that a derived literal takes.
 pub enum Shape {
     /// A struct with named fields, or a unit struct: one constructor.
     Record(Record),
+    /// A struct with named fields, one of which is marked `sum`: one
+    /// constructor for each variant of that field's sum.
+    Headed(Headed),
     /// An enum: one constructor for each variant.
     Sum(Vec<Variant>),
     /// A struct with one unnamed field, whose literal is the field's.
@@ -31,6 +34,23 @@ pub enum Shape {
 pub struct Record {
     pub constructor: Constructor,
     pub build: Build,
+}
+
+/// A record whose field `sum` names its constructor. Each constructor's
+/// fields are `fields`, then the fields of the variant.
+pub struct Headed {
+    /// The other fields, in declaration order.
+    pub fields: Vec<Field>,
+    pub sum: SumField,
+    pub build: Build,
+}
+
+/// The field of a [`Headed`] record that names the constructor.
+pub struct SumField {
+    pub ident: Ident,
+    pub ty: Type,
+    /// The number of other fields that come before it in the declaration.
+    pub position: usize,
 }
 
 /// One variant of a sum, and its constructor.
@@ -123,10 +143,41 @@ impl Derived {
             Data::Struct(data) => match &data.fields {
                 Fields::Named(_) | Fields::Unit => {
                     let options = Options::read(&input.attrs, Place::Record)?;
-                    Shape::Record(Record {
-                        constructor: constructor(&ident, options.rename, &data.fields)?,
-                        build: build(options.new),
-                    })
+                    let (fields, marked) = fields_of(&data.fields)?;
+                    match marked.as_slice() {
+                        [] => Shape::Record(Record {
+                            constructor: constructor(&ident, options.rename, fields)?,
+                            build: build(options.new),
+                        }),
+                        [sum] => {
+                            if let Some(rename) = options.rename {
+                                return Err(Error::new(
+                                    rename.span(),
+                                    format!(
+                                        "the variants of the field marked `sum` name the                                          constructors of `{ident}`: remove `rename`, and                                          rename a variant instead"
+                                    ),
+                                ));
+                            }
+                            distinct_fields(&ident.to_string(), &fields)?;
+                            Shape::Headed(Headed {
+                                fields,
+                                sum: SumField {
+                                    ident: sum.ident.clone(),
+                                    ty: sum.ty.clone(),
+                                    position: sum.position,
+                                },
+                                build: build(options.new),
+                            })
+                        }
+                        [_, second, ..] => {
+                            return Err(Error::new(
+                                second.span,
+                                format!(
+                                    "two fields of `{ident}` are marked `sum`, and only one                                      variant can name a constructor: mark one field `sum`,                                      and make the other an ordinary field"
+                                ),
+                            ))
+                        }
+                    }
                 }
                 Fields::Unnamed(fields) => {
                     let options = Options::read(&input.attrs, Place::Newtype)?;
@@ -176,13 +227,16 @@ impl Derived {
                             ));
                         }
                         let options = Options::read(&variant.attrs, Place::Variant)?;
+                        let (fields, marked) = fields_of(&variant.fields)?;
+                        if let Some(sum) = marked.first() {
+                            return Err(Error::new(
+                                sum.span,
+                                "a field of a variant cannot be marked `sum`: mark a field                                  of a struct",
+                            ));
+                        }
                         Ok(Variant {
                             ident: variant.ident.clone(),
-                            constructor: constructor(
-                                &variant.ident,
-                                options.rename,
-                                &variant.fields,
-                            )?,
+                            constructor: constructor(&variant.ident, options.rename, fields)?,
                         })
                     })
                     .collect::<Result<Vec<_>>>()?;
@@ -204,64 +258,103 @@ fn build(new: Option<Path>) -> Build {
     new.map_or(Build::Fields, Build::New)
 }
 
-/// The constructor of the item `ident` with the fields `fields`, named
-/// `rename` or else `ident`.
-fn constructor(ident: &Ident, rename: Option<LitStr>, fields: &Fields) -> Result<Constructor> {
-    let name = stored_name(ident, rename, Kind::Constructor)?;
-    let fields = fields
-        .iter()
-        .map(|field| {
-            let ident = field
-                .ident
-                .clone()
-                .ok_or_else(|| Error::new(field.span(), "a stored field has a name"))?;
-            let options = Options::read(&field.attrs, Place::Field)?;
-            let role = match options.skip {
-                Some(skip) => {
-                    if options.rename.is_some()
-                        || options.default.is_some()
-                        || options.with.is_some()
-                    {
-                        return Err(Error::new(
-                            skip,
-                            "a skipped field is not in the literal: remove `rename`, \
-                             `default` and `with`, or remove `skip`",
-                        ));
-                    }
-                    Role::Skipped
-                }
-                None => Role::Stored(Stored {
-                    name: stored_name(&ident, options.rename, Kind::Field)?,
-                    absent: match options.default {
-                        Some(_) => Absent::Default,
-                        None => Absent::Refused,
-                    },
-                    codec: options.with.map_or(Codec::Literal, Codec::With),
-                }),
-            };
-            Ok(Field {
-                ident,
-                ty: field.ty.clone(),
-                role,
-            })
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let mut seen = BTreeSet::new();
-    for field in &fields {
-        if let Role::Stored(stored) = &field.role {
-            if !seen.insert(stored.name.as_str()) {
+/// A field marked `sum`, with where it stands.
+struct Marked {
+    ident: Ident,
+    ty: Type,
+    span: Span,
+    /// The number of unmarked fields before it.
+    position: usize,
+}
+
+/// The fields of an item, and the fields marked `sum`.
+fn fields_of(fields: &Fields) -> Result<(Vec<Field>, Vec<Marked>)> {
+    let mut unmarked = Vec::new();
+    let mut marked = Vec::new();
+    for field in fields {
+        let ident = field
+            .ident
+            .clone()
+            .ok_or_else(|| Error::new(field.span(), "a stored field has a name"))?;
+        let options = Options::read(&field.attrs, Place::Field)?;
+        if let Some(sum) = options.sum {
+            if options.rename.is_some()
+                || options.default.is_some()
+                || options.skip.is_some()
+                || options.with.is_some()
+            {
                 return Err(Error::new(
-                    field.ident.span(),
-                    format!(
-                        "two fields of `{name}` are stored as `{}`: give one of them another \
-                         name with #[literal(rename = \"...\")]",
-                        stored.name
-                    ),
+                    sum,
+                    "the field marked `sum` is read from the constructor's name: remove \
+                     `rename`, `default`, `skip` and `with` from it",
                 ));
             }
+            marked.push(Marked {
+                ident,
+                ty: field.ty.clone(),
+                span: sum,
+                position: unmarked.len(),
+            });
+            continue;
+        }
+        let role = match options.skip {
+            Some(skip) => {
+                if options.rename.is_some() || options.default.is_some() || options.with.is_some() {
+                    return Err(Error::new(
+                        skip,
+                        "a skipped field is not in the literal: remove `rename`, \
+                         `default` and `with`, or remove `skip`",
+                    ));
+                }
+                Role::Skipped
+            }
+            None => Role::Stored(Stored {
+                name: stored_name(&ident, options.rename, Kind::Field)?,
+                absent: match options.default {
+                    Some(_) => Absent::Default,
+                    None => Absent::Refused,
+                },
+                codec: options.with.map_or(Codec::Literal, Codec::With),
+            }),
+        };
+        unmarked.push(Field {
+            ident,
+            ty: field.ty.clone(),
+            role,
+        });
+    }
+    Ok((unmarked, marked))
+}
+
+/// The constructor of the item `ident` with the fields `fields`, named
+/// `rename` or else `ident`.
+fn constructor(ident: &Ident, rename: Option<LitStr>, fields: Vec<Field>) -> Result<Constructor> {
+    let name = stored_name(ident, rename, Kind::Constructor)?;
+    distinct_fields(&name, &fields)?;
+    Ok(Constructor { name, fields })
+}
+
+/// Refuses two fields stored under one name, in the constructor `name`.
+fn distinct_fields(name: &str, fields: &[Field]) -> Result<()> {
+    let mut seen = BTreeSet::new();
+    for field in fields {
+        match &field.role {
+            Role::Stored(stored) => {
+                if !seen.insert(stored.name.as_str()) {
+                    return Err(Error::new(
+                        field.ident.span(),
+                        format!(
+                            "two fields of `{name}` are stored as `{}`: give one of them \
+                             another name with #[literal(rename = \"...\")]",
+                            stored.name
+                        ),
+                    ));
+                }
+            }
+            Role::Skipped => {}
         }
     }
-    Ok(Constructor { name, fields })
+    Ok(())
 }
 
 fn distinct_constructors(ident: &Ident, variants: &[Variant]) -> Result<()> {
