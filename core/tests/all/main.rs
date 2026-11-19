@@ -41,6 +41,7 @@ mod nest_histories;
 mod note;
 mod observe;
 mod order_laws;
+mod printable;
 mod recur_vectors;
 mod redundant_deps;
 mod registers;

@@ -12,15 +12,15 @@
 //! The printer reproduces CPython's `repr` for every case the store holds:
 //! floats through the shortest round-tripping digits and CPython's own
 //! fixed/scientific cutover, strings through `str.isprintable`'s Unicode
-//! categories. Those two are the whole subtlety of §2; see `print_float` and
-//! `push_str_repr`.
+//! categories as Unicode 16.0.0 assigns them ([`printable`]). Those two are
+//! the whole subtlety of §2; see `print_float` and `push_str_repr`.
 
 pub mod codec;
+pub mod printable;
 
 use std::fmt::Write as _;
 
 use thiserror::Error;
-use unicode_general_category::{get_general_category, GeneralCategory};
 
 /// Every refusal in the core. Nothing here panics on input (§2: parsing is
 /// fuzzed), so every boundary returns one of these.
@@ -636,27 +636,6 @@ pub fn print_float(value: f64) -> String {
     out
 }
 
-/// CPython's `str.isprintable`: everything except the categories Cc, Cf, Cs,
-/// Co, Cn, Zl, Zp and Zs — with SPACE the one exception, printable despite
-/// being Zs. (`Cs`, surrogates, cannot occur in a Rust `str` at all; the arm is
-/// kept because the rule is the rule.)
-pub fn is_printable(c: char) -> bool {
-    if c == ' ' {
-        return true;
-    }
-    !matches!(
-        get_general_category(c),
-        GeneralCategory::Control
-            | GeneralCategory::Format
-            | GeneralCategory::Surrogate
-            | GeneralCategory::PrivateUse
-            | GeneralCategory::Unassigned
-            | GeneralCategory::LineSeparator
-            | GeneralCategory::ParagraphSeparator
-            | GeneralCategory::SpaceSeparator
-    )
-}
-
 /// CPython's `repr(str)`, as a string — the one string printer in the crate.
 pub fn print_str(text: &str) -> String {
     let mut out = String::new();
@@ -686,7 +665,7 @@ fn push_str_repr(out: &mut String, text: &str) {
                 let _ = write!(out, "\\x{:02x}", c as u32);
             }
             _ if (c as u32) < 0x7f => out.push(c),
-            _ if is_printable(c) => out.push(c),
+            _ if printable::is_printable(c) => out.push(c),
             _ => {
                 let point = c as u32;
                 if point < 0x100 {

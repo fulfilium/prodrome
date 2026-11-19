@@ -99,6 +99,28 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The printable set of a string's print is the one of Unicode 16.0.0, in
+  every build (SPEC §2, law 67).** This is a clarification, and it changes
+  the name of no valid object. The printer writes a printable character
+  outside ASCII as itself and any other one as an escape, so the set
+  decides the print and the name of each object that holds a string. The
+  printer asked the crate `unicode-general-category` at any version 1.x
+  for each category, so a version with the data of a later Unicode would
+  print a newly assigned character as itself, and would give the object
+  another name. The set is now a table in the core,
+  `literal::printable`, that `scripts/printable.py` generates from the
+  `UnicodeData.txt` of Unicode 16.0.0. SPEC §2 names the version and
+  states the SHA-256 of the set. A test compares the table with version
+  1.1.0 of the crate for every character, and names each code point that
+  differs. The function `literal::is_printable` moves to
+  `literal::printable::is_printable`. Unicode 18.0.0 assigns 17,810 code
+  points that are unassigned in 16.0.0, and each of them prints as an
+  escape. The WebAssembly module has a new export `printable`, which
+  answers the Unicode version and the digest. The module
+  `prodrome_bg.wasm` falls from 1,418,987 to 1,375,397 bytes, because the
+  table holds only the printable set and not every category. No stored
+  constructor changes.
+
 - **`verify` finds a redundant dep with one walk over the linear order
   (SPEC law 66).** The rule reports a dep of a change that another dep of
   the same change rests on. It built the closure of each dep's parents, so

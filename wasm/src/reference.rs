@@ -55,6 +55,13 @@ pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_owned()
 }
 
+/// SPEC §2's printable set: its Unicode version and its SHA-256
+/// ([`exports::printable`]).
+#[wasm_bindgen]
+pub fn printable() -> String {
+    exports::printable()
+}
+
 // --- §3: verify --------------------------------------------------------------
 
 /// §3's `verify`, for the set of objects a browser was handed: the reference

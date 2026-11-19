@@ -38,8 +38,8 @@ equal values print byte-identically.
   `inf` and `nan` are not storable.
 - Strings: Python `repr`: single quotes unless the text contains `'` and no
   `"`; escapes `\\`, the delimiter, `\n`, `\r`, `\t`; other non-printable
-  characters as `\xNN`, `\uNNNN`, `\UNNNNNNNN` per `str.isprintable`;
-  printable non-ASCII as itself.
+  characters as `\xNN`, `\uNNNN`, `\UNNNNNNNN`; printable non-ASCII as
+  itself. The printable set is defined below.
 - `datetime(Y, M, D, h, m, s)`, with a seventh microsecond argument only when
   non-zero; naive local time.
 - `timedelta(days=…, seconds=…, microseconds=…)`, only the non-zero parts, in
@@ -51,6 +51,31 @@ equal values print byte-identically.
   payload's — its record kind and the constructors that kind's fields nest —
   so the whitelist is a union and is still a whitelist; where the two would
   name the same constructor, the core's wins and the host's is unreachable.
+
+**The printable set.** The General_Category values of Unicode 16.0.0
+decide which characters print as themselves. A character is printable when
+its category is not Cc, Cf, Cs, Co, Cn, Zl, Zp or Zs, and SPACE (U+0020) is
+printable too. These are the categories that CPython's `str.isprintable`
+refuses. The Unicode version is part of this specification, and it never
+changes. So the print of a string is a function of the text alone, in every
+implementation and every build, and an object keeps its name. An
+implementation must not take the set from the Unicode data that it links,
+or from its language's own `isprintable`, because that data follows a
+different Unicode version. A character that a later version of Unicode
+assigns is unassigned (Cn) in 16.0.0, so it prints as an escape. The parser
+reads the escape back to the same character, so the print loses nothing.
+The set holds 154,810 characters in 736 ranges. Write each range as one
+line, `FIRST..LAST` and a newline, with each code point in uppercase hex
+of at least four digits, as in `0020..007E`. The SHA-256 of these lines,
+in order, is
+`b428bdfd5ffc52d306a2642112ab0f61bfd99eabef85e4d1a4f37ede2cc48595`. An
+implementation can compare this digest with the one of its own table.
+
+This rule is a clarification, and it changes the name of no valid object.
+Before the rule, the reference implementation took the set from the crate
+`unicode-general-category` at any version 1.x. Versions 1.0.0 and 1.1.0,
+the only ones published, hold the data of Unicode 16.0.0, and law 67 checks
+that the set above is the set of that data for every character.
 
 Parsing admits exactly this grammar: no names, operators, comprehensions or
 attribute access. A call dispatches to its smart constructor, whose error is
@@ -2018,6 +2043,24 @@ under names that the test chooses.
     specification is the closure.
     `redundant_deps.rs::the_deps_rule_is_the_closure_rule`,
     `redundant_deps.rs::a_dep_on_a_cycle_lies_beneath_itself`.
+
+Law 67 is §2's printable set, over every Unicode scalar value, over the
+conformance vectors, and over generated text.
+
+67. **The print of a string is a function of its text alone.** The
+    printable set has the SHA-256 and the size that §2 states. For every
+    Unicode scalar value, a character is in the set exactly when its
+    General_Category in Unicode 16.0.0 is not Cc, Cf, Cs, Co, Cn, Zl, Zp
+    or Zs, or it is SPACE. For any text, the characters outside ASCII that
+    the print writes as themselves are exactly the printable ones, and the
+    print parses back to the text. The printer writes every stored object
+    and term in the conformance vectors byte for byte as the vector holds
+    it.
+    `printable.rs::the_printable_set_has_the_digest_of_the_spec`,
+    `printable.rs::the_printable_set_is_the_one_of_unicode_16`,
+    `printable.rs::a_later_assignment_prints_as_an_escape`,
+    `printable.rs::every_print_in_the_vectors_is_unchanged`,
+    `printable.rs::a_print_writes_as_itself_what_unicode_16_calls_printable`.
 
 Law 68 is a script of steps over three replicas (`laws::script`), over
 the todo schema and the tag set's two schemas. Three actors each hold a
