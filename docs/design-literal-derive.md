@@ -175,8 +175,6 @@ in parallel with the core's other dependencies.
 - `Hash`: it holds its digest twice, as words and as text, so it is not a
   newtype.
 - `Term`: the FPL signature table prints and reads a term.
-- `dag::Heads`: its reads use the messages of `Fields::get`, and the store
-  reports them. A derived impl would change those messages.
 - `Span` in `core/examples/memo_file.rs`: its literal is a tuple, which a
   derived impl does not write.
 - `Verdict` and `Review` in `core/tests/all/codec.rs`, and `Thread` in

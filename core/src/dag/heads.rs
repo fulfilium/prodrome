@@ -3,24 +3,24 @@
 use std::collections::BTreeSet;
 
 use crate::event::Hash;
-use crate::literal::codec::{record, Constructor, Fields, Literal};
-use crate::literal::{parse_literal, print_literal, ProdromeError, Table, Value};
+use crate::literal::codec::{Literal, Record};
+use crate::literal::{parse_literal, print_literal, ProdromeError, Table};
 
 /// The tips of a history and the count of its objects. A store records
 /// its heads in a file (SPEC §3), and a replica answers them from what it
 /// holds.
 ///
 /// The fields are private. A program gets a `Heads` from a derivation in
-/// this crate or from [`Heads::parse`], so a `Heads` value is always one
-/// of the two.
-#[derive(Debug, Clone, PartialEq, Eq)]
+/// this crate, or from a read of its literal ([`Heads::parse`] or
+/// [`Literal::from_value`]), so a `Heads` value is always one of the two.
+///
+/// It prints as `Heads(count=<n>, tips=(<names>))`, with the fields in
+/// their order here.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
 pub struct Heads {
-    tips: BTreeSet<Hash>,
     count: usize,
+    tips: BTreeSet<Hash>,
 }
-
-/// The constructor of a record of heads, with its fields in printed order.
-const HEADS: Constructor = ("Heads", &["count", "tips"]);
 
 impl Heads {
     /// The heads of a history whose tips are `tips` and which holds
@@ -57,7 +57,7 @@ impl Heads {
     /// The text does not parse as a `Heads` call, or it is not the
     /// canonical print of the value that it parses to.
     pub fn parse(text: &str) -> Result<Heads, ProdromeError> {
-        let heads = Heads::from_value(&parse_literal(text, &Table(&[HEADS]))?)?;
+        let heads = Heads::from_value(&parse_literal(text, &Table(&[Heads::CONSTRUCTOR]))?)?;
         if heads.print() == text {
             Ok(heads)
         } else {
@@ -65,19 +65,5 @@ impl Heads {
                 "a record of heads is not in its canonical print",
             ))
         }
-    }
-}
-
-impl Literal for Heads {
-    fn to_value(&self) -> Value {
-        record(HEADS, vec![self.count.to_value(), self.tips.to_value()])
-    }
-
-    fn from_value(value: &Value) -> Result<Self, ProdromeError> {
-        let fields = Fields::of(value, HEADS)?;
-        Ok(Heads {
-            tips: fields.get("tips")?,
-            count: fields.get("count")?,
-        })
     }
 }

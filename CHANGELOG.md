@@ -129,7 +129,8 @@ constructor's fields never change, in any release.
   a property compares the old `Fields` and the new one, and four readers of
   this repository as they were and as they are, over generated values and
   changed ones. Only the messages change, and no stored form changes.
-  A breaking change to `Fields::among`, `no_arm` and `Body`.
+  `dag::Heads` derives its codec. A breaking change to `Fields::among`,
+  `no_arm` and `Body`.
 - **`Payload` requires `Record`, and loses `KIND`, `FIELDS`, `fields` and
   `from_fields`.** `Record::CONSTRUCTOR` gives the record kind's name and
   fields, `Record::values` the values, and `Record::from_call` the read. A
