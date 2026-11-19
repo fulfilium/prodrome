@@ -15,6 +15,7 @@ mod codec;
 mod conformance_view;
 mod dag;
 mod declared;
+mod derive;
 mod digest;
 mod digest_reference;
 mod down_set;
