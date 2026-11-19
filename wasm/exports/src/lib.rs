@@ -397,6 +397,19 @@ pub fn name_of(text: &str) -> String {
         .collect()
 }
 
+/// The printable set of SPEC §2, which decides how a string prints, and so
+/// the name of each object that holds the string: the version of Unicode
+/// that defines the set, and the SHA-256 of the set. A page compares the
+/// digest with the one of the program that wrote its objects, to know that
+/// both programs print every string alike.
+pub fn printable() -> String {
+    json!({
+        "unicode": prodrome::literal::printable::UNICODE_VERSION,
+        "sha256": prodrome::literal::printable::digest().as_str(),
+    })
+    .to_string()
+}
+
 /// An answer as an export returns it: a refusal is the exception a JS caller
 /// catches, never a panic, which would leave the module poisoned for the rest
 /// of the session.

@@ -84,6 +84,7 @@ fn answers() -> String {
     let mut out = String::new();
     let mut put = |call: String, answer: String| writeln!(out, "{call}\n{answer}").expect("writes");
 
+    put("printable".into(), crate::printable());
     put("verify_objects".into(), ok(crate::verify_objects(&sent)));
     let folded = ok(crate::fold(&sent, None, UNTRUSTED));
     put("fold".into(), folded.clone());
