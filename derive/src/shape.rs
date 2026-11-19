@@ -58,10 +58,19 @@ pub struct SumField {
     pub position: usize,
 }
 
-/// One variant of a sum, and its constructor.
+/// One variant of a sum, and what it prints.
 pub struct Variant {
     pub ident: Ident,
-    pub constructor: Constructor,
+    pub arm: Arm,
+}
+
+/// What a variant of a sum prints.
+pub enum Arm {
+    /// A constructor of its own, with the variant's named fields.
+    Own(Constructor),
+    /// The call of the record of this type, the variant's one unnamed
+    /// field: the record's constructor, with the record's fields.
+    Holds(Type),
 }
 
 /// A newtype: the type of its field, and how a read builds the value.
@@ -216,29 +225,50 @@ fn newtype_shape(ident: &Ident, options: Options, fields: &FieldsUnnamed) -> Res
     }
 }
 
-/// A variant of a sum, with named fields or none.
+/// A variant of a sum: one with named fields or none, or one that holds a
+/// record in its one unnamed field.
 fn variant(variant: &syn::Variant) -> Result<Variant> {
-    if let Fields::Unnamed(fields) = &variant.fields {
-        return Err(Error::new(
-            fields.span(),
-            format!(
-                "a literal names each field of a constructor: write the variant as \
-                 `{} {{ name: Type }}`",
-                variant.ident
-            ),
-        ));
-    }
     let options = Options::read(&variant.attrs, Place::Variant)?;
-    let (fields, marked) = fields_of(&variant.fields)?;
-    if let Some(sum) = marked.first() {
-        return Err(Error::new(
-            sum.span,
-            "a field of a variant cannot be marked `sum`: mark a field of a struct",
-        ));
-    }
+    let tag = &variant.ident;
+    let arm = match &variant.fields {
+        Fields::Unnamed(fields) => match fields.unnamed.iter().collect::<Vec<_>>().as_slice() {
+            [field] => {
+                Options::read(&field.attrs, Place::Inner)?;
+                if let Some(rename) = options.rename {
+                    return Err(Error::new(
+                        rename.span(),
+                        format!(
+                            "`{tag}` holds a record, and the record's constructor is the \
+                             variant's: remove `rename`, and rename the record instead"
+                        ),
+                    ));
+                }
+                Arm::Holds(field.ty.clone())
+            }
+            _ => {
+                return Err(Error::new(
+                    fields.span(),
+                    format!(
+                        "a variant with unnamed fields holds exactly one record: write \
+                         `{tag}(Record)`, or name the fields as `{tag} {{ name: Type }}`"
+                    ),
+                ))
+            }
+        },
+        Fields::Named(_) | Fields::Unit => {
+            let (fields, marked) = fields_of(&variant.fields)?;
+            if let Some(sum) = marked.first() {
+                return Err(Error::new(
+                    sum.span,
+                    "a field of a variant cannot be marked `sum`: mark a field of a struct",
+                ));
+            }
+            Arm::Own(constructor(tag, options.rename, fields)?)
+        }
+    };
     Ok(Variant {
-        ident: variant.ident.clone(),
-        constructor: constructor(&variant.ident, options.rename, fields)?,
+        ident: tag.clone(),
+        arm,
     })
 }
 
@@ -385,17 +415,24 @@ fn distinct_fields(name: &str, fields: &[Field]) -> Result<()> {
     Ok(())
 }
 
+/// Refuses two variants with constructors of their own under one name. The
+/// name of a record that a variant holds is a constant of the record's
+/// type, which the macro does not see: the derive writes a check that the
+/// compiler evaluates for it.
 fn distinct_constructors(ident: &Ident, variants: &[Variant]) -> Result<()> {
     let mut seen = BTreeSet::new();
-    for variant in variants {
-        if !seen.insert(variant.constructor.name.as_str()) {
+    for (variant, constructor) in variants.iter().filter_map(|variant| match &variant.arm {
+        Arm::Own(constructor) => Some((variant, constructor)),
+        Arm::Holds(_) => None,
+    }) {
+        if !seen.insert(constructor.name.as_str()) {
             return Err(Error::new(
                 variant.ident.span(),
                 format!(
                     "two constructors of `{ident}` are named `{}`: a read could not tell \
                      them apart, so give one of them another name with \
                      #[literal(rename = \"...\")]",
-                    variant.constructor.name
+                    constructor.name
                 ),
             ));
         }

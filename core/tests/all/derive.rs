@@ -682,3 +682,107 @@ fn a_newtype_over_a_todo_id_derives() {
         ))
     );
 }
+
+// --- a sum whose variant holds a record ---------------------------------------
+
+/// A mail that a proposal would send: a record whose stored name is `Email`.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(rename = "Email")]
+struct Draft {
+    to: Actor,
+    subject: String,
+}
+
+/// A note that a proposal would leave.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Memo {
+    lines: Vec<String>,
+}
+
+/// What a proposal would do: two variants that hold a record, and one with
+/// a constructor of its own.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+enum Proposal {
+    Email(Draft),
+    Memo(Memo),
+    Dropped { why: Option<String> },
+}
+
+/// A filed proposal: a record whose sum's variants hold records.
+#[derive(Debug, Clone, PartialEq, Eq, Literal)]
+struct Filed {
+    at: Datetime,
+    #[literal(sum)]
+    proposal: Proposal,
+}
+
+/// The constructors of a sum whose variants hold records are the records'
+/// constructors, in the order of the variants.
+#[test]
+fn a_held_record_gives_the_sum_its_constructor() {
+    let pinned: [Constructor; 3] = [
+        ("Email", &["to", "subject"]),
+        ("Memo", &["lines"]),
+        ("Dropped", &["why"]),
+    ];
+    assert_eq!(Proposal::CONSTRUCTORS, pinned);
+    let pinned: [Constructor; 3] = [
+        ("Email", &["at", "to", "subject"]),
+        ("Memo", &["at", "lines"]),
+        ("Dropped", &["at", "why"]),
+    ];
+    assert_eq!(Filed::CONSTRUCTORS, pinned);
+    assert_eq!(
+        Proposal::from_value(&Value::call("Draft", vec![])),
+        Err(ProdromeError::invalid(
+            "Draft is not one of Proposal's constructors"
+        ))
+    );
+}
+
+fn a_proposal() -> impl Strategy<Value = Proposal> {
+    prop_oneof![
+        (
+            "[a-z][a-z0-9_-]{0,8}"
+                .prop_map(|text| Actor::new(text).expect("the pattern is an actor")),
+            any::<String>()
+        )
+            .prop_map(|(to, subject)| Proposal::Email(Draft { to, subject })),
+        prop::collection::vec(any::<String>(), 0..3)
+            .prop_map(|lines| Proposal::Memo(Memo { lines })),
+        any::<Option<String>>().prop_map(|why| Proposal::Dropped { why }),
+    ]
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(1024))]
+
+    /// A variant that holds a record prints as the record's call, and a read
+    /// of a call, changed in up to four places, reads that variant exactly
+    /// where the record's own read reads the record.
+    #[test]
+    fn a_held_record_prints_and_reads_as_its_own_call(
+        proposal in a_proposal(),
+        at in a_datetime(),
+        changes in prop::collection::vec(a_change(&["Email", "Memo", "Dropped", "Other"]), 0..5),
+    ) {
+        let value = proposal.to_value();
+        match &proposal {
+            Proposal::Email(draft) => prop_assert_eq!(&value, &draft.to_value()),
+            Proposal::Memo(memo) => prop_assert_eq!(&value, &memo.to_value()),
+            Proposal::Dropped { .. } => {}
+        }
+        prop_assert_eq!(Proposal::from_value(&value), Ok(proposal.clone()));
+        let filed = Filed { at, proposal };
+        prop_assert_eq!(Filed::from_value(&filed.to_value()), Ok(filed));
+
+        let value = changed(value, &changes);
+        let read = Proposal::from_value(&value);
+        let by_name = match value.as_call().map(|call| call.name.as_str()) {
+            Some("Email") => Draft::from_value(&value).map(Proposal::Email),
+            Some("Memo") => Memo::from_value(&value).map(Proposal::Memo),
+            _ => read.clone(),
+        };
+        prop_assert_eq!(read, by_name);
+    }
+}

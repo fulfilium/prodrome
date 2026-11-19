@@ -19,7 +19,7 @@ pub enum Place {
     Variant,
     /// A named field of a struct or of a variant.
     Field,
-    /// The one field of a newtype.
+    /// The one field of a newtype, or of a variant that holds a record.
     Inner,
 }
 
@@ -89,7 +89,7 @@ impl Place {
             Place::Sum => "an enum",
             Place::Variant => "a variant",
             Place::Field => "a named field",
-            Place::Inner => "the field of a newtype",
+            Place::Inner => "an unnamed field",
         }
     }
 }

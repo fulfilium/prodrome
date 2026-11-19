@@ -61,7 +61,13 @@ floats differ from CPython's `repr`, which SPEC §2 requires.
   (`CONSTRUCTOR`), the values of the fields, and a read of a call whatever
   its name (`from_call`), which the event layer uses for a payload's record.
 - An enum has one constructor for each variant. A variant has named fields
-  or none.
+  or none, or it holds one record in its one unnamed field. A variant that
+  holds a record prints and reads as the record's call: `Email(Draft)`
+  prints `Email(to='ada')` when the constructor of `Draft` is `Email`. The
+  record's constructor is the variant's, so `rename` does not apply to
+  such a variant. The derive of the enum does not see the record's name,
+  so a check that the compiler evaluates refuses two variants whose
+  constructors have one name (`codec::distinct`).
 - A struct with one unnamed field is a newtype, and its literal is its
   field's.
 
@@ -81,11 +87,12 @@ floats differ from CPython's `repr`, which SPEC §2 requires.
   check that the compiler evaluates, and not by the macro.
 
 The derive refuses, with a message that says what to write: a generic type,
-a struct with two or more unnamed fields, a variant with unnamed fields, an
-enum without variants, a union, two constructors of one sum with one name,
+a struct with two or more unnamed fields, a variant with unnamed fields
+other than one record, an enum without variants, a union, two constructors of one sum with one name,
 two fields of one constructor with one name, a stored name that the
-grammar cannot read, two fields marked `sum` in one struct, and a field
-name that is both the struct's and a variant's.
+grammar cannot read, two fields marked `sum` in one struct, a field name
+that is both the struct's and a variant's, and two variants that hold
+records with one constructor's name.
 
 ## The path of the core
 

@@ -30,8 +30,11 @@ use syn::{parse_macro_input, DeriveInput};
 ///   read of a call whatever its name (`Record::from_call`). A unit struct
 ///   is a constructor with no fields.
 /// - **A sum**, an enum, has one constructor for each variant. A variant
-///   has named fields or none. A read refuses a call of a name that no
-///   variant has.
+///   has named fields or none, and its constructor is its own. A variant
+///   can instead hold one record, its one unnamed field: it prints and
+///   reads as that record's call, with the record's constructor. A read
+///   refuses a call of a name that no variant has. Two variants whose
+///   constructors have one name are refused when the program compiles.
 /// - **A newtype**, a struct with one unnamed field, prints and reads as
 ///   its field.
 /// - **A record with a sum**, a struct with named fields of which one is
@@ -93,18 +96,42 @@ use syn::{parse_macro_input, DeriveInput};
 ///
 /// The derive refuses a type that has no literal form, with a message that
 /// says what to write: a generic type, a struct with two or more unnamed
-/// fields, a variant with unnamed fields, an enum with no variants, a union,
-/// two constructors of a sum with one name, two fields of a constructor
-/// with one name, a stored name that the literal grammar cannot read, two
-/// fields marked `sum` in one struct, and a field name that is both one of
-/// the struct's and one of a variant's. The last refusal is a check that
-/// the compiler evaluates, because the struct's derive does not see the
-/// enum's fields; its message names the field.
+/// fields, a variant with unnamed fields other than one record, an enum
+/// with no variants, a union, two constructors of a sum with one name, two
+/// fields of a constructor with one name, a stored name that the literal
+/// grammar cannot read, two fields marked `sum` in one struct, and a field
+/// name that is both one of the struct's and one of a variant's. Two of
+/// these refusals are checks that the compiler evaluates, because the
+/// derive of one type does not see the declaration of another: a field
+/// name that is both the struct's and a variant's, and two constructors of
+/// one name where a variant holds a record. The message names the field,
+/// or the sum.
 ///
 /// ```compile_fail
 /// #[derive(prodrome::literal::codec::Literal)]
 /// enum Shape {
-///     Circle(u32),
+///     Circle(u32, u32),
+/// }
+/// ```
+///
+/// ```compile_fail
+/// use prodrome::literal::codec::Literal;
+///
+/// #[derive(Literal)]
+/// struct Draft {
+///     to: String,
+/// }
+///
+/// #[derive(Literal)]
+/// #[literal(rename = "Draft")]
+/// struct Reply {
+///     to: String,
+/// }
+///
+/// #[derive(Literal)]
+/// enum Proposal {
+///     New(Draft),
+///     Answer(Reply),
 /// }
 /// ```
 ///
@@ -201,6 +228,32 @@ use syn::{parse_macro_input, DeriveInput};
 /// );
 /// assert_eq!(Verdict::from_value(&verdict.to_value()), Ok(verdict));
 /// ```
+/// # A sum whose variant holds a record
+///
+/// ```
+/// use prodrome::literal::codec::{Literal, Record};
+/// use prodrome::literal::print_literal;
+///
+/// /// A mail that a proposal would send.
+/// #[derive(Debug, PartialEq, Literal)]
+/// #[literal(rename = "Email")]
+/// struct Draft {
+///     to: String,
+/// }
+///
+/// /// What a proposal would do.
+/// #[derive(Debug, PartialEq, Literal)]
+/// enum Proposal {
+///     Email(Draft),
+///     Dropped,
+/// }
+///
+/// let proposal = Proposal::Email(Draft { to: "ada".to_owned() });
+/// assert_eq!(print_literal(&proposal.to_value()), "Email(to='ada')");
+/// assert_eq!(Proposal::CONSTRUCTORS, &[Draft::CONSTRUCTOR, ("Dropped", &[][..])]);
+/// assert_eq!(Proposal::from_value(&proposal.to_value()), Ok(proposal));
+/// ```
+///
 /// # A record with a sum
 ///
 /// ```

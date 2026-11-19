@@ -10,6 +10,11 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A derived sum's variant can hold one record.** A variant whose one
+  unnamed field is a record, as `Email(Draft)`, prints and reads as the
+  record's call, with the record's constructor and fields. Two variants
+  whose constructors have one name are refused when the program compiles.
+  `codec::distinct` is the check.
 - **`TodoId` is a `Literal`, as `Actor` is.** Its literal is its text, and
   a read checks the text with `TodoId::new`. A host's newtype over a
   `TodoId` derives its codec.

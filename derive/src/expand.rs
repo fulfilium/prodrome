@@ -10,7 +10,7 @@ use quote::{format_ident, quote, ToTokens};
 use syn::Path;
 
 use crate::shape::{
-    Absent, Build, Codec, Constructor, Derived, Field, Headed, Newtype, Record, Role, Shape,
+    Absent, Arm, Build, Codec, Constructor, Derived, Field, Headed, Newtype, Record, Role, Shape,
     Variant,
 };
 
@@ -96,40 +96,17 @@ fn expand_record(core: &Core, ident: &Ident, record: &Record) -> TokenStream {
 
 fn expand_sum(core: &Core, ident: &Ident, variants: &[Variant]) -> TokenStream {
     let Core { codec, literal } = core;
-    let tables = variants.iter().map(|variant| table(&variant.constructor));
-    let arms_print = variants.iter().map(|variant| {
-        let tag = &variant.ident;
-        let table = table(&variant.constructor);
-        let binds = bindings(&variant.constructor);
-        let prints = variant
-            .constructor
-            .fields
-            .iter()
-            .enumerate()
-            .filter_map(|(index, field)| print(core, field, &local(index).to_token_stream()));
-        quote! {
-            Self::#tag { #(#binds,)* .. } => (#table, ::std::vec![#(#prints),*]),
-        }
+    let tables = variants.iter().map(|variant| match &variant.arm {
+        Arm::Own(constructor) => table(constructor),
+        Arm::Holds(record) => quote!(<#record as #codec::Record>::CONSTRUCTOR),
     });
-    let arms_read = variants.iter().map(|variant| {
-        let tag = &variant.ident;
-        let name = &variant.constructor.name;
-        let reads = reads(core, &variant.constructor.fields);
-        let build = build(
-            &variant.constructor.fields,
-            &[],
-            &quote!(Self::#tag),
-            &Build::Fields,
-        );
-        quote! {
-            #name => {
-                #reads
-                #build
-            }
-        }
-    });
-    let what = ident.to_string();
+    let arms_print = variants.iter().map(|variant| arm_print(core, variant));
+    let arms_read = variants.iter().map(|variant| arm_read(core, variant));
+    let sum = ident.to_string();
+    let distinct = distinct_check(core, ident, variants);
     quote! {
+        #distinct
+
         impl #codec::Sum for #ident {
             fn arm(&self) -> (#codec::Constructor, ::std::vec::Vec<#literal::Value>) {
                 match self {
@@ -142,7 +119,7 @@ fn expand_sum(core: &Core, ident: &Ident, variants: &[Variant]) -> TokenStream {
             ) -> ::std::result::Result<Self, #literal::ProdromeError> {
                 match call.name.as_str() {
                     #(#arms_read)*
-                    other => ::std::result::Result::Err(#codec::no_arm(#what, other)),
+                    other => ::std::result::Result::Err(#codec::no_arm(#sum, other)),
                 }
             }
         }
@@ -162,6 +139,87 @@ fn expand_sum(core: &Core, ident: &Ident, variants: &[Variant]) -> TokenStream {
             }
         }
     }
+}
+
+/// The arm of `Sum::arm` for `variant`: its constructor and its values.
+fn arm_print(core: &Core, variant: &Variant) -> TokenStream {
+    let codec = &core.codec;
+    let tag = &variant.ident;
+    match &variant.arm {
+        Arm::Own(constructor) => {
+            let table = table(constructor);
+            let binds = bindings(constructor);
+            let prints = constructor
+                .fields
+                .iter()
+                .enumerate()
+                .filter_map(|(index, field)| print(core, field, &local(index).to_token_stream()));
+            quote! {
+                Self::#tag { #(#binds,)* .. } => (#table, ::std::vec![#(#prints),*]),
+            }
+        }
+        Arm::Holds(record) => {
+            let held = local(0);
+            quote! {
+                Self::#tag(#held) => (
+                    <#record as #codec::Record>::CONSTRUCTOR,
+                    <#record as #codec::Record>::values(#held),
+                ),
+            }
+        }
+    }
+}
+
+/// The arm of `Sum::from_arm` that reads `variant` from `call`.
+fn arm_read(core: &Core, variant: &Variant) -> TokenStream {
+    let codec = &core.codec;
+    let tag = &variant.ident;
+    match &variant.arm {
+        Arm::Own(constructor) => {
+            let name = &constructor.name;
+            let reads = reads(core, &constructor.fields);
+            let build = build(
+                &constructor.fields,
+                &[],
+                &quote!(Self::#tag),
+                &Build::Fields,
+            );
+            quote! {
+                #name => {
+                    #reads
+                    #build
+                }
+            }
+        }
+        Arm::Holds(record) => quote! {
+            name if name == <#record as #codec::Record>::CONSTRUCTOR.0 => {
+                <#record as #codec::Record>::from_call(call).map(Self::#tag)
+            }
+        },
+    }
+}
+
+/// Where a variant holds a record, a check that the compiler evaluates:
+/// the constructors of the sum have distinct names. The name of a held
+/// record is a constant of its type, which the macro does not see.
+fn distinct_check(core: &Core, ident: &Ident, variants: &[Variant]) -> Option<TokenStream> {
+    let codec = &core.codec;
+    variants
+        .iter()
+        .any(|variant| matches!(variant.arm, Arm::Holds(_)))
+        .then(|| {
+            let message = format!(
+                "two variants of `{ident}` print constructors of one name, so a read could \
+                 not tell them apart: give one of them another name with \
+                 #[literal(rename = \"...\")] on its variant or on its record"
+            );
+            quote! {
+                const _: () = ::std::assert!(
+                    #codec::distinct(<#ident as #codec::Literal>::CONSTRUCTORS),
+                    #message
+                );
+            }
+        })
 }
 
 fn expand_headed(core: &Core, ident: &Ident, headed: &Headed) -> TokenStream {
