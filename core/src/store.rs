@@ -52,7 +52,7 @@ use crate::literal::ProdromeError;
 use crate::policy::{Policy, Untrusted};
 use crate::registers::{Folded, Node};
 use crate::schema::Schema;
-use crate::snapshot::mk_snapshot;
+use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
 pub use decision::Decision;
@@ -457,21 +457,10 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// answer and nothing is written.
     pub fn snapshot(&self) -> Result<Hash, ProdromeError> {
         let mut decision = self.decision()?;
-        let snapshot = {
-            let genesis = decision.memory.writer(self.genesis.as_ref())?;
-            let dag = decision.memory.dag();
-            let tips = dag.tips_in(&dag.key(&genesis));
-            let previous = dag.linearise()?.iter().rev().find(|name| {
-                tips.contains(*name) && matches!(dag.get(name), Some(Envelope::Snapshot(_)))
-            });
-            let tips: Vec<Hash> = tips
-                .into_iter()
-                .filter(|tip| Some(tip) != previous)
-                .collect();
-            match previous {
-                Some(previous) if tips.is_empty() => return Ok(previous.clone()),
-                previous => mk_snapshot(genesis, tips, previous.cloned())?,
-            }
+        let genesis = decision.memory.writer(self.genesis.as_ref())?;
+        let snapshot = match attest(decision.memory.dag(), genesis)? {
+            Attestation::Standing(previous) => return Ok(previous),
+            Attestation::Fresh(snapshot) => snapshot,
         };
         decision.write(Verified::sealed(Envelope::Snapshot(snapshot)))
     }

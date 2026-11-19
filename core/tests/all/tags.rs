@@ -25,11 +25,11 @@ use proptest::prelude::*;
 
 /// A note's name.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Note(String);
+pub(crate) struct Note(String);
 
 /// A label: a word of lowercase letters.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Label(String);
+pub(crate) struct Label(String);
 
 impl TryFrom<String> for Note {
     type Error = String;
@@ -53,7 +53,7 @@ prodrome::text_literal!(Note => |note| note.0.clone(), Label => |label| label.0.
 
 /// Notes tagged with labels.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-struct Labels;
+pub(crate) struct Labels;
 
 impl Tagging for Labels {
     type Target = Note;
@@ -73,22 +73,22 @@ impl Tagging for Kinds {
     const TAG: &'static str = "kind";
 }
 
-type Memberships = MembershipEvent<Labels>;
-type Aliases = AliasEvent<Labels>;
+pub(crate) type Memberships = MembershipEvent<Labels>;
+pub(crate) type Aliases = AliasEvent<Labels>;
 type Tags = TagSet<Labels>;
 
-const LABELS: [&str; 4] = ["red", "blue", "green", "gold"];
+pub(crate) const LABELS: [&str; 4] = ["red", "blue", "green", "gold"];
 const ACTORS: [&str; 3] = ["ada", "ben", "cai"];
 
-fn label(name: &str) -> Label {
+pub(crate) fn label(name: &str) -> Label {
     Label(name.to_owned())
 }
 
-fn note(n: usize) -> Note {
+pub(crate) fn note(n: usize) -> Note {
     Note(format!("n{n}"))
 }
 
-fn at(minute: u32) -> Datetime {
+pub(crate) fn at(minute: u32) -> Datetime {
     Datetime::new(2026, 10, 21, 8 + (minute / 60) % 12, minute % 60, 0, 0).expect("an instant")
 }
 
