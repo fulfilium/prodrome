@@ -171,6 +171,10 @@ impl<'a, P: Payload> Product<'a> for Registers<'a, P> {
     fn climbed(&self, _earlier: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
+
+    fn climbing(&self) -> Vec<Kind> {
+        Vec::new()
+    }
 }
 
 impl<'a, P: Payload> Registers<'a, P> {

@@ -138,7 +138,13 @@ constructor's fields never change, in any release.
   reading. In a history that appends wrote the reading is the frontier's,
   write for write, so no honest reading changes, and no stored byte and no
   conformance vector changes. `verify` reports a write below what it rests
-  on (`Finding::Below`). `Product::frontier_mut` becomes
+  on (`Finding::Below`). A host's fixtures that were built by hand, as
+  changes with chosen deps, can show this finding at their next `verify`:
+  the review fixture of the wasm exports wrote `Closed` over `Review`, which
+  the review order does not allow, and its close now rests on nothing.
+  `verify` checks each write against the product of its nearest writes
+  beneath it, so a chain costs one join for each write, and a schema with no
+  inflationary register (`Product::climbing` is empty) costs nothing. `Product::frontier_mut` becomes
   `Product::join_to`, `Product::join` gets a default, `Product::climbed`
   states law 32 between two readings, `Frontier::grows` moves to
   `Climb::grows`, and `fold::sole::Sole` chooses how its register is held

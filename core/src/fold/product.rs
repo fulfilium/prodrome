@@ -84,6 +84,13 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     /// The first register whose reading fell.
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
 
+    /// The inflationary registers among this product's registers: those
+    /// held in a [`crate::fold::Climb`], which the append holds to
+    /// [`Product::grows`]. Empty for a schema with none, and then no write
+    /// can fall below its reading, so `verify` looks for none. A declared
+    /// schema's product learns its registers from its first write.
+    fn climbing(&self) -> Vec<<Self::Schema as Schema>::Register>;
+
     /// Every register with more than one write in its frontier, each named
     /// by its writes: what a human settles with the next one.
     fn conflicts(&self) -> BTreeMap<<Self::Schema as Schema>::Register, Vec<Hash>> {

@@ -29,10 +29,11 @@ use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
 use crate::common::draw::{a_draw, history};
+use crate::declared::a_declared_proposal;
 use crate::declared::proposal::{
     a_proposal, Field, Id, Proposal, ProposalVocabulary, Says, State, StateRegister, TagsRegister,
 };
-use crate::schema_laws::failed;
+use crate::schema_laws::{a_review_event, failed};
 
 /// A history's objects.
 type Objects = BTreeMap<Hash, Envelope<Proposal>>;
@@ -623,4 +624,73 @@ fn a_host_refusal_stops_the_script_at_its_step() {
         policy.0.get() > 0,
         "the machine reads under the host's policy"
     );
+}
+
+/// The ORACLE for `verify`'s pass: each write checked against a product
+/// made afresh of every write to its entity that it rests on, one join for
+/// each such pair.
+fn pairwise<E: prodrome::schema::Schema>(dag: &Dag<E>) -> Vec<Hash> {
+    let folded = fold(&dag.nodes().expect("a history"));
+    let mut below = Vec::new();
+    for (_, stream) in folded.entities() {
+        for (at, stamp) in stream.iter().enumerate() {
+            let mut beneath = <E::Registers<'_> as Default>::default();
+            for earlier in stream[..at]
+                .iter()
+                .filter(|earlier| stamp.descends(earlier))
+            {
+                beneath.join(earlier);
+            }
+            if beneath.grows(&stamp.event).is_err() {
+                below.push(stamp.name.clone());
+            }
+        }
+    }
+    below.sort();
+    below
+}
+
+/// What `verify` finds below, by name, in order.
+fn found_below<E: prodrome::schema::Schema>(dag: &Dag<E>) -> Vec<Hash> {
+    let mut found: Vec<Hash> = dag
+        .verify(&Everything)
+        .into_iter()
+        .filter_map(|finding| {
+            if let Finding::Below { write, .. } = finding {
+                Some(write)
+            } else {
+                None
+            }
+        })
+        .collect();
+    found.sort();
+    found
+}
+
+/// The history drawn, as a DAG.
+fn drawn<E: prodrome::schema::Schema>(events: &[(E, u64)]) -> Dag<E> {
+    history(events).into_iter().collect()
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(256))]
+
+    /// Law 32: `verify`'s pass, which checks each write against the
+    /// product of its nearest writes, finds exactly the writes that the
+    /// pairwise check finds, over drawn histories with any deps, so with
+    /// faults: at the proposal schema in Rust and declared, and at the
+    /// review schema.
+    #[test]
+    fn verify_finds_below_what_the_pairwise_check_finds(
+        proposals in a_draw(a_proposal()),
+        declared in a_draw((0..12usize, any::<u8>()).prop_map(|(n, pick)| a_declared_proposal(n, pick))),
+        reviews in a_draw(a_review_event()),
+    ) {
+        let proposals = drawn(&proposals.events);
+        prop_assert_eq!(found_below(&proposals), pairwise(&proposals));
+        let declared = drawn(&declared.events);
+        prop_assert_eq!(found_below(&declared), pairwise(&declared));
+        let reviews = drawn(&reviews.events);
+        prop_assert_eq!(found_below(&reviews), pairwise(&reviews));
+    }
 }

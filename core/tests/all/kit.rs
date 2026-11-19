@@ -136,6 +136,10 @@ impl<'a> Product<'a> for Last<'a> {
     fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
+
+    fn climbing(&self) -> Vec<Only> {
+        Vec::new()
+    }
 }
 
 impl Body for Mark {

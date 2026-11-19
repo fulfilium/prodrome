@@ -127,6 +127,10 @@ impl<'a> Product<'a> for Registers<'a> {
     fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
+
+    fn climbing(&self) -> Vec<Field> {
+        Vec::new()
+    }
 }
 
 fn field(name: &str, value: Value) -> (String, Value) {

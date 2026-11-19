@@ -199,6 +199,10 @@ impl<'a> Product<'a> for Phases<'a> {
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
         self.0.climbed::<PhaseRegister>(&earlier.0)
     }
+
+    fn climbing(&self) -> Vec<Field> {
+        vec![Field::Phase]
+    }
 }
 
 fn field(name: &str, value: Value) -> (String, Value) {

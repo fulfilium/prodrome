@@ -69,6 +69,16 @@ impl<E: Schema> Stamp<E> {
     pub fn descends(&self, earlier: &Stamp<E>) -> bool {
         self.place.ancestry.contains(earlier.place.position)
     }
+
+    /// The write's position in its scope's linear order.
+    pub(crate) fn position(&self) -> usize {
+        self.place.position
+    }
+
+    /// The positions of every object of its scope that the write rests on.
+    pub(crate) fn ancestry(&self) -> &BitSet {
+        &self.place.ancestry
+    }
 }
 
 /// A position in an index, and the positions of every ancestor in it.
@@ -486,6 +496,15 @@ impl BitSet {
         for bit in bits {
             self.insert(if bit >= at { bit + 1 } else { bit });
         }
+    }
+
+    /// How many positions this set and `mask` both hold.
+    pub fn count_within(&self, mask: &BitSet) -> usize {
+        self.0
+            .iter()
+            .zip(&mask.0)
+            .map(|(mine, theirs)| (mine & theirs).count_ones() as usize)
+            .sum()
     }
 
     pub fn union_with(&mut self, other: &BitSet) {

@@ -128,6 +128,10 @@ impl<'a, I: Schema> Product<'a> for Slots<'a, I> {
     fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
         Ok(())
     }
+
+    fn climbing(&self) -> Vec<Slot> {
+        Vec::new()
+    }
 }
 
 fn field(name: &str, value: Value) -> (String, Value) {

@@ -66,6 +66,10 @@ pub trait Hold<'a, R: Sole>: Default + Clone + Debug + PartialEq {
     ///
     /// A reading that fell.
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
+
+    /// [`Only`] where the register is inflationary, and nothing where it
+    /// may go back ([`Product::climbing`]).
+    fn climbing(&self) -> Vec<Only>;
 }
 
 /// A register that may go back: read by the maximal values of its frontier,
@@ -89,6 +93,10 @@ impl<'a, R: Sole> Hold<'a, R> for Frontier<'a, R::Schema> {
 
     fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
         Ok(())
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        Vec::new()
     }
 }
 
@@ -117,6 +125,10 @@ where
 
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
         Climb::climbed::<R>(self, earlier)
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        vec![Only]
     }
 }
 
@@ -180,6 +192,10 @@ impl<'a, R: Sole> Product<'a> for One<'a, R> {
 
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
         self.0.climbed(&earlier.0)
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        self.0.climbing()
     }
 }
 

@@ -263,6 +263,10 @@ impl<'a> Product<'a> for Registers<'a> {
         self.state.climbed::<StateRegister>(&earlier.state)?;
         self.tags.climbed::<TagsRegister>(&earlier.tags)
     }
+
+    fn climbing(&self) -> Vec<Field> {
+        vec![Field::State, Field::Tags]
+    }
 }
 
 fn field(name: &str, value: Value) -> (String, Value) {

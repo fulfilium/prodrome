@@ -616,7 +616,11 @@ write. A write that another writer built below its reading is taken by a
 receipt (§3), does not lower the reading, and is reported by `verify`. So
 the reading of an inflationary register never falls as objects arrive, and
 the reading of a union of object sets is the join of their readings, for
-any object sets (law 32). A schema MAY
+any object sets (law 32). A reading at a down-set, at an instant or under a
+policy is the maximal values of the writes in that down-set, dated by that
+instant and bound by that policy: a store that holds a write below its
+reading still reads, at an earlier instant, the greatest of what was
+written by then. A schema MAY
 also carry a PRICE: the §7 term each candidate of an entity's reading prices
 as, the reading priced as `Least` over them, their meet (law 34); for the
 todo, a candidate is a world (4). An entity whose schema has no price has
@@ -1478,6 +1482,7 @@ byte as before is law 22 and every vector suite, unchanged.
     `climb.rs::an_inflationary_register_reads_the_greatest_of_all_its_writes`,
     `climb.rs::an_inflationary_reading_is_a_homomorphism_of_any_object_sets`,
     `climb.rs::verify_finds_each_write_below_what_it_rests_on`,
+    `climb.rs::verify_finds_below_what_the_pairwise_check_finds`,
     `climb.rs::an_honest_reading_is_the_frontier_reading`,
     `climb.rs::a_write_below_its_reading_is_taken_and_does_not_lower_it`,
     `climb.rs::a_sole_inflationary_register_reads_the_greatest_of_all_its_writes`.

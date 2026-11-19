@@ -1,6 +1,7 @@
 //! §3 — the DAG as a value: named objects, their tips, closure, order and
 //! findings, with no files. [`crate::store`] is the files around one.
 
+mod below;
 mod facts;
 mod finding;
 mod heads;
@@ -18,7 +19,6 @@ pub use reach::Reach;
 
 use crate::change::Change;
 use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
-use crate::fold::Product;
 use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
 use crate::registers::{fold, Genesis, Node};
@@ -562,35 +562,27 @@ impl<E: Schema> Dag<E> {
 
     /// §6: each write to an inflationary register stands at or above the
     /// reading of the writes it rests on, as the append requires
-    /// ([`crate::fold::Product::grows`]). Each write is checked against a
-    /// product of its own ancestors in its entity, the history's stream
-    /// being causal, so the check reads the history and not the order in
-    /// which the objects arrived. Of a DAG with no history (a cycle), it
-    /// finds nothing.
+    /// ([`below::findings`]). Of a DAG with no history (a cycle), it finds
+    /// nothing.
     fn below_findings(&self) -> Vec<Finding> {
-        let Ok(nodes) = self.nodes().or_else(|_| self.interior().nodes()) else {
+        // Every event of a DAG is read at one vocabulary, so the product of
+        // any one write says whether the schema has an inflationary
+        // register; with none, no write can fall, and there is no fold.
+        let first = self
+            .objects()
+            .iter()
+            .find(|(_, object)| object.event().is_some())
+            .and_then(|(name, _)| self.node(name));
+        let Some(first) = first else {
             return Vec::new();
         };
-        let folded = fold(&nodes);
-        let mut findings = Vec::new();
-        for (_, stream) in folded.entities() {
-            for (at, stamp) in stream.iter().enumerate() {
-                let mut beneath = E::Registers::default();
-                for earlier in stream[..at]
-                    .iter()
-                    .filter(|earlier| stamp.descends(earlier))
-                {
-                    beneath.join(earlier);
-                }
-                if let Err(why) = beneath.grows(&stamp.event) {
-                    findings.push(Finding::Below {
-                        write: stamp.name.clone(),
-                        why,
-                    });
-                }
-            }
+        if below::climbing(&fold(std::slice::from_ref(&first))).is_empty() {
+            return Vec::new();
         }
-        findings
+        match self.nodes().or_else(|_| self.interior().nodes()) {
+            Ok(nodes) => below::findings(&fold(&nodes)),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// §3 and §5: a signature that does not verify, and an object whose

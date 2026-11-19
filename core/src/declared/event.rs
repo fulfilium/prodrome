@@ -324,6 +324,15 @@ impl<'a> Product<'a> for Registers<'a> {
         Ok(())
     }
 
+    /// The registers declared inflationary, of the declaration that the
+    /// first write joined.
+    fn climbing(&self) -> Vec<Slot> {
+        self.registers()
+            .into_iter()
+            .filter(|slot| self.climb(*slot).is_some())
+            .collect()
+    }
+
     /// Each register declared inflationary reads at or above what it read
     /// in `earlier`; an unwritten one reads nothing.
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {

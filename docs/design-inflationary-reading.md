@@ -127,13 +127,37 @@ The fold does not get slower: the difference is within the noise of the
 runs. The proposal store holds fewer objects than writes, because the
 append refused the writes below their reading.
 
-`verify` checks each write against a product of the writes that it rests
-on, in its entity. That costs a join for each pair of writes of one entity
-whose later write rests on the earlier one, the same order as the ancestry
-index that the fold already keeps, and it is the cost that the table shows:
-about three times the time of `verify` before. `verify` pays it for every
-schema, also for one with no inflationary register, because a product says
-whether a write falls only through `Product::grows`.
+`verify` checks each write to an inflationary register against the
+product of the writes to those registers beneath it. It does not build that
+product afresh. It keeps the product that each write made, and starts from
+the product of the write's nearest writes beneath: the walk goes back from
+the write and stops once the writes found, and what they rest on, cover
+every write beneath. In a chain the nearest write is the one before, so the
+pass is linear in the writes. Where branches are concurrent, a write has a
+few nearest writes, and the pass joins the readings of the others into the
+product of the first. The finding is the same for any order of the objects:
+`climb.rs::verify_finds_below_what_the_pairwise_check_finds` compares it
+with the pairwise check, which builds the product afresh for each write.
+
+A schema with no inflationary register (`Product::climbing` is empty, as
+for the todo schema) pays nothing: `verify` reads the product of one write,
+sees no inflationary register, and does not fold the DAG.
+
+`verify` on generated stores, in a release build: the best of five runs
+for the two stores, and of two runs for the two long entities. "Pairwise"
+is the first form of this change, which built the product afresh for each
+write.
+
+| Store | `main` | pairwise | this change |
+|---|---|---|---|
+| todo, 5959 objects | 11.8 ms | 32.0 ms | 11.7 ms |
+| proposal, 2709 objects | 4.8 ms | 12.7 ms | 11.4 ms |
+| one entity, 10,000 writes in a chain | 23.5 ms | 15,552 ms | 87 to 107 ms |
+| one entity, 10,000 writes in two branches that merge every 100 | 23.9 ms | 25,768 ms | 78 to 90 ms |
+
+A schema with an inflationary register still pays the check, about 60 to
+85 ms for 10,000 writes beside the 24 ms of the rest of `verify`. Most of
+that is a fold of the DAG, which `verify` does not otherwise make.
 
 The wasm exports (`nix build .#prodrome-wasm`, `prodrome_bg.wasm`) grow
 from 1,376,567 bytes to 1,380,680 bytes, by 4,113 bytes (0.3%).
