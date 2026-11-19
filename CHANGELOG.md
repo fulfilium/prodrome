@@ -327,6 +327,26 @@ constructor's fields never change, in any release.
   answered `Known`; the law's model accepts `Everything` exactly where the
   token's closure is every object.
 
+### Fixed
+
+- **The append asks the schema's refusal of an entity's first write (SPEC
+  §3, law 70).** `registers::deps_for` returned no deps for an entity that
+  the writer held no write of, before it asked `Product::grows`. So an
+  append took a first write that the schema's refusal refuses on the empty
+  reading, and `verify` then found the write `Below`. A schema whose
+  refusal is its order admits every value on the empty reading, so no
+  schema of this repository showed the fault. `deps_for` now reads the
+  entity's stream, the empty stream for an entity with no write, and asks
+  `grows` of it in every case. Every append goes through `deps_for`: a
+  store's, an overlay's, a store in memory's, the wasm exports' and
+  `prodrome-github`'s. `Folded::stream` answers the stream of one entity,
+  and five readers that looked it up by hand use it. A receipt still takes
+  such a write, and `verify` still reports it. Law 70 states that the
+  append refuses exactly what `verify` finds. The floored review schema of
+  the tests (`core/tests/schemas/floored.rs`) refuses a merge that does
+  not stand on a review, and the law's tests and the script machine (law
+  68) run over it. No stored form changes.
+
 ### Added
 
 - **The wasm exports read a schema whose key has several fields.** A row

@@ -64,12 +64,20 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
 
     /// The append's refusal (design §3.1): where `event` writes a register
     /// whose type is inflationary, its value must stand at or above that
-    /// register's reading, which it supersedes. A schema with no inflationary
-    /// register answers `Ok`.
+    /// register's reading, which it supersedes. A schema can also refuse a
+    /// write by a rule that its order does not state, for example a value
+    /// that stands only on one named value beneath it. The append asks this
+    /// of the product of every write to the entity that the writer holds,
+    /// and of the empty product for the first write to an entity; `verify`
+    /// asks it of the product of the writes beneath each write (law 70).
+    /// `verify` joins only the writes to inflationary registers, so the
+    /// refusal reads only the readings of those registers. A schema with no
+    /// inflationary register answers `Ok`.
     ///
     /// # Errors
     ///
-    /// A write whose value falls below, or beside, the reading it supersedes.
+    /// A write whose value falls below, or beside, the reading it
+    /// supersedes, or does not stand on it, the empty reading included.
     fn grows(&self, event: &Self::Schema) -> Result<(), ProdromeError>;
 
     /// Law 32 between two readings of one entity: in every inflationary

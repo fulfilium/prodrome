@@ -222,6 +222,16 @@ impl<E: Schema> Folded<E> {
         &self.prodromes
     }
 
+    /// The stream of the entity `key` in the prodrome `genesis`: the empty
+    /// stream where nothing is written to the entity, because an entity
+    /// that no write names reads as the empty product.
+    pub fn stream(&self, genesis: &Genesis, key: &E::Key) -> &[Stamp<E>] {
+        self.prodromes
+            .get(genesis)
+            .and_then(|entities| entities.get(key))
+            .map_or(&[], Vec::as_slice)
+    }
+
     /// Every prodrome's entities, for a reader keyed by entity alone.
     pub fn entities(&self) -> impl Iterator<Item = (&E::Key, &[Stamp<E>])> {
         self.prodromes
@@ -435,21 +445,16 @@ pub fn since<'a, E: Schema>(state: &Folded<E>, nodes: &'a [Node<E>]) -> Vec<&'a 
 ///
 /// # Errors
 ///
-/// The append's refusal, before any object exists: `event` writes an
-/// inflationary register below, or beside, the reading it supersedes
-/// ([`Product::grows`]).
+/// The append's refusal, before any object exists: `event` does not stand
+/// on the reading it supersedes ([`Product::grows`]). For the first write
+/// to an entity, that reading is the empty product's, so the append asks
+/// the same question of every write that `verify` asks.
 pub fn deps_for<E: Schema>(
     state: &Folded<E>,
     genesis: &Genesis,
     event: &E,
 ) -> Result<Vec<Hash>, ProdromeError> {
-    let Some(stream) = state
-        .prodromes
-        .get(genesis)
-        .and_then(|entities| entities.get(event.key()))
-    else {
-        return Ok(Vec::new());
-    };
+    let stream = state.stream(genesis, event.key());
     read(stream, None, &Everything).grows(event)?;
     Ok(heads(stream))
 }

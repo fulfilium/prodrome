@@ -160,12 +160,7 @@ fn value(stamp: &Stamp<TodoEvent<Todo>>) -> u8 {
 /// The todo's state frontier, read structurally.
 fn frontier(folded: &Folded<TodoEvent<Todo>>) -> Frontier<'_, TodoEvent<Todo>> {
     let todo = TodoId::new("alpha").expect("valid");
-    folded
-        .prodromes()
-        .get(&None)
-        .and_then(|todos| todos.get(&todo))
-        .map(|stream| prodrome::fold::read(stream, None, &Everything).state)
-        .unwrap_or_default()
+    prodrome::fold::read(folded.stream(&None, &todo), None, &Everything).state
 }
 
 /// Law 3 at one frontier under `order`: the reading is exactly the maximal

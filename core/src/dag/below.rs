@@ -6,9 +6,10 @@ use crate::fold::Product;
 use crate::registers::{BitSet, Folded, Stamp};
 use crate::schema::Schema;
 
-/// Every write to an inflationary register whose value is not at or above
-/// the reading of the writes to its entity that it rests on: the writes
-/// that the append would have refused ([`Product::grows`]).
+/// Every write to an inflationary register that does not stand on the
+/// reading of the writes to its entity that it rests on, the empty reading
+/// of a first write included: the writes that the append would have
+/// refused ([`Product::grows`], law 70).
 ///
 /// An entity whose product has no inflationary register
 /// ([`Product::climbing`]) costs one join. Otherwise each write to an
