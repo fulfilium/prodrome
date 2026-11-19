@@ -49,9 +49,6 @@ ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"
 memchr = "2"
 sha2 = "0.10"
 thiserror = "2"
-# `str.isprintable`'s Unicode categories, which the string printer needs to
-# reproduce CPython's `repr` byte for byte (SPEC section 2). Data tables only.
-unicode-general-category = "1"
 
 # THE STORE'S LOCK, ON UNIX ONLY. `EventStore::append` takes an exclusive
 # `flock` on `root/.lock` — the same file and the same operation the earlier
@@ -68,3 +65,9 @@ proptest = "1"
 # reference schemas: a package may name itself as a dev-dependency to turn on
 # a feature for its tests.
 prodrome-core = { path = ".", features = ["laws"] }
+# The tests compare the printable set of SPEC section 2, which is a table in
+# this crate, with the General_Category data of Unicode 16.0.0 that version
+# 1.1.0 of this dependency holds. The version is exact: a version with the
+# data of another Unicode version fails the test, and the test names each
+# code point that differs.
+unicode-general-category = "=1.1.0"
