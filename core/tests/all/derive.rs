@@ -179,7 +179,12 @@ impl Labelled {
 /// The constructors that a print of a thread uses.
 const VOCABULARY: Table = Table(&[
     THREAD,
-    ("Review", &["reviewer", "of", "tags", "verdict", "lines", "remark", "closed"]),
+    (
+        "Review",
+        &[
+            "reviewer", "of", "tags", "verdict", "lines", "remark", "closed",
+        ],
+    ),
     ("Accept", &[]),
     ("Revise", &["reason"]),
     ("Defer", &["until"]),
@@ -268,7 +273,11 @@ fn a_record_prints_its_stored_names_in_order() {
             &["reviewer", "of", "tags", "verdict", "lines", "remark", "closed"][..]
         )
     );
-    let names: Vec<&str> = review().fields().into_iter().map(|(name, _)| name).collect();
+    let names: Vec<&str> = review()
+        .fields()
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
     assert_eq!(names, Reviewed::CONSTRUCTOR.1);
 }
 
@@ -309,10 +318,7 @@ fn a_derived_read_names_what_it_refuses() {
         }
         Value::Call(call)
     };
-    assert_eq!(
-        refusal(&Value::int(1)),
-        "expected a Review(...), got None"
-    );
+    assert_eq!(refusal(&Value::int(1)), "expected a Review(...), got None");
     let mut missing = review().to_value();
     if let Value::Call(call) = &mut missing {
         call.fields.retain(|(name, _)| name != "lines");
@@ -351,7 +357,10 @@ fn a_field_with_its_own_codec_reads_through_the_smart_constructor() {
     let labelled = Labelled {
         label: Tag("draft".to_owned()),
     };
-    assert_eq!(print_literal(&labelled.to_value()), "Labelled(label='draft')");
+    assert_eq!(
+        print_literal(&labelled.to_value()),
+        "Labelled(label='draft')"
+    );
     assert_eq!(Labelled::from_value(&labelled.to_value()), Ok(labelled));
     let empty = Value::call("Labelled", vec![("label".to_owned(), Value::str(""))]);
     assert_eq!(

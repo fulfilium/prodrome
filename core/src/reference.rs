@@ -425,4 +425,3 @@ mod tests {
         assert!(!core.contains(&Todo::CONSTRUCTOR.0));
     }
 }
-
