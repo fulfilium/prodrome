@@ -300,7 +300,11 @@ since this grammar has tuples and no mapping.
     same structural reading. Of the todo's registers only the tendings are
     inflationary, and a `Tended` supersedes nothing, so no event of §4 is
     refused; a schema whose register supersedes and is inflationary is held
-    to it (law 32).
+    to it (law 32). A receipt takes such a write all the same, when another
+    writer built it as a change: a receipt refuses no valid object, so that
+    the union of two stores' files converges whatever the order of
+    arrival. The write does not lower the reading, which is the greatest of
+    all writes (§6), and `verify` reports it.
 
   `deps` never leave the entity (one todo, under the todo schema): a store
   of changes is a disjoint union of per-entity DAGs, and changes to
@@ -345,9 +349,12 @@ since this grammar has tuples and no mapping.
   genesis (an edge to it is that finding, never also an edge between
   geneses), an edge between geneses, a dep another dep of the same change rests on, a dep that
   is not a write to its change's entity, an object a snapshot attests
-  that the store lacks, a `Signed` that does not verify, and an object
+  that the store lacks, a `Signed` that does not verify, an object
   whose actor has a key in its prodrome and which no key of that actor's
-  proves (§5's proof, every key object counted). There is no unreachable object and no stale
+  proves (§5's proof, every key object counted), and a write to an
+  inflationary register (§6) whose value is not `≥` the reading of the
+  writes to its entity that it rests on, which an append would have refused
+  (`Below`, law 32). There is no unreachable object and no stale
   head to report: every object is a tip or beneath one, and no tip rests on
   another.
 - **`fsck`** is `verify` after QUARANTINE: every file of `objects/` whose
@@ -595,8 +602,21 @@ the value a write gives it. The order decides no succession; the register's
 reading is the MAXIMAL values of its frontier's values, the free completion
 of the order: one is a value, and more is a conflict. A type may declare its
 register INFLATIONARY, every write `≥` the reading it supersedes; §3's
-append refuses a write that is not, before any object exists, and the
-reading of such a register is then a homomorphism (law 32). A schema MAY
+append refuses a write that is not, before any object exists. The reading
+of an inflationary register is the MAXIMAL values of ALL its writes, not of
+its frontier's: the register is a join-semilattice whose value is the join
+of every write it holds, so the reading is a function of the set of writes
+and never of their ancestry or arrival. Where two maximal values are
+incomparable, the reading holds both, a conflict, as a frontier's does;
+each value is named by the least write that carries it among the writes
+that no write of an equal value descends from. In a history where every
+write is `≥` every write to its register that it rests on, which is every
+history that appends wrote, this reading is the frontier's, write for
+write. A write that another writer built below its reading is taken by a
+receipt (§3), does not lower the reading, and is reported by `verify`. So
+the reading of an inflationary register never falls as objects arrive, and
+the reading of a union of object sets is the join of their readings, for
+any object sets (law 32). A schema MAY
 also carry a PRICE: the §7 term each candidate of an entity's reading prices
 as, the reading priced as `Least` over them, their meet (law 34); for the
 todo, a candidate is a world (4). An entity whose schema has no price has
@@ -623,8 +643,9 @@ machine's covers are acyclic; and every inflationary register's order has a
 bottom. A refusal names the first law that fails. An admitted schema's
 events print as their constructor with every field in declared order, its
 registers are read as every register is (the maximal values of the
-frontier under the declared order), and an inflationary one is held to §3's
-refusal. A declared schema carries no price.
+frontier under the declared order), but an inflationary one is read as the
+maximal values of all its writes, and is held to §3's refusal. A declared
+schema carries no price.
 
 Every fold is a projection of one entity's registers at a moment `t` under a
 §5 POLICY. A write joins its register when it is dated at or before `t` and
@@ -1182,7 +1203,9 @@ take no environment because a compiled term cannot consult one, and
 an unwritten register, and its candidates; `Order`, a partial order on a
 register's values (`Discrete` by default, `Total`, inclusion on a set), and
 `Inflationary`, a register type's declaration that a write only grows its
-reading; `Node`, an object at the place its DAG gives it, which only a
+reading, and `Climb`, the register of an inflationary type, which keeps its
+frontier and the writes that no other write outranks (a strictly greater
+value, or an equal value written over it); `Node`, an object at the place its DAG gives it, which only a
 DAG makes, since an object's prodrome is a function of the set it is in;
 `Folded`; `Replica`, what every store is (§3), and `sync`, generic over
 two of them; `Decision`, the store of record locked, the only value a
@@ -1437,14 +1460,27 @@ byte as before is law 22 and every vector suite, unchanged.
     `order_laws.rs::the_discrete_reading_is_the_candidates`,
     `order_laws.rs::a_note_reading_is_the_candidates`,
     `bodies.rs::a_flag_reads_its_greatest_body`.
-32. **An inflationary reading is a homomorphism.** An append to an
-    inflationary register whose value is not `≥` the reading it supersedes
-    is refused, and over the histories so written `read(h₁ ∪ h₂) =
-    max(read(h₁) ∪ read(h₂))`. Through the store's own append, at a schema
-    with an inflationary register, the refusal writes nothing.
+32. **An inflationary reading is a homomorphism, for any object set.** An
+    inflationary register reads the maximal values of all its writes. For
+    any object sets `h₁` and `h₂`, written honestly or not, `read(h₁ ∪ h₂)
+    = max(read(h₁) ∪ read(h₂))`; so where `h₁ ⊆ h₂`, every value that `h₁`
+    reads is `≤` a value that `h₂` reads, and the reading never falls as
+    objects arrive. An append to an inflationary register whose value is
+    not `≥` the reading it supersedes is refused, and through the store's
+    own append the refusal writes nothing; a receipt takes the same write
+    built as a change, and `verify` finds it `Below`, exactly the writes
+    whose value is not `≥` that of every write to the register they rest
+    on. In a history that appends wrote, the reading is the frontier's
+    reading, write for write.
     `order_laws.rs::an_inflationary_reading_is_a_homomorphism`,
     `review.rs::the_append_refuses_a_move_back`,
-    `review.rs::the_reading_of_a_union_is_the_join_of_the_readings`.
+    `review.rs::the_reading_of_a_union_is_the_join_of_the_readings`,
+    `climb.rs::an_inflationary_register_reads_the_greatest_of_all_its_writes`,
+    `climb.rs::an_inflationary_reading_is_a_homomorphism_of_any_object_sets`,
+    `climb.rs::verify_finds_each_write_below_what_it_rests_on`,
+    `climb.rs::an_honest_reading_is_the_frontier_reading`,
+    `climb.rs::a_write_below_its_reading_is_taken_and_does_not_lower_it`,
+    `climb.rs::a_sole_inflationary_register_reads_the_greatest_of_all_its_writes`.
 
 Law 33 is the design's law 1, over three schemas: the todo schema, a
 second one in the tests (`review.rs`), a machine priced by a flat term per
@@ -2063,14 +2099,16 @@ conformance vectors, and over generated text.
     `printable.rs::a_print_writes_as_itself_what_unicode_16_calls_printable`.
 
 Law 68 is a script of steps over three replicas (`laws::script`), over
-the todo schema and the tag set's two schemas. Three actors each hold a
+the todo schema, the tag set's two schemas and the proposal schema, whose
+state and tags are inflationary. Three actors each hold a
 replica: a store in memory, an overlay over one, or a store on disk.
 
 68. **A script keeps every invariant after every step.** A step is one of
     these: an append, signed by the actor's current key, unsigned, given a
-    signature that does not verify, or written with a dep on a write to
-    another entity, by the actor or by another replica under the actor's
-    name; a receipt of chosen objects of another replica, one at a time,
+    signature that does not verify, written with a dep on a write to
+    another entity, or, where the append refuses it as below the reading of
+    an inflationary register, written as a change on the entity's heads and
+    received, by the actor or by another replica under the actor's name; a receipt of chosen objects of another replica, one at a time,
     in any order and with duplicates; a sync of everything; a sync of
     every replica with every other; an offer of a print that does not hash
     to its name, that does not parse, or that rests on a print no replica
@@ -2096,7 +2134,10 @@ replica: a store in memory, an overlay over one, or a store on disk.
     (e) A reading recorded at a set of tips reads alike, with the policy
     taken at the down-set of the tips, in every replica that holds the
     tips, however the replica grew. (f) A reading that the cache holds is
-    the fresh reading of every replica whose tips its key names. At the
+    the fresh reading of every replica whose tips its key names. (g) No
+    reading of an inflationary register falls: each entity of each replica
+    reads, under the policy where everything binds, at or above what it
+    read at the check before (law 32). At the
     step itself, an append or a receipt made a second time takes nothing,
     a refused receipt takes nothing, and after a sync of every replica
     with every other, every replica holds the same objects.
@@ -2120,7 +2161,9 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `script.rs::a_late_change_moves_a_reading_at_an_instant_and_not_one_at_a_down_set`,
     `script.rs::an_add_a_remove_and_an_add_in_one_tick`,
     `script.rs::a_partial_sync_can_take_a_signed_write_without_its_signature`,
-    `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`.
+    `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`,
+    `climb.rs::every_step_of_a_proposal_script_keeps_every_invariant`,
+    `climb.rs::an_honest_proposal_script_verifies_clean`.
 
 ## 10. Non-goals
 

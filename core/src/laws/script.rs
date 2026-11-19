@@ -22,6 +22,8 @@
 //!   that holds the down-set, however it grew;
 //! - every reading the cache holds is the fresh reading of every replica
 //!   whose frontier its key names;
+//! - no reading of an inflationary register falls in any replica, though a
+//!   fault writes a value below the reading (law 32);
 //! - and, at the step itself, that an append or a receipt done twice changes
 //!   nothing, that a refused receipt takes nothing, and that a sync of all
 //!   leaves every replica holding the same objects.

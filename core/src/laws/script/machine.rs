@@ -13,6 +13,7 @@ use super::step::{Refusal, Root, Step, Through, Who, Writing};
 use crate::change::mk_change;
 use crate::dag::{Dag, Finding};
 use crate::event::{canonical_envelope, Envelope, Hash};
+use crate::fold::{read, Product};
 use crate::fpl::Instant;
 use crate::genesis::mk_genesis;
 use crate::laws::reading::Registers;
@@ -20,7 +21,7 @@ use crate::laws::Broken;
 use crate::literal::ProdromeError;
 use crate::memo::{self, Cache, Key, Lookup, Lru};
 use crate::policy::Everything;
-use crate::registers::{deps_for, extend, fold, Folded};
+use crate::registers::{deps_for, extend, fold, heads, Folded};
 use crate::schema::Schema;
 use crate::sign::{mk_key_revoked, Checks, KeyAdded, Proof, Registrar, Signed};
 use crate::snapshot::{attest, mk_snapshot, Attestation};
@@ -60,6 +61,7 @@ struct Seen<E: Schema> {
     label: String,
     tips: BTreeSet<Hash>,
     dag: Arc<Dag<E>>,
+    folded: Arc<Folded<E>>,
     reading: Reading<E>,
 }
 
@@ -81,6 +83,9 @@ pub(super) struct Machine<E: Schema> {
     /// Each fault the script wrote: the object, and what `verify` finds.
     faults: BTreeMap<Hash, Finding>,
     conduct: Conduct,
+    /// What each replica, by its label, held at the last check: its
+    /// readings must not fall since (law 32).
+    climbed: BTreeMap<String, Arc<Folded<E>>>,
     /// Removed when the machine is dropped, after the replicas.
     _scratch: Scratch,
 }
@@ -145,6 +150,7 @@ impl<E: Schema> Machine<E> {
             keys: Keys::default(),
             faults: BTreeMap::new(),
             conduct,
+            climbed: BTreeMap::new(),
             _scratch: scratch,
         };
         for who in Who::ALL {
@@ -306,13 +312,19 @@ impl<E: Schema> Machine<E> {
                 Some(name) => Some(name),
                 None => self.appended(by, event)?,
             },
+            Writing::Below => match self.below(by, event)? {
+                Some(name) => Some(name),
+                None => self.appended(by, event)?,
+            },
             Writing::Signed | Writing::Unsigned | Writing::Forged => self.appended(by, event)?,
         };
         let Some(name) = name else {
             return Ok(());
         };
         match writing {
-            Writing::Signed | Writing::Foreign { .. } => self.sign(by, of, &name, true),
+            Writing::Signed | Writing::Foreign { .. } | Writing::Below => {
+                self.sign(by, of, &name, true)
+            }
             Writing::Forged => self.sign(by, of, &name, false),
             Writing::Unsigned => Ok(()),
         }
@@ -397,6 +409,40 @@ impl<E: Schema> Machine<E> {
             Finding::Foreign {
                 change: name.clone(),
                 dep: (*other).clone(),
+            },
+        );
+        self.receive(by, [name.clone()].into())?;
+        Ok(Some(name))
+    }
+
+    /// `by` writes `event` as a change whose deps are its entity's heads,
+    /// where the append refuses `event` because it falls below the reading
+    /// of an inflationary register. The replica receives the change, as it
+    /// receives any valid object. `None` where the append takes `event`.
+    fn below(&mut self, by: Who, event: &E) -> Result<Option<Hash>, Broken> {
+        let held = self.held(by)?;
+        let prodrome = held.dag.key(&self.genesis);
+        let Err(why) = deps_for(&held.folded, &prodrome, event) else {
+            return Ok(None);
+        };
+        let deps = held
+            .folded
+            .prodromes()
+            .get(&prodrome)
+            .and_then(|entities| entities.get(event.key()))
+            .map(|stream| heads(stream))
+            .unwrap_or_default();
+        let change = Envelope::Change(
+            mk_change(self.genesis.clone(), deps, event.clone())
+                .map_err(failed(68, "a change below its reading"))?,
+        );
+        let (name, print) = sealed(&change);
+        self.wire.insert(name.clone(), print);
+        self.faults.insert(
+            name.clone(),
+            Finding::Below {
+                write: name.clone(),
+                why,
             },
         );
         self.receive(by, [name.clone()].into())?;
@@ -699,6 +745,7 @@ impl<E: Schema> Machine<E> {
             }
         }
         self.clean(&seen)?;
+        self.climb(&seen)?;
         alike(&seen)?;
         self.recorded(&seen)?;
         self.cached(&seen)
@@ -805,8 +852,25 @@ impl<E: Schema> Machine<E> {
             reading: Reading::of(&held.dag, &held.folded, None),
             tips: held.tips,
             dag: held.dag,
+            folded: held.folded,
             label,
         })
+    }
+
+    /// No reading of an inflationary register falls as objects arrive: a
+    /// replica only gains objects, and each register reads the greatest of
+    /// all its writes, so each entity reads at or above what it read at the
+    /// last check, under the policy where everything binds (law 32).
+    fn climb(&mut self, seen: &[Seen<E>]) -> Result<(), Broken> {
+        for view in seen {
+            if let Some(then) = self.climbed.get(&view.label) {
+                climbed(then, &view.folded)
+                    .map_err(|what| Broken::of(32, format!("{}: {what}", view.label)))?;
+            }
+            self.climbed
+                .insert(view.label.clone(), Arc::clone(&view.folded));
+        }
+        Ok(())
     }
 
     /// Every reading recorded at a down-set reads the same in every replica
@@ -854,6 +918,24 @@ impl<E: Schema> Machine<E> {
         }
         Ok(())
     }
+}
+
+/// Each entity of `then` reads, in `now`, at or above what it read in
+/// `then` ([`Product::climbed`]).
+fn climbed<E: Schema>(then: &Folded<E>, now: &Folded<E>) -> Result<(), String> {
+    for (genesis, prodrome) in then.prodromes() {
+        for (key, earlier) in prodrome {
+            let later = now
+                .prodromes()
+                .get(genesis)
+                .and_then(|entities| entities.get(key))
+                .map_or(&[][..], Vec::as_slice);
+            read(later, None, &Everything)
+                .climbed(&read(earlier, None, &Everything))
+                .map_err(|fell| format!("entity {key:?}: {fell}"))?;
+        }
+    }
+    Ok(())
 }
 
 /// Replicas that hold the same objects read alike: the same tips, and the

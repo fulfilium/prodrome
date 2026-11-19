@@ -116,6 +116,27 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **An inflationary register reads the greatest of all its writes (SPEC
+  §6, law 32).** The fold read every register from its frontier, so a
+  write below the reading, which the append refuses and a receipt takes as
+  a change whose deps name the higher write, lowered the reading. An
+  inflationary register is now held by `fold::Climb`, which keeps its
+  frontier and the writes that no other write outranks, and its reading is
+  the maximal values of all its writes. The reading is a function of the
+  object set, and it never falls as objects arrive. `receive` still takes
+  every valid object, and `append` still refuses a write below its
+  reading. In a history that appends wrote the reading is the frontier's,
+  write for write, so no honest reading changes, and no stored byte and no
+  conformance vector changes. `verify` reports a write below what it rests
+  on (`Finding::Below`). `Product::frontier_mut` becomes
+  `Product::join_to`, `Product::join` gets a default, `Product::climbed`
+  states law 32 between two readings, `Frontier::grows` moves to
+  `Climb::grows`, and `fold::sole::Sole` chooses how its register is held
+  (`Sole::Held`, `fold::sole::Hold`) instead of overriding `Sole::grows`.
+  The script law (law 68) writes a write below its reading as a fault
+  (`laws::script::Writing::Below`), checks that no reading of an
+  inflationary register falls, and runs over the proposal schema.
+  `docs/design-inflationary-reading.md` gives the reasons and the costs.
 - **`Payload` requires `Record`, and loses `KIND`, `FIELDS`, `fields` and
   `from_fields`.** `Record::CONSTRUCTOR` gives the record kind's name and
   fields, `Record::values` the values, and `Record::from_call` the read. A
