@@ -79,8 +79,74 @@ from, so the script replays as printed. To keep it as a regression test,
 build the same `Script` value in a test and call `script::run`. To replay
 a run of proptest itself, set `PROPTEST_RNG_SEED` to the seed of that run.
 
+## Check your own invariants on the same scripts
+
+`script::run` is `script::run_with` with the policy `Everything` and no
+check of yours. `script::run_with` takes two more arguments:
+
+- a POLICY (SPEC §5). The machine reads the claimed reading under it, and
+  the confirmed reading under it with the root's keys required. Use your
+  application's own policy, so that the readings that the machine compares
+  are your readings.
+- a HOOK, a function that the machine calls before the first step and after
+  each step, once for each actor, with the actor (`Who`) and what its
+  replica holds (`Held`: the objects, their fold and the tips). The hook
+  reads; it cannot change a replica. It returns `Ok(())`, or a `Broken`
+  with your own law number and what differs, which stops the script as a
+  broken law of the machine does. Proptest then shrinks the script.
+
+`laws::Registers` is the reading that the laws compare: every entity's
+registers, each with its frontier and its reading, as object names.
+`Registers::of(&held.folded)` reads a replica, and `Registers::differs`
+names the first place where two readings part. Use it to compare your own
+layer with the replica that it reads.
+
+This example checks, after every step of an honest script, that a cache of
+the application's own gives the replica's reading:
+
+```rust
+use prodrome::laws::{script, Broken, Registers};
+use prodrome::store::Held;
+
+fn my_cache_reads_the_replica(who: Who, held: &Held<MyEvent>) -> Result<(), Broken> {
+    let expected = Registers::of(&held.folded);
+    let cached = Registers::of(&my_cache_of(held).folded());
+    match cached.differs(&expected) {
+        None => Ok(()),
+        Some(difference) => Err(Broken {
+            law: 1001,
+            what: format!("{}'s cache: {difference}", who.name()),
+        }),
+    }
+}
+
+proptest! {
+    #[test]
+    fn my_cache_keeps_up(script in an_honest_script(a_write, 40)) {
+        script::run_with(&MyVocabulary::default(), &script, &my_policy(), my_cache_reads_the_replica)
+            .map_err(|broken| TestCaseError::fail(broken.to_string()))?;
+    }
+}
+```
+
 ## Make the run longer
 
-Raise the number of cases and of steps for a nightly run. The core's own
-nightly run calls `script::a_long_run_of_todo_scripts_keeps_every_invariant`
-with `--ignored`.
+Raise the number of cases and of steps for a nightly run. `script::long_run`
+runs every script that a strategy draws, each by a function you give (for
+example `script::run_with` with your policy and hook), and returns a
+`Rate`: the scripts and steps it ran, the seconds, and the scripts and
+steps per second. A failure is proptest's, with the shortest script:
+
+```rust
+let rate = script::long_run(
+    &a_script(a_write, 80),
+    proptest::test_runner::Config::with_cases(1024),
+    |script| script::run(&MyVocabulary::default(), script),
+)
+.unwrap_or_else(|failure| panic!("{failure}"));
+println!("{rate}");
+```
+
+The core's own nightly run calls
+`script::a_long_run_of_todo_scripts_keeps_every_invariant` with
+`--ignored`.

@@ -48,9 +48,11 @@ fn sent(object: &Envelope<Review>) -> Value {
     json!({ "hash": seal_hash(object).as_str(), "text": canonical_envelope(object) })
 }
 
-/// A genesis, then on `pr-1` an opening, a move to review, and two moves
-/// that each supersede it and not each other, a merge and a close: the one
-/// real conflict of the review's order. On `pr-2`, an opening alone.
+/// A genesis, then on `pr-1` an opening, a move to review, a merge that
+/// supersedes the review, and a close that does not see the review: the one
+/// real conflict of the review's order. The close rests on nothing, because
+/// `Review ≤ Closed` does not hold, so an append refuses a close over the
+/// review and `verify` finds one (SPEC §6). On `pr-2`, an opening alone.
 fn store() -> (Vec<Envelope<Review>>, Vec<Hash>) {
     let genesis = Envelope::Genesis(mk_genesis("reviews", &"0".repeat(32)).expect("a genesis"));
     let root = seal_hash(&genesis);
@@ -62,7 +64,7 @@ fn store() -> (Vec<Envelope<Review>>, Vec<Hash>) {
     let review = change(&[], moved("pr-1", day(2), "ana", Phase::Review));
     let under = seal_hash(&review);
     let merged = change(&[&under], moved("pr-1", day(3), "ana", Phase::Merged));
-    let closed = change(&[&under], moved("pr-1", day(3), "bo", Phase::Closed));
+    let closed = change(&[], moved("pr-1", day(3), "bo", Phase::Closed));
     let other = change(&[], opened("pr-2", day(4), "bo", "another"));
     let objects = vec![genesis, open, review, merged, closed, other];
     let names = objects.iter().map(seal_hash).collect();

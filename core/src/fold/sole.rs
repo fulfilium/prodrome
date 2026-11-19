@@ -1,18 +1,22 @@
 //! The product of a schema whose events write one register.
 //!
-//! The register is named [`Only`]. Its value is one [`Frontier`]: the
-//! writes that no later write descends from. The register's type is a
+//! The register is named [`Only`]. The register's type is a
 //! [`RegisterType`] that also implements [`Sole`], and [`One`] is then the
-//! schema's product. [`Whole`] is the register type whose value is the whole
-//! event, so its reading is the frontier's candidates. [`Bodies`] is the
-//! register type whose value is the body of an
-//! [`Event`](crate::schema::headed::Event), under the body's own order.
+//! schema's product. The type chooses how the register is held
+//! ([`Sole::Held`]): a [`Frontier`], the writes that no later write
+//! descends from, for a register that may go back, or a [`Climb`], for an
+//! inflationary register, whose reading is the greatest of all its writes.
+//! [`Whole`] is the register type whose value is the whole event, so its
+//! reading is the frontier's candidates. [`Bodies`] is the register type
+//! whose value is the body of an [`Event`](crate::schema::headed::Event),
+//! under the body's own order.
 
 #![warn(clippy::pedantic)]
 
+use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::fold::{Discrete, Frontier, Order, Product, Register as _, RegisterType};
+use crate::fold::{Climb, Discrete, Frontier, Inflationary, Order, Product, RegisterType};
 use crate::literal::ProdromeError;
 use crate::registers::Stamp;
 use crate::schema::headed::{Body, Event};
@@ -24,33 +28,117 @@ pub struct Only;
 
 /// The type of the one register of [`Sole::Schema`].
 ///
-/// The register reads its frontier under this [`RegisterType`], and a write
-/// joins it exactly when the type gives the write a value.
-pub trait Sole: RegisterType<Self::Schema> + 'static {
+/// The register reads under this [`RegisterType`], and a write joins it
+/// exactly when the type gives the write a value.
+pub trait Sole: RegisterType<Self::Schema> + Sized + 'static {
     /// The schema whose events write [`Only`].
     type Schema: Schema<Register = Only>;
 
-    /// The append's refusal of a write whose value falls below the reading.
-    /// A register type that is not inflationary refuses nothing, which is
-    /// the default. An inflationary one answers
-    /// `frontier.grows::<Self>(event)`.
+    /// How [`One`] holds the register: `Frontier<'a, Self::Schema>` for a
+    /// register that may go back, and `Climb<'a, Self::Schema>` for an
+    /// inflationary one, which the append holds to [`Climb::grows`].
+    type Held<'a>: Hold<'a, Self>;
+}
+
+/// How [`One`] holds the register of the type `R`: what a write joins, and
+/// how the register reads.
+pub trait Hold<'a, R: Sole>: Default + Clone + Debug + PartialEq {
+    /// Join `stamp`, a write that the register's type gives a value.
+    fn join(&mut self, stamp: &'a Stamp<R::Schema>);
+
+    /// The register's frontier.
+    fn frontier(&self) -> &Frontier<'a, R::Schema>;
+
+    /// The register's reading under `R`.
+    fn reading(&self) -> Vec<&'a Stamp<R::Schema>>;
+
+    /// The append's refusal ([`Product::grows`]).
     ///
     /// # Errors
     ///
     /// A write whose value falls below, or beside, the reading that it
     /// supersedes.
-    fn grows(_: &Frontier<'_, Self::Schema>, _: &Self::Schema) -> Result<(), ProdromeError> {
+    fn grows(&self, event: &R::Schema) -> Result<(), ProdromeError>;
+
+    /// Law 32 between two readings ([`Product::climbed`]).
+    ///
+    /// # Errors
+    ///
+    /// A reading that fell.
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
+
+    /// [`Only`] where the register is inflationary, and nothing where it
+    /// may go back ([`Product::climbing`]).
+    fn climbing(&self) -> Vec<Only>;
+}
+
+/// A register that may go back: read by the maximal values of its frontier,
+/// and refusing no write.
+impl<'a, R: Sole> Hold<'a, R> for Frontier<'a, R::Schema> {
+    fn join(&mut self, stamp: &'a Stamp<R::Schema>) {
+        crate::fold::Register::join(self, stamp);
+    }
+
+    fn frontier(&self) -> &Frontier<'a, R::Schema> {
+        self
+    }
+
+    fn reading(&self) -> Vec<&'a Stamp<R::Schema>> {
+        Frontier::reading::<R>(self)
+    }
+
+    fn grows(&self, _: &R::Schema) -> Result<(), ProdromeError> {
         Ok(())
+    }
+
+    fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
+        Ok(())
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        Vec::new()
+    }
+}
+
+/// An inflationary register: read by the greatest of all its writes, and
+/// refusing a write below its reading.
+impl<'a, R> Hold<'a, R> for Climb<'a, R::Schema>
+where
+    R: Sole,
+    for<'v> R::Value<'v>: Inflationary,
+{
+    fn join(&mut self, stamp: &'a Stamp<R::Schema>) {
+        Climb::join::<R>(self, stamp);
+    }
+
+    fn frontier(&self) -> &Frontier<'a, R::Schema> {
+        Climb::frontier(self)
+    }
+
+    fn reading(&self) -> Vec<&'a Stamp<R::Schema>> {
+        Climb::reading::<R>(self)
+    }
+
+    fn grows(&self, event: &R::Schema) -> Result<(), ProdromeError> {
+        Climb::grows::<R>(self, event)
+    }
+
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
+        Climb::climbed::<R>(self, earlier)
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        vec![Only]
     }
 }
 
 /// The registers of one entity at the schema of the register type `R`: the
-/// frontier of [`Only`].
-pub struct One<'a, R: Sole>(Frontier<'a, R::Schema>);
+/// register [`Only`], held as `R` chooses.
+pub struct One<'a, R: Sole>(R::Held<'a>);
 
 impl<R: Sole> Default for One<'_, R> {
     fn default() -> Self {
-        Self(Frontier::default())
+        Self(Default::default())
     }
 }
 
@@ -87,19 +175,27 @@ impl<'a, R: Sole> Product<'a> for One<'a, R> {
     }
 
     fn frontier(&self, _: Only) -> &Frontier<'a, R::Schema> {
-        &self.0
+        self.0.frontier()
     }
 
-    fn frontier_mut(&mut self, _: Only) -> &mut Frontier<'a, R::Schema> {
-        &mut self.0
+    fn join_to(&mut self, _: Only, stamp: &'a Stamp<R::Schema>) {
+        self.0.join(stamp);
     }
 
     fn reading(&self, _: Only) -> Vec<&'a Stamp<R::Schema>> {
-        self.0.reading::<R>()
+        self.0.reading()
     }
 
     fn grows(&self, event: &R::Schema) -> Result<(), ProdromeError> {
-        R::grows(&self.0, event)
+        self.0.grows(event)
+    }
+
+    fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError> {
+        self.0.climbed(&earlier.0)
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        self.0.climbing()
     }
 }
 
@@ -118,6 +214,7 @@ impl<E: Schema<Register = Only>> RegisterType<E> for Whole<E> {
 
 impl<E: Schema<Register = Only>> Sole for Whole<E> {
     type Schema = E;
+    type Held<'a> = Frontier<'a, E>;
 }
 
 /// The register type whose value is the body of an `Event<B>` that writes
@@ -138,4 +235,5 @@ impl<B: Body<Register = Only> + Order> RegisterType<Event<B>> for Bodies<B> {
 
 impl<B: Body<Register = Only> + Order> Sole for Bodies<B> {
     type Schema = Event<B>;
+    type Held<'a> = Frontier<'a, Event<B>>;
 }

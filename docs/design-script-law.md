@@ -57,8 +57,9 @@ Three kinds of tool can drive such a script.
 Each of three actors (`ada`, `ben`, `cai`) holds a replica: a store in
 memory, an overlay over one, or a store on disk. The script draws the
 kinds. The steps are those of `laws::script::Step`: an append (signed,
-unsigned, with a signature that does not verify, or with a dep on a write
-to another entity; by the actor or under another actor's name, as a thief
+unsigned, with a signature that does not verify, with a dep on a write
+to another entity, or as a change below the reading of an inflationary
+register, which the append refuses; by the actor or under another actor's name, as a thief
 with the actor's key would write); a receipt of chosen objects in any
 order, with duplicates; a sync; a sync of all; an offer of a print that the
 replica must refuse; a revocation of a key and a new key; a read at an
@@ -88,8 +89,9 @@ to a shadow (a set of names and a fold built by `registers::extend`), and
 checks that the shadow equals the replica. The other invariants are listed
 in law 68.
 
-`verify` must find exactly the injected faults. For a forged signature and
-a foreign dep, the machine records the finding when it writes the object.
+`verify` must find exactly the injected faults. For a forged signature, a
+foreign dep and a write below the reading of an inflationary register, the
+machine records the finding when it writes the object.
 For an object that no key proves, the machine keeps its own record of keys,
 signatures and revocations, and computes the expected findings with sets of
 names: a revocation keeps the signatures that its writer's replica held.

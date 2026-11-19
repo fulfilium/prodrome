@@ -121,8 +121,8 @@ impl<'a> Product<'a> for Last<'a> {
         &self.0
     }
 
-    fn frontier_mut(&mut self, _: Only) -> &mut Frontier<'a, MarkEvent> {
-        &mut self.0
+    fn join_to(&mut self, _: Only, stamp: &'a Stamp<MarkEvent>) {
+        self.join(stamp);
     }
 
     fn reading(&self, _: Only) -> Vec<&'a Stamp<MarkEvent>> {
@@ -131,6 +131,14 @@ impl<'a> Product<'a> for Last<'a> {
 
     fn grows(&self, _: &MarkEvent) -> Result<(), ProdromeError> {
         Ok(())
+    }
+
+    fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
+        Ok(())
+    }
+
+    fn climbing(&self) -> Vec<Only> {
+        Vec::new()
     }
 }
 

@@ -65,6 +65,14 @@ pub enum Finding {
         object: Hash,
         actor: Actor,
     },
+    /// A write to an inflationary register whose value falls below, or
+    /// beside, the reading of the writes that it rests on (SPEC §6): an
+    /// append refuses such a write, and only a change built by hand writes
+    /// one. `why` is the append's refusal.
+    Below {
+        write: Hash,
+        why: ProdromeError,
+    },
     /// The store's record of its heads, `.heads`, which parses and differs
     /// from the heads that the store derives (SPEC §3).
     StaleHeads {
@@ -182,6 +190,12 @@ impl fmt::Display for Finding {
                 f,
                 "object {object} is {actor}'s, who has a key, and no signature by a key of \
                  {actor}'s proves it (SPEC §5)"
+            ),
+            Finding::Below { write, why } => write!(
+                f,
+                "write {write} falls below the reading of what it rests on, which an append \
+                 refuses ({why}); the reading is the greatest of all writes and does not \
+                 descend (SPEC §6)"
             ),
             Finding::StaleHeads { recorded, derived } => write!(
                 f,
