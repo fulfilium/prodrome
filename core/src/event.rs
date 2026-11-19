@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 
 use crate::change::Change;
 use crate::genesis::Genesis;
-use crate::literal::codec::Literal;
+use crate::literal::codec::{headed, Literal};
 use crate::literal::{
     parse_literal, print_literal, Call, Datetime, ProdromeError, Signature, Table, Value,
     Vocabulary,
@@ -160,6 +160,9 @@ newtype_str! {
     /// Who wrote an event. SYNTACTIC only (`^[a-z][a-z0-9_-]*$`): WHICH actors
     /// exist, and what a host makes of each, is instance data — the engine
     /// knows the mechanism, never the roster (§5, [`crate::policy`]).
+    /// Its literal is its text, which a read checks with [`Actor::new`].
+    #[derive(Literal)]
+    #[literal(new = Actor::new)]
     Actor
 }
 
@@ -297,16 +300,6 @@ impl Literal for Hash {
 
     fn from_value(value: &Value) -> Result<Self, ProdromeError> {
         Hash::new(String::from_value(value)?)
-    }
-}
-
-impl Literal for Actor {
-    fn to_value(&self) -> Value {
-        Value::str(self.as_str())
-    }
-
-    fn from_value(value: &Value) -> Result<Self, ProdromeError> {
-        Actor::new(String::from_value(value)?)
     }
 }
 
@@ -460,7 +453,7 @@ impl<P: Payload> TodoEvent<P> {
             TodoEvent::Reopened(_) => "Reopened",
             TodoEvent::Tended(_) => "Tended",
             TodoEvent::SpecRevised(_) => "SpecRevised",
-            TodoEvent::Authored(_) => P::KIND,
+            TodoEvent::Authored(_) => P::CONSTRUCTOR.0,
         }
     }
 }
@@ -823,28 +816,21 @@ impl<P: Payload> TodoEvent<P> {
 
 impl<P: Payload> Authored<P> {
     /// A content record as a literal: the core's three fields, then the
-    /// payload's own, in `P::FIELDS`'s order.
+    /// payload's own, in the order of its constructor.
     ///
     /// Split out of [`TodoEvent::to_value`] because the CONTENT fold (§6.3)
     /// hands back records and their print is what a consumer compares — one
     /// printer, reached from either shape.
     pub fn to_value(&self) -> Value {
-        let payload = self.payload.fields();
-        let mut fields = Vec::with_capacity(3 + payload.len());
-        fields.push(field("todo", text(self.todo.0.clone())));
-        fields.push(field("at", Value::Datetime(self.at)));
-        fields.push(field("actor", text(self.actor.0.clone())));
-        fields.extend(payload.into_iter().map(|(name, value)| field(name, value)));
-        debug_assert!(
-            fields
-                .iter()
-                .skip(3)
-                .map(|(name, _)| name.as_str())
-                .eq(P::FIELDS.iter().copied()),
-            "{}::fields() must answer with FIELDS, in order",
-            P::KIND
-        );
-        Value::call(P::KIND, fields)
+        headed(
+            vec![
+                ("todo", text(self.todo.0.clone())),
+                ("at", Value::Datetime(self.at)),
+                ("actor", text(self.actor.0.clone())),
+            ],
+            P::CONSTRUCTOR,
+            self.payload.values(),
+        )
     }
 }
 
@@ -938,7 +924,9 @@ pub(crate) fn event_from_value<P: Payload>(value: &Value) -> Result<TodoEvent<P>
         ),
         // THE PAYLOAD'S KIND IS TRIED LAST, so a payload cannot name its record
         // after one of §4's own and take its place.
-        name if name == P::KIND => mk_record(&todo()?, at()?, &actor()?, P::from_fields(call)?),
+        name if name == P::CONSTRUCTOR.0 => {
+            mk_record(&todo()?, at()?, &actor()?, P::from_call(call)?)
+        }
         other => Err(ProdromeError::invalid(format!(
             "{other} is not one of SPEC §4's kinds"
         ))),

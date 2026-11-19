@@ -491,11 +491,22 @@ dependencies = [
  "ed25519-dalek",
  "memchr",
  "prodrome-core",
+ "prodrome-derive",
  "proptest",
  "rustix",
  "sha2",
  "thiserror",
  "unicode-general-category",
+]
+
+[[package]]
+name = "prodrome-derive"
+version = "0.9.0"
+dependencies = [
+ "proc-macro2",
+ "prodrome-core",
+ "quote",
+ "syn 2.0.119",
 ]
 
 [[package]]

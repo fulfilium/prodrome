@@ -41,6 +41,8 @@ finally implemented, see `SPEC.md` and `CHANGELOG.md`.
 - [`design-script-law.md`](design-script-law.md): a design for the script
   law, which drives three replicas through random steps and checks every
   invariant after every step.
+- [`design-literal-derive.md`](design-literal-derive.md): the design of
+  `#[derive(Literal)]`, the routes that were weighed, and the measurements.
 - [`SIMPLIFY-PLAN.md`](SIMPLIFY-PLAN.md): a plan to remove duplicated code,
   so that the crate has one term functor, one schema, one evaluator, and one
   fold.

@@ -1445,6 +1445,19 @@ impl Term {
     }
 }
 
+/// A term in a field of a stored type: an optional spec, for one. The FPL
+/// signature table ([`schema::fields`] and [`schema::build`]) gives the
+/// print and the read, so the impl is written here and not derived.
+impl crate::literal::codec::Literal for Term {
+    fn to_value(&self) -> literal::Value {
+        Term::to_value(self)
+    }
+
+    fn from_value(value: &literal::Value) -> Result<Term, ProdromeError> {
+        Ok(Term::from_value(value)?)
+    }
+}
+
 /// The canonical §2 print of a term.
 pub fn print_term(term: &Term) -> String {
     print_literal(&term.to_value())

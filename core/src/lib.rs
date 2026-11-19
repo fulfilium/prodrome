@@ -121,6 +121,11 @@
 //! - `laws`     — §9: the laws that ask nothing of a schema, as functions a
 //!   program runs over its own schemas and stores (feature `laws`)
 
+// The code that `#[derive(Literal)]` writes names this crate `::prodrome`,
+// as a program that depends on it does. This line makes the same path work
+// inside the crate, for the types that derive `Literal` here.
+extern crate self as prodrome;
+
 pub mod breaks;
 /// §7.1 — the chain compiler: `After` erased against a snapshot, so a chain
 /// composes into one evaluable term instead of a lookup per node per sample.
