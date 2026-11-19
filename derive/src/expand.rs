@@ -1,11 +1,13 @@
 //! The code that the derive writes for a [`Derived`] type: an impl of
 //! `Literal`, and for a record an impl of `Record`.
 //!
-//! The code names the core as `::prodrome`. The core declares
-//! `extern crate self as prodrome`, so the same path works inside it.
+//! The code names the core as `::prodrome`, or by the path that
+//! `#[literal(crate = path)]` gives. The core declares
+//! `extern crate self as prodrome`, so the default path works inside it.
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};
+use syn::Path;
 
 use crate::shape::{
     Absent, Build, Codec, Constructor, Derived, Field, Headed, Newtype, Record, Role, Shape,
@@ -15,32 +17,41 @@ use crate::shape::{
 /// The impls for `derived`.
 pub fn expand(derived: &Derived) -> TokenStream {
     let ident = &derived.ident;
+    let core = Core::at(&derived.root);
     match &derived.shape {
-        Shape::Record(record) => expand_record(ident, record),
-        Shape::Headed(headed) => expand_headed(ident, headed),
-        Shape::Sum(variants) => expand_sum(ident, variants),
-        Shape::Newtype(newtype) => expand_newtype(ident, newtype),
+        Shape::Record(record) => expand_record(&core, ident, record),
+        Shape::Headed(headed) => expand_headed(&core, ident, headed),
+        Shape::Sum(variants) => expand_sum(&core, ident, variants),
+        Shape::Newtype(newtype) => expand_newtype(&core, ident, newtype),
     }
 }
 
-fn codec() -> TokenStream {
-    quote!(::prodrome::literal::codec)
+/// The paths of the core's modules that the code names.
+struct Core {
+    /// `literal::codec`.
+    codec: TokenStream,
+    /// `literal`.
+    literal: TokenStream,
 }
 
-fn literal() -> TokenStream {
-    quote!(::prodrome::literal)
+impl Core {
+    fn at(root: &Path) -> Core {
+        Core {
+            codec: quote!(#root::literal::codec),
+            literal: quote!(#root::literal),
+        }
+    }
 }
 
-fn expand_record(ident: &Ident, record: &Record) -> TokenStream {
-    let codec = codec();
-    let literal = literal();
+fn expand_record(core: &Core, ident: &Ident, record: &Record) -> TokenStream {
+    let Core { codec, literal } = core;
     let name = &record.constructor.name;
     let table = table(&record.constructor);
     let prints = record.constructor.fields.iter().filter_map(|field| {
         let member = &field.ident;
-        print(field, &quote!(&self.#member))
+        print(core, field, &quote!(&self.#member))
     });
-    let reads = reads(&record.constructor.fields);
+    let reads = reads(core, &record.constructor.fields);
     let build = build(
         &record.constructor.fields,
         &[],
@@ -83,9 +94,8 @@ fn expand_record(ident: &Ident, record: &Record) -> TokenStream {
     }
 }
 
-fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
-    let codec = codec();
-    let literal = literal();
+fn expand_sum(core: &Core, ident: &Ident, variants: &[Variant]) -> TokenStream {
+    let Core { codec, literal } = core;
     let tables = variants.iter().map(|variant| table(&variant.constructor));
     let arms_print = variants.iter().map(|variant| {
         let tag = &variant.ident;
@@ -96,7 +106,7 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
             .fields
             .iter()
             .enumerate()
-            .filter_map(|(index, field)| print(field, &local(index).to_token_stream()));
+            .filter_map(|(index, field)| print(core, field, &local(index).to_token_stream()));
         quote! {
             Self::#tag { #(#binds,)* .. } => (#table, ::std::vec![#(#prints),*]),
         }
@@ -104,7 +114,7 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
     let arms_read = variants.iter().map(|variant| {
         let tag = &variant.ident;
         let name = &variant.constructor.name;
-        let reads = reads(&variant.constructor.fields);
+        let reads = reads(core, &variant.constructor.fields);
         let build = build(
             &variant.constructor.fields,
             &[],
@@ -154,9 +164,8 @@ fn expand_sum(ident: &Ident, variants: &[Variant]) -> TokenStream {
     }
 }
 
-fn expand_headed(ident: &Ident, headed: &Headed) -> TokenStream {
-    let codec = codec();
-    let literal = literal();
+fn expand_headed(core: &Core, ident: &Ident, headed: &Headed) -> TokenStream {
+    let Core { codec, literal } = core;
     let sum = &headed.sum.ty;
     let sum_member = &headed.sum.ident;
     let stored: Vec<(&Field, &String)> = headed
@@ -170,7 +179,7 @@ fn expand_headed(ident: &Ident, headed: &Headed) -> TokenStream {
     let head_names = stored.iter().map(|(_, name)| name);
     let head = stored.iter().map(|(field, name)| {
         let member = &field.ident;
-        let value = print(field, &quote!(&self.#member));
+        let value = print(core, field, &quote!(&self.#member));
         quote!((#name, #value))
     });
     let checks = stored.iter().map(|(_, name)| {
@@ -185,7 +194,7 @@ fn expand_headed(ident: &Ident, headed: &Headed) -> TokenStream {
             );
         }
     });
-    let reads = reads(&headed.fields);
+    let reads = reads(core, &headed.fields);
     let sum_local = format_ident!("field_sum");
     let build = build(
         &headed.fields,
@@ -230,9 +239,8 @@ fn expand_headed(ident: &Ident, headed: &Headed) -> TokenStream {
     }
 }
 
-fn expand_newtype(ident: &Ident, newtype: &Newtype) -> TokenStream {
-    let codec = codec();
-    let literal = literal();
+fn expand_newtype(core: &Core, ident: &Ident, newtype: &Newtype) -> TokenStream {
+    let Core { codec, literal } = core;
     let inner = &newtype.inner;
     let build = match &newtype.build {
         Build::Fields => quote!(::std::result::Result::Ok(Self(inner))),
@@ -292,8 +300,8 @@ fn bindings(constructor: &Constructor) -> impl Iterator<Item = TokenStream> + '_
 
 /// The value of a stored field, printed from the reference `place`; none
 /// for a skipped field.
-fn print(field: &Field, place: &TokenStream) -> Option<TokenStream> {
-    let codec = codec();
+fn print(core: &Core, field: &Field, place: &TokenStream) -> Option<TokenStream> {
+    let codec = &core.codec;
     let ty = &field.ty;
     match &field.role {
         Role::Stored(stored) => Some(match &stored.codec {
@@ -306,8 +314,8 @@ fn print(field: &Field, place: &TokenStream) -> Option<TokenStream> {
 
 /// The statements that read each stored field of `fields` from `call`
 /// into its local variable.
-fn reads(fields: &[Field]) -> TokenStream {
-    let codec = codec();
+fn reads(core: &Core, fields: &[Field]) -> TokenStream {
+    let codec = &core.codec;
     let reads = fields.iter().enumerate().filter_map(|(index, field)| {
         let stored = match &field.role {
             Role::Stored(stored) => stored,

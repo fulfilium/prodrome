@@ -78,6 +78,11 @@ use syn::{parse_macro_input, DeriveInput};
 ///   are two such modules.
 /// - `#[literal(sum)]` on one field of a struct: the field's enum names the
 ///   constructor (see "A record with a sum").
+/// - `#[literal(crate = path)]` on a struct or an enum: the path of the
+///   core in the code that the derive writes. The default is `::prodrome`.
+///   A program that imports `prodrome-core` under another name, for
+///   example with `package = "prodrome-core"` in its manifest, gives that
+///   name here.
 /// - `#[literal(new = path)]` on a struct: a read calls
 ///   `path(field, ...) -> Result<Self, ProdromeError>` with the stored fields
 ///   in print order, so that a smart constructor checks the value. With

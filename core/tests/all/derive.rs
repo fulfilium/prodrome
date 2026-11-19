@@ -607,3 +607,50 @@ proptest! {
         prop_assert_eq!(Line::from_value(&value), by_hand::from_value(&value));
     }
 }
+
+// --- a program that names the core by another path --------------------------
+
+/// A schema that names the core `renamed`, as a program does that imports
+/// `prodrome-core` under another name. The derive writes `renamed::...`
+/// for each path of the core.
+mod renamed_core {
+    use prodrome as renamed;
+    use renamed::literal::codec::Literal;
+
+    /// A derived record, sum and newtype, each with `crate = renamed`.
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub struct Mark {
+        pub by: Label,
+        pub kind: Kind,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub enum Kind {
+        Seen,
+        Noted { text: String },
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+    #[literal(crate = renamed)]
+    pub struct Label(pub String);
+}
+
+/// A type that gives `crate = path` prints and reads as the same type
+/// without it.
+#[test]
+fn a_type_that_names_the_core_by_another_path_reads_back() {
+    use renamed_core::{Kind, Label, Mark};
+    let mark = Mark {
+        by: Label("ada".to_owned()),
+        kind: Kind::Noted {
+            text: "one".to_owned(),
+        },
+    };
+    assert_eq!(
+        print_literal(&mark.to_value()),
+        "Mark(by='ada', kind=Noted(text='one'))"
+    );
+    assert_eq!(Mark::from_value(&mark.to_value()), Ok(mark));
+}

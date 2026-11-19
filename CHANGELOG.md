@@ -10,6 +10,10 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`#[literal(crate = path)]`, the path of the core in a derived impl.**
+  A program that imports `prodrome-core` under another name gives that
+  name, and needs no `extern crate` alias. The default is `::prodrome`.
+  The option applies to a struct or an enum.
 - **`#[derive(Literal)]`, in the new crate `prodrome-derive`.** The core
   re-exports it as `prodrome::literal::codec::Literal`. It writes the
   `Literal` impl of a struct with named fields (one constructor), an enum

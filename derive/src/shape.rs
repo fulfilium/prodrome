@@ -7,13 +7,18 @@ use std::collections::BTreeSet;
 use proc_macro2::{Ident, Span};
 use syn::ext::IdentExt;
 use syn::spanned::Spanned;
-use syn::{Data, DeriveInput, Error, Fields, LitStr, Path, Result, Type};
+use syn::{
+    parse_quote, Data, DeriveInput, Error, Fields, FieldsUnnamed, LitStr, Path, Result, Type,
+};
 
 use crate::options::{Options, Place};
 
 /// A type that derives `Literal`, with its shape.
 pub struct Derived {
     pub ident: Ident,
+    /// The path of the core: `::prodrome`, or the path that
+    /// `#[literal(crate = path)]` gives.
+    pub root: Path,
     pub shape: Shape,
 }
 
@@ -139,34 +144,19 @@ impl Derived {
                 ),
             ));
         }
-        let shape = match &input.data {
+        let (root, shape) = match &input.data {
             Data::Struct(data) => match &data.fields {
-                Fields::Named(_) | Fields::Unit => record_shape(&ident, input, &data.fields)?,
+                Fields::Named(_) | Fields::Unit => {
+                    let (root, options) = type_options(input, Place::Record)?;
+                    (root, record_shape(&ident, options, &data.fields)?)
+                }
                 Fields::Unnamed(fields) => {
-                    let options = Options::read(&input.attrs, Place::Newtype)?;
-                    match fields.unnamed.iter().collect::<Vec<_>>().as_slice() {
-                        [field] => {
-                            Options::read(&field.attrs, Place::Inner)?;
-                            Shape::Newtype(Newtype {
-                                inner: field.ty.clone(),
-                                build: build(options.new),
-                            })
-                        }
-                        _ => {
-                            return Err(Error::new(
-                                fields.span(),
-                                format!(
-                                    "a literal names each field of a constructor: give each \
-                                     field of `{ident}` a name, or keep one field to make \
-                                     `{ident}` a newtype"
-                                ),
-                            ))
-                        }
-                    }
+                    let (root, options) = type_options(input, Place::Newtype)?;
+                    (root, newtype_shape(&ident, options, fields)?)
                 }
             },
             Data::Enum(data) => {
-                Options::read(&input.attrs, Place::Sum)?;
+                let (root, _) = type_options(input, Place::Sum)?;
                 if data.variants.is_empty() {
                     return Err(Error::new(
                         ident.span(),
@@ -178,34 +168,10 @@ impl Derived {
                 let variants = data
                     .variants
                     .iter()
-                    .map(|variant| {
-                        if let Fields::Unnamed(fields) = &variant.fields {
-                            return Err(Error::new(
-                                fields.span(),
-                                format!(
-                                    "a literal names each field of a constructor: write the \
-                                     variant as `{} {{ name: Type }}`",
-                                    variant.ident
-                                ),
-                            ));
-                        }
-                        let options = Options::read(&variant.attrs, Place::Variant)?;
-                        let (fields, marked) = fields_of(&variant.fields)?;
-                        if let Some(sum) = marked.first() {
-                            return Err(Error::new(
-                                sum.span,
-                                "a field of a variant cannot be marked `sum`: mark a field \
-                                 of a struct",
-                            ));
-                        }
-                        Ok(Variant {
-                            ident: variant.ident.clone(),
-                            constructor: constructor(&variant.ident, options.rename, fields)?,
-                        })
-                    })
+                    .map(variant)
                     .collect::<Result<Vec<_>>>()?;
                 distinct_constructors(&ident, &variants)?;
-                Shape::Sum(variants)
+                (root, Shape::Sum(variants))
             }
             Data::Union(data) => {
                 return Err(Error::new(
@@ -214,14 +180,71 @@ impl Derived {
                 ))
             }
         };
-        Ok(Derived { ident, shape })
+        Ok(Derived { ident, root, shape })
     }
+}
+
+/// The options of the type `input`, which stands at `place`, and the path
+/// of the core that they give.
+fn type_options(input: &DeriveInput, place: Place) -> Result<(Path, Options)> {
+    let mut options = Options::read(&input.attrs, place)?;
+    let root = options
+        .krate
+        .take()
+        .unwrap_or_else(|| parse_quote!(::prodrome));
+    Ok((root, options))
+}
+
+/// The shape of the struct `ident` with unnamed fields: a newtype, if it
+/// has one field.
+fn newtype_shape(ident: &Ident, options: Options, fields: &FieldsUnnamed) -> Result<Shape> {
+    match fields.unnamed.iter().collect::<Vec<_>>().as_slice() {
+        [field] => {
+            Options::read(&field.attrs, Place::Inner)?;
+            Ok(Shape::Newtype(Newtype {
+                inner: field.ty.clone(),
+                build: build(options.new),
+            }))
+        }
+        _ => Err(Error::new(
+            fields.span(),
+            format!(
+                "a literal names each field of a constructor: give each field of \
+                 `{ident}` a name, or keep one field to make `{ident}` a newtype"
+            ),
+        )),
+    }
+}
+
+/// A variant of a sum, with named fields or none.
+fn variant(variant: &syn::Variant) -> Result<Variant> {
+    if let Fields::Unnamed(fields) = &variant.fields {
+        return Err(Error::new(
+            fields.span(),
+            format!(
+                "a literal names each field of a constructor: write the variant as \
+                 `{} {{ name: Type }}`",
+                variant.ident
+            ),
+        ));
+    }
+    let options = Options::read(&variant.attrs, Place::Variant)?;
+    let (fields, marked) = fields_of(&variant.fields)?;
+    if let Some(sum) = marked.first() {
+        return Err(Error::new(
+            sum.span,
+            "a field of a variant cannot be marked `sum`: mark a field of a struct",
+        ));
+    }
+    Ok(Variant {
+        ident: variant.ident.clone(),
+        constructor: constructor(&variant.ident, options.rename, fields)?,
+    })
 }
 
 /// The shape of the struct `ident` with named fields: a record, or a record
 /// with a sum where one field is marked `sum`.
-fn record_shape(ident: &Ident, input: &DeriveInput, fields: &Fields) -> Result<Shape> {
-    let options = Options::read(&input.attrs, Place::Record)?;
+fn record_shape(ident: &Ident, options: Options, fields: &Fields) -> Result<Shape> {
     let (fields, marked) = fields_of(fields)?;
     match marked.as_slice() {
         [] => Ok(Shape::Record(Record {

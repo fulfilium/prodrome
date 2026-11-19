@@ -87,6 +87,15 @@ two fields of one constructor with one name, a stored name that the
 grammar cannot read, two fields marked `sum` in one struct, and a field
 name that is both the struct's and a variant's.
 
+## The path of the core
+
+The code that the derive writes names the core as `::prodrome`. A program
+that imports `prodrome-core` under another name (`package =
+"prodrome-core"` in its manifest) gives that name with
+`#[literal(crate = path)]` on the type, as `#[serde(crate = "...")]` does
+for serde. The option changes only the paths in the written code, so it
+does not change a print or a read.
+
 ## Stored names
 
 A constructor's name and its fields' names are in every stored object, so a
