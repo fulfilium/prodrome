@@ -21,6 +21,9 @@
 //! - [`script`]: law 68, several replicas driven through a random script of
 //!   steps, with every invariant checked after every step.
 //!
+//! [`Registers`] is what the laws compare of a fold: every entity's
+//! registers, each with its frontier and its reading, by object names.
+//!
 //! [`history`] builds a history from events, [`holding`] a store in memory
 //! that holds a history, and [`Shuffle`] says how [`free`] reorders and
 //! splits one. The module is behind the `laws` feature, which is off by
@@ -40,6 +43,7 @@ mod synced;
 pub use history::history;
 pub use holding::holding;
 pub use printed::printed;
+pub use reading::Registers;
 pub use schema::{free, routed, valued};
 pub use shuffle::{a_shuffle, Shuffle};
 pub use synced::synced;

@@ -112,8 +112,8 @@ impl<'a, I: Schema> Product<'a> for Slots<'a, I> {
         &self.0
     }
 
-    fn frontier_mut(&mut self, _held: Slot) -> &mut Frontier<'a, Holder<I>> {
-        &mut self.0
+    fn join_to(&mut self, _held: Slot, stamp: &'a Stamp<Holder<I>>) {
+        self.0.join(stamp);
     }
 
     fn reading(&self, _held: Slot) -> Vec<&'a Stamp<Holder<I>>> {
@@ -123,6 +123,14 @@ impl<'a, I: Schema> Product<'a> for Slots<'a, I> {
     /// Not inflationary: a pointer moves to what its writer saw.
     fn grows(&self, _event: &Holder<I>) -> Result<(), ProdromeError> {
         Ok(())
+    }
+
+    fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
+        Ok(())
+    }
+
+    fn climbing(&self) -> Vec<Slot> {
+        Vec::new()
     }
 }
 

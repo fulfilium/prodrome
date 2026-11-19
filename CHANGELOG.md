@@ -27,6 +27,16 @@ constructor's fields never change, in any release.
   A program that imports `prodrome-core` under another name gives that
   name, and needs no `extern crate` alias. The default is `::prodrome`.
   The option applies to a struct or an enum.
+- **The script machine opens to its host (law 68).**
+  `laws::script::run_with` reads the claimed reading under the host's
+  policy, and calls the host's check after every step with each actor and
+  what its replica holds, read-only, so that an application checks its own
+  invariants on the same scripts. `laws::script::run` is `run_with` with
+  the policy `Everything` and no check. `laws::Registers`, the reading that
+  the laws compare, is public, and `laws::script::long_run` runs many
+  scripts and returns their `Rate`, scripts and steps per second.
+  `docs/script-law.md` shows the three with an example.
+
 - **`#[derive(Literal)]`, in the new crate `prodrome-derive`.** The core
   re-exports it as `prodrome::literal::codec::Literal`. It writes the
   `Literal` impl of a struct with named fields (one constructor), an enum
@@ -148,6 +158,33 @@ constructor's fields never change, in any release.
   changed ones. Only the messages change, and no stored form changes.
   `dag::Heads` derives its codec. A breaking change to `Fields::among`,
   `no_arm` and `Body`.
+- **An inflationary register reads the greatest of all its writes (SPEC
+  §6, law 32).** The fold read every register from its frontier, so a
+  write below the reading, which the append refuses and a receipt takes as
+  a change whose deps name the higher write, lowered the reading. An
+  inflationary register is now held by `fold::Climb`, which keeps its
+  frontier and the writes that no other write outranks, and its reading is
+  the maximal values of all its writes. The reading is a function of the
+  object set, and it never falls as objects arrive. `receive` still takes
+  every valid object, and `append` still refuses a write below its
+  reading. In a history that appends wrote the reading is the frontier's,
+  write for write, so no honest reading changes, and no stored byte and no
+  conformance vector changes. `verify` reports a write below what it rests
+  on (`Finding::Below`). A host's fixtures that were built by hand, as
+  changes with chosen deps, can show this finding at their next `verify`:
+  the review fixture of the wasm exports wrote `Closed` over `Review`, which
+  the review order does not allow, and its close now rests on nothing.
+  `verify` checks each write against the product of its nearest writes
+  beneath it, so a chain costs one join for each write, and a schema with no
+  inflationary register (`Product::climbing` is empty) costs nothing. `Product::frontier_mut` becomes
+  `Product::join_to`, `Product::join` gets a default, `Product::climbed`
+  states law 32 between two readings, `Frontier::grows` moves to
+  `Climb::grows`, and `fold::sole::Sole` chooses how its register is held
+  (`Sole::Held`, `fold::sole::Hold`) instead of overriding `Sole::grows`.
+  The script law (law 68) writes a write below its reading as a fault
+  (`laws::script::Writing::Below`), checks that no reading of an
+  inflationary register falls, and runs over the proposal schema.
+  `docs/design-inflationary-reading.md` gives the reasons and the costs.
 - **`Payload` requires `Record`, and loses `KIND`, `FIELDS`, `fields` and
   `from_fields`.** `Record::CONSTRUCTOR` gives the record kind's name and
   fields, `Record::values` the values, and `Record::from_call` the read. A

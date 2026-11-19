@@ -11,6 +11,7 @@ mod causal;
 mod chain;
 mod change;
 mod change_vectors;
+mod climb;
 mod codec;
 mod conformance_view;
 mod dag;

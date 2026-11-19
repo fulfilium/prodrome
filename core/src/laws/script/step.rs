@@ -78,6 +78,13 @@ pub enum Writing {
     /// finds the dep foreign. Where no tip fits, it is written as
     /// [`Writing::Signed`].
     Foreign { dep: usize },
+    /// Written as a change whose deps are its entity's heads although the
+    /// append refuses it, because its value in an inflationary register
+    /// falls below the reading it supersedes; signed as [`Writing::Signed`].
+    /// The replica takes it, its reading does not fall, and `verify` finds
+    /// it below. Where the append takes the event, it is appended as
+    /// [`Writing::Signed`].
+    Below,
 }
 
 /// An object that a replica must refuse to receive, offered beside an
@@ -219,6 +226,7 @@ fn a_writing(faults: u32) -> BoxedStrategy<Writing> {
         faults => Just(Writing::Unsigned),
         faults => Just(Writing::Forged),
         faults => (0..8usize).prop_map(|dep| Writing::Foreign { dep }),
+        faults => Just(Writing::Below),
     ]
     .boxed()
 }

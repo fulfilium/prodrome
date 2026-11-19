@@ -1,6 +1,7 @@
 //! §3 — the DAG as a value: named objects, their tips, closure, order and
 //! findings, with no files. [`crate::store`] is the files around one.
 
+mod below;
 mod facts;
 mod finding;
 mod heads;
@@ -20,7 +21,7 @@ use crate::change::Change;
 use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
 use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
-use crate::registers::{Genesis, Node};
+use crate::registers::{fold, Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
 use crate::spread::spread;
@@ -555,7 +556,33 @@ impl<E: Schema> Dag<E> {
                 _ => {}
             }
         }
+        findings.extend(self.below_findings());
         findings
+    }
+
+    /// §6: each write to an inflationary register stands at or above the
+    /// reading of the writes it rests on, as the append requires
+    /// ([`below::findings`]). Of a DAG with no history (a cycle), it finds
+    /// nothing.
+    fn below_findings(&self) -> Vec<Finding> {
+        // Every event of a DAG is read at one vocabulary, so the product of
+        // any one write says whether the schema has an inflationary
+        // register; with none, no write can fall, and there is no fold.
+        let first = self
+            .objects()
+            .iter()
+            .find(|(_, object)| object.event().is_some())
+            .and_then(|(name, _)| self.node(name));
+        let Some(first) = first else {
+            return Vec::new();
+        };
+        if below::climbing(&fold(std::slice::from_ref(&first))).is_empty() {
+            return Vec::new();
+        }
+        match self.nodes().or_else(|_| self.interior().nodes()) {
+            Ok(nodes) => below::findings(&fold(&nodes)),
+            Err(_) => Vec::new(),
+        }
     }
 
     /// §3 and §5: a signature that does not verify, and an object whose

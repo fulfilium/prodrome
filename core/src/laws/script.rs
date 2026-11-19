@@ -22,13 +22,18 @@
 //!   that holds the down-set, however it grew;
 //! - every reading the cache holds is the fresh reading of every replica
 //!   whose frontier its key names;
+//! - no reading of an inflationary register falls in any replica, though a
+//!   fault writes a value below the reading (law 32);
 //! - and, at the step itself, that an append or a receipt done twice changes
 //!   nothing, that a refused receipt takes nothing, and that a sync of all
 //!   leaves every replica holding the same objects.
 //!
 //! The machine is generic over a schema. An application runs it over its
 //! own schema with [`a_script`] and a strategy of the writes each actor
-//! makes; `docs/script-law.md` shows how. A failure names the law, the step
+//! makes; `docs/script-law.md` shows how. [`run_with`] reads the claimed
+//! reading under the host's own policy, and calls a host's check after every
+//! step with each actor's replica, so a host checks its own invariants on
+//! the same scripts. [`long_run`] runs many scripts and answers the rate. A failure names the law, the step
 //! and what differs, and proptest shrinks the script to a short one, which
 //! [`Script`]'s `Debug` prints one step on a line with each event in its
 //! canonical print.
@@ -40,12 +45,19 @@ mod reading;
 mod step;
 
 use std::fmt;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Instant;
+
+use proptest::strategy::Strategy;
+use proptest::test_runner::{Config, TestCaseError, TestError, TestRunner};
 
 pub use step::{a_script, an_honest_script, Kind, Refusal, Root, Step, Through, Who, Writing};
 
 use crate::event::canonical;
 use crate::laws::Broken;
+use crate::policy::{Everything, Policy};
 use crate::schema::Schema;
+use crate::store::Held;
 use machine::{Conduct, Machine};
 
 /// A script: the kind of each actor's replica, by [`Who::index`], and the
@@ -98,26 +110,122 @@ pub struct Ran {
 }
 
 /// Run `script` over replicas opened at the schema `vocabulary`, and check
-/// every invariant after every step.
+/// every invariant after every step: [`run_with`] under the policy where
+/// everything binds, with no check of the host's.
 ///
 /// # Errors
 ///
 /// The first invariant that does not hold: the law it states, the step
 /// after which it failed, and what differs.
 pub fn run<E: Schema>(vocabulary: &E::Vocabulary, script: &Script<E>) -> Result<Ran, Broken> {
-    let mut machine = Machine::new(vocabulary, script.kinds, Conduct::of(&script.steps))?;
+    run_with(vocabulary, script, &Everything, |_, _| Ok(()))
+}
+
+/// Run `script` over replicas opened at the schema `vocabulary`, with the
+/// claimed reading under `policy`, and check every invariant after every
+/// step. After the machine's own checks, before the first step and after
+/// each step, `host` is called with each actor and what the actor's replica
+/// holds, read-only; its refusal stops the script as a broken law does.
+///
+/// # Errors
+///
+/// The first invariant that does not hold, the machine's or the host's: the
+/// law it states, the step after which it failed, and what differs.
+pub fn run_with<E, P>(
+    vocabulary: &E::Vocabulary,
+    script: &Script<E>,
+    policy: &P,
+    mut host: impl FnMut(Who, &Held<E>) -> Result<(), Broken>,
+) -> Result<Ran, Broken>
+where
+    E: Schema,
+    P: Policy<E> + Clone,
+{
+    let mut machine = Machine::new(
+        vocabulary,
+        script.kinds,
+        Conduct::of(&script.steps),
+        policy.clone(),
+    )?;
     machine
-        .check()
+        .check(&mut host)
         .map_err(|broken| at_step(broken, "before the first step"))?;
     for (n, step) in script.steps.iter().enumerate() {
         machine
             .step(n, step)
-            .and_then(|()| machine.check())
+            .and_then(|()| machine.check(&mut host))
             .map_err(|broken| at_step(broken, &format!("at step {n}")))?;
     }
     Ok(Ran {
         steps: script.steps.len(),
         objects: machine.objects()?,
+    })
+}
+
+/// How fast a long run went: the scripts and the steps it ran, and the
+/// seconds it took.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Rate {
+    pub scripts: usize,
+    pub steps: usize,
+    pub seconds: f64,
+}
+
+impl Rate {
+    /// Scripts run in each second.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn scripts_per_second(&self) -> f64 {
+        self.scripts as f64 / self.seconds
+    }
+
+    /// Steps run in each second.
+    #[must_use]
+    #[allow(clippy::cast_precision_loss)]
+    pub fn steps_per_second(&self) -> f64 {
+        self.steps as f64 / self.seconds
+    }
+}
+
+impl fmt::Display for Rate {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{} scripts, {} steps, in {:.1} s: {:.2} scripts and {:.1} steps per second",
+            self.scripts,
+            self.steps,
+            self.seconds,
+            self.scripts_per_second(),
+            self.steps_per_second()
+        )
+    }
+}
+
+/// Run every script that `scripts` draws under `config`, each by `run` (for
+/// example [`run`], or [`run_with`] with a host's policy and check), and
+/// answer the rate. Proptest shrinks a script that fails.
+///
+/// # Errors
+///
+/// The shortest failing script that proptest found, with what broke.
+pub fn long_run<E: Schema>(
+    scripts: &impl Strategy<Value = Script<E>>,
+    config: Config,
+    run: impl Fn(&Script<E>) -> Result<Ran, Broken>,
+) -> Result<Rate, TestError<Script<E>>> {
+    let mut runner = TestRunner::new(config);
+    let (count, steps) = (AtomicUsize::new(0), AtomicUsize::new(0));
+    let started = Instant::now();
+    runner.run(scripts, |script| {
+        let ran = run(&script).map_err(|broken| TestCaseError::fail(broken.to_string()))?;
+        steps.fetch_add(ran.steps, Ordering::Relaxed);
+        count.fetch_add(1, Ordering::Relaxed);
+        Ok(())
+    })?;
+    Ok(Rate {
+        scripts: count.into_inner(),
+        steps: steps.into_inner(),
+        seconds: started.elapsed().as_secs_f64(),
     })
 }
 
