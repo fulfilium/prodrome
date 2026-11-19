@@ -223,9 +223,12 @@ proptest! {
         let found: Vec<Hash> = dag
             .verify(&Everything)
             .into_iter()
-            .filter_map(|finding| match finding {
-                Finding::Below { write, .. } => Some(write),
-                _ => None,
+            .filter_map(|finding| {
+                if let Finding::Below { write, .. } = finding {
+                    Some(write)
+                } else {
+                    None
+                }
             })
             .collect();
         prop_assert_eq!(found.len(), below.len(), "each once");
@@ -358,8 +361,8 @@ proptest! {
 /// is taken. `failed` and `dismissed` are incomparable, so the greatest
 /// values of the two writes are both: the reading keeps `dismissed`, with
 /// `failed` beside it as a conflict, and `verify` finds the write below.
-/// Before law 32 held for any object set, the reading fell to `failed`
-/// alone and `verify` found nothing.
+/// A reading of the frontier alone would read `failed` and nothing else,
+/// because the write below descends from the dismissal.
 #[test]
 fn a_write_below_its_reading_is_taken_and_does_not_lower_it() {
     let dismissed = moved(Who::Ada, 1, State::Dismissed);
