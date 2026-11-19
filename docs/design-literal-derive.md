@@ -203,3 +203,69 @@ The event layer (`TodoEvent` and the envelopes) stays hand-written. It is
 generic over the payload, and its record kind takes its name from the
 payload. A derive for a generic type, and for the head of an event in
 `schema::headed`, is left for later work.
+
+## Additions for a host's hand-written codecs
+
+An application that adopted the derive kept many of its stored types by
+hand. Most of them read through `Fields`, whose refusals had other words
+than the derive's. The types had the same shape and accepted the same
+literals. The following changes let such types move to the derive. They
+change no print, no stored form, and no language that a read accepts.
+
+- `Fields` refuses in the words of `codec::read` (see "The same bytes and
+  the same refusals"). There is one wording, and no second read mode.
+- `#[literal(crate = path)]` names the core for a program that imports it
+  under another name.
+- `TodoId` is a `Literal`, so a newtype over it derives.
+- A variant can hold one record (see "What the derive writes").
+- `codec::assert_pinned` pins a schema's constructors in a test (see
+  "Stored names").
+
+The figures are from this repository's build, on generated data only.
+
+| | Before | After |
+|---|---|---|
+| `prodrome_wasm.wasm`, `wasm-release`, before `wasm-bindgen` | 1,592,264 bytes | 1,592,267 bytes |
+| Build of `prodrome-derive` after `cargo clean -p prodrome-derive`, runs 2 and 3 | 0.85 s, 0.96 s | 1.11 s, 1.04 s |
+| Build of the core's test binary after a touch of `core/tests/all/derive.rs`, three runs | 10.6 s, 9.3 s, 8.5 s | 10.8 s, 9.6 s, 9.2 s |
+
+The test binary of the second column holds more derived types and more
+tests, so its build time is an upper bound of the cost. The difference is
+within the spread of the runs.
+
+## Shapes that the derive does not take
+
+Each of these shapes still needs a hand-written impl. The list says what
+the derive would need to take it.
+
+- **A literal that is not a call.** A newtype over `Option<Hash>` derives,
+  and prints `None` or the hash. An enum whose variants print `None` and a
+  hash does not derive: the derive prints a variant as a call. It would
+  need a variant that prints as its field's literal, and a read that tries
+  the variants in order, which makes the order of the variants part of the
+  stored form.
+- **An integer.** A newtype over `u32`, `u64` or `usize` derives. A signed
+  integer has no `Literal` impl. It needs one impl for each signed type,
+  beside the unsigned ones in `codec.rs`, and no change to the derive.
+- **A set read in any order.** `BTreeSet` reads only its sorted print, so
+  that a set has one print. A read in any order accepts more literals,
+  which is a second language. A host gives such a field its own codec with
+  `#[literal(with = path)]`, which the derive takes today.
+- **An event head, a body of `schema::headed`.** A record with a
+  `#[literal(sum)]` field prints the same calls as an `Event<B>`. The
+  derive does not write `Body`: its `EVENTS`, `fields` and `parse`. It
+  would need an impl of those three from a derived `Sum`: `EVENTS` from
+  `headed_table` with the key's fields, `at` and `actor` as the head;
+  `fields` from `Sum::arm`; and `parse` from `Sum::from_arm` and three
+  reads of the head. `writes`, `asks` and `admits` stay the host's.
+- **A generic record, such as `Patch<A>`.** The derive refuses a generic
+  type. It would need to add the bound `A: Literal` to each type parameter
+  of the impls. A record with a sum would also need its compile-time check
+  of field names moved into an associated constant, because a `const _`
+  item cannot name a type parameter.
+- **A sum where one variant prints two constructors.** A variant prints
+  one constructor, or the one constructor of the record that it holds. A
+  variant that holds a sum, and prints that sum's constructors, would need
+  the held sum's table in the outer sum's `CONSTRUCTORS`, which a `const`
+  function can join as `headed_table` does, and a read that asks the held
+  sum's table for the name of the call.
