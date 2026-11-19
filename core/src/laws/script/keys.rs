@@ -4,11 +4,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::step::Who;
+use super::step::{Root, Who};
 use crate::dag::Finding;
 use crate::event::{Envelope, Hash};
 use crate::schema::Schema;
-use crate::sign::Secret;
+use crate::sign::{PublicKey, Secret};
 
 /// The key of `who` at generation `generation`, from a seed that names
 /// both.
@@ -17,9 +17,18 @@ pub(super) fn secret(who: Who, generation: u8) -> Secret {
         .expect("four hex digits repeated sixteen times are a seed")
 }
 
-/// The root, whose signature registers and revokes every key.
-pub(super) fn root() -> Secret {
-    Secret::new(&"9".repeat(64)).expect("64 hex digits are a seed")
+/// The root `root`, whose signature registers or revokes a key.
+pub(super) fn root(root: Root) -> Secret {
+    let digit = match root {
+        Root::First => "9",
+        Root::Second => "8",
+    };
+    Secret::new(&digit.repeat(64)).expect("64 hex digits are a seed")
+}
+
+/// The public keys of both roots.
+pub(super) fn roots() -> [PublicKey; 2] {
+    [root(Root::First).public(), root(Root::Second).public()]
 }
 
 /// A key of an actor: whose it is, and its generation.
@@ -53,6 +62,18 @@ impl Keys {
         self.current
             .get(&who)
             .map(|generation| (*generation, secret(who, *generation)))
+    }
+
+    /// The generations of `who`'s keys whose `KeyAdded` is among `objects`,
+    /// in order.
+    pub(super) fn registered<E>(&self, who: Who, objects: &BTreeMap<Hash, Envelope<E>>) -> Vec<u8> {
+        let generations: BTreeSet<u8> = self
+            .added
+            .iter()
+            .filter(|(name, (owner, _))| *owner == who && objects.contains_key(*name))
+            .map(|(_, (_, generation))| *generation)
+            .collect();
+        generations.into_iter().collect()
     }
 
     /// The generation the next key of `who` takes.

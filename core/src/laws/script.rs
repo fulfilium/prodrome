@@ -41,7 +41,7 @@ mod step;
 
 use std::fmt;
 
-pub use step::{a_script, an_honest_script, Kind, Refusal, Step, Through, Who, Writing};
+pub use step::{a_script, an_honest_script, Kind, Refusal, Root, Step, Through, Who, Writing};
 
 use crate::event::canonical;
 use crate::laws::Broken;
@@ -77,6 +77,7 @@ impl<E: Schema> fmt::Debug for Script<E> {
                 | Step::SyncAll
                 | Step::Refuse { .. }
                 | Step::Rotate { .. }
+                | Step::Revoke { .. }
                 | Step::Read { .. }
                 | Step::Record { .. }
                 | Step::Snapshot { .. }

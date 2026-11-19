@@ -16,7 +16,7 @@ use prodrome::fold::read;
 use prodrome::fpl::{instant_of, Candidates, Outcome};
 use prodrome::genesis::mk_genesis;
 use prodrome::laws::script::{
-    self, a_script, an_honest_script, Kind, Script, Step, Through, Who, Writing,
+    self, a_script, an_honest_script, Kind, Root, Script, Step, Through, Who, Writing,
 };
 use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
@@ -389,6 +389,40 @@ fn a_partial_sync_can_take_a_signed_write_without_its_signature() {
     let script = Script {
         kinds: [Kind::Memory, Kind::Memory, Kind::Memory],
         steps,
+    };
+    runs(&script).expect("the script keeps every invariant");
+}
+
+/// The shortest script the machine found that tells "beneath every
+/// revocation" from "beneath one revocation" (law 42): ben signs a write,
+/// revokes the key standing behind it, and cai revokes the same key
+/// without it. After the sync, the write is unsigned everywhere.
+#[test]
+fn a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind() {
+    let created = mk_created("alpha", hour(0), "ben", "t0", "").expect("an event");
+    let script = Script {
+        kinds: [Kind::Memory, Kind::Memory, Kind::Memory],
+        steps: vec![
+            Step::Rotate { by: Who::Ben },
+            Step::Sync {
+                from: Who::Ben,
+                to: Who::Cai,
+            },
+            append(Who::Ben, created),
+            Step::Revoke {
+                by: Who::Ben,
+                of: Who::Ben,
+                key: 0,
+                root: Root::First,
+            },
+            Step::Revoke {
+                by: Who::Cai,
+                of: Who::Ben,
+                key: 0,
+                root: Root::Second,
+            },
+            Step::SyncAll,
+        ],
     };
     runs(&script).expect("the script keeps every invariant");
 }

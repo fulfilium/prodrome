@@ -7,9 +7,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use super::kept::{Kept, Scratch};
-use super::keys::{root, secret, Keys};
+use super::keys::{root, roots, secret, Keys};
 use super::reading::{instant, Reading};
-use super::step::{Refusal, Step, Through, Who, Writing};
+use super::step::{Refusal, Root, Step, Through, Who, Writing};
 use crate::change::mk_change;
 use crate::dag::{Dag, Finding};
 use crate::event::{canonical_envelope, Envelope, Hash};
@@ -189,6 +189,7 @@ impl<E: Schema> Machine<E> {
             Step::SyncAll => self.sync_all(),
             Step::Refuse { to, refusal, with } => self.refuse(*to, *refusal, *with),
             Step::Rotate { by } => self.rotate(*by),
+            Step::Revoke { by, of, key, root } => self.revoke(*by, *of, *key, *root),
             Step::Read { by, at, through } => self.read(*by, *at, *through),
             Step::Record { by, at } => {
                 let held = self.held(*by)?;
@@ -521,17 +522,7 @@ impl<E: Schema> Machine<E> {
     /// of `by`'s that `by` holds.
     fn rotate(&mut self, by: Who) -> Result<(), Broken> {
         let held = self.held(by)?;
-        let root = root();
         let mut seeds = BTreeSet::new();
-        let mut rooted = |machine: &mut Self, object: Envelope<E>| -> Hash {
-            let (name, print) = sealed(&object);
-            let (signature, signed) = sealed::<E>(&Envelope::Signed(root.sign(&name)));
-            machine.wire.insert(name.clone(), print);
-            machine.wire.insert(signature.clone(), signed);
-            seeds.insert(signature);
-            seeds.insert(name.clone());
-            name
-        };
         if let Some((generation, key)) = self.keys.current(by) {
             let revocation = mk_key_revoked(
                 self.genesis.clone(),
@@ -540,19 +531,20 @@ impl<E: Schema> Machine<E> {
                 key.public(),
             )
             .map_err(failed(68, "a revocation"))?;
-            let name = rooted(self, Envelope::KeyRevoked(revocation));
+            let name = self.rooted(Root::First, &Envelope::KeyRevoked(revocation), &mut seeds);
             let kept = held.dag.objects().keys().cloned().collect();
             self.keys.revoked(name, by, generation, kept);
         }
         let generation = self.keys.next(by);
         let key = secret(by, generation);
-        let name = rooted(
-            self,
-            Envelope::KeyAdded(KeyAdded {
+        let name = self.rooted(
+            Root::First,
+            &Envelope::KeyAdded(KeyAdded {
                 genesis: self.genesis.clone(),
                 actor: by.actor(),
                 key: key.public(),
             }),
+            &mut seeds,
         );
         self.keys.added(name, by, generation);
         self.receive(by, seeds)?;
@@ -581,6 +573,40 @@ impl<E: Schema> Machine<E> {
         self.receive(by, signatures)
     }
 
+    /// `object`, and `root`'s signature of it, put on the wire and among
+    /// `seeds`. Answers the object's name.
+    fn rooted(&mut self, root: Root, object: &Envelope<E>, seeds: &mut BTreeSet<Hash>) -> Hash {
+        let (name, print) = sealed(object);
+        let (signature, signed) = sealed::<E>(&Envelope::Signed(self::root(root).sign(&name)));
+        self.wire.insert(name.clone(), print);
+        self.wire.insert(signature.clone(), signed);
+        seeds.insert(signature);
+        seeds.insert(name.clone());
+        name
+    }
+
+    /// `by` revokes the `key`-th key of `of`'s that it holds as registered,
+    /// standing behind what it holds, with `root`'s signature.
+    fn revoke(&mut self, by: Who, of: Who, key: usize, root: Root) -> Result<(), Broken> {
+        let held = self.held(by)?;
+        let generations = self.keys.registered(of, held.dag.objects());
+        let Some(&generation) = generations.get(key % generations.len().max(1)) else {
+            return Ok(());
+        };
+        let revocation = mk_key_revoked(
+            self.genesis.clone(),
+            held.tips.iter().cloned().collect(),
+            of.actor(),
+            secret(of, generation).public(),
+        )
+        .map_err(failed(68, "a revocation"))?;
+        let mut seeds = BTreeSet::new();
+        let name = self.rooted(root, &Envelope::KeyRevoked(revocation), &mut seeds);
+        let kept = held.dag.objects().keys().cloned().collect();
+        self.keys.revoked(name, of, generation, kept);
+        self.receive(by, seeds)
+    }
+
     /// `by` reads at the `at`-th instant, through the cache or afresh. A
     /// reading through the cache is the fresh one (law 51), and a proof
     /// read through the table of checks is the plain proof (law 49).
@@ -589,7 +615,7 @@ impl<E: Schema> Machine<E> {
         let at = instant(&held.dag, at);
         let nodes = held.dag.nodes().map_err(failed(43, "a history"))?;
         let fresh = Reading::of(&held.dag, &fold(&nodes), at);
-        let roots = Registrar::Roots([root().public()].into());
+        let roots = Registrar::Roots(roots().into());
         if Proof::through(&held.dag, &roots, &self.checks) != Proof::of(&held.dag, &roots) {
             return Err(Broken::of(49, "a proof through the table is not the proof"));
         }

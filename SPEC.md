@@ -2077,7 +2077,10 @@ replica: a store in memory, an overlay over one, or a store on disk.
     has, beside an object that the replica lacks; a revocation of the
     actor's key, whose deps are the replica's tips, and a new key that a
     root registers and that signs every object of the actor that the
-    replica holds; a read at an instant, afresh or through a cache keyed
+    replica holds; a revocation, by any replica and with the signature of
+    either of two roots, of a key that the replica holds as registered,
+    revoked already or not, whose deps are the replica's tips; a read at
+    an instant, afresh or through a cache keyed
     by the instant and the name of the replica's tips; a reading recorded
     at the replica's tips; a snapshot; a forget of a key of the cache; and
     an overlay's flush. After every step these hold. (a) Each replica's
@@ -2115,7 +2118,9 @@ replica: a store in memory, an overlay over one, or a store on disk.
     `script.rs::every_step_of_a_membership_script_keeps_every_invariant`,
     `script.rs::every_step_of_an_alias_script_keeps_every_invariant`,
     `script.rs::a_late_change_moves_a_reading_at_an_instant_and_not_one_at_a_down_set`,
-    `script.rs::an_add_a_remove_and_an_add_in_one_tick`.
+    `script.rs::an_add_a_remove_and_an_add_in_one_tick`,
+    `script.rs::a_partial_sync_can_take_a_signed_write_without_its_signature`,
+    `script.rs::a_key_revoked_twice_keeps_only_what_every_revocation_stands_behind`.
 
 ## 10. Non-goals
 

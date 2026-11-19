@@ -4,7 +4,7 @@
 
 use std::collections::BTreeSet;
 
-use super::keys::root;
+use super::keys::roots;
 use crate::dag::Dag;
 use crate::event::Hash;
 use crate::fpl::{instant_of, Instant};
@@ -29,7 +29,7 @@ impl<E: Schema> Eq for Reading<E> {}
 impl<E: Schema> Reading<E> {
     /// What `dag`, whose fold is `folded`, reads at `at` (`None`: ever).
     pub(super) fn of(dag: &Dag<E>, folded: &Folded<E>, at: Option<Instant>) -> Self {
-        let proven = Proven::new(Everything, [root().public()], dag);
+        let proven = Proven::new(Everything, roots(), dag);
         Reading {
             claimed: Registers::at(folded, at, &Everything),
             confirmed: Registers::at(folded, at, &proven),

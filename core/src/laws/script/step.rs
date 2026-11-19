@@ -92,6 +92,14 @@ pub enum Refusal {
     Orphan,
 }
 
+/// One of the two roots, whose signatures register and revoke keys. The
+/// confirmed reading counts the key objects that either signs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Root {
+    First,
+    Second,
+}
+
 /// How a read is answered.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Through {
@@ -143,6 +151,16 @@ pub enum Step<E> {
     /// replica holds, and vouches again: the root registers a new key, and
     /// `by` signs with it every object of its own that its replica holds.
     Rotate { by: Who },
+    /// `by` revokes the `key`-th key of `of`'s that its replica holds as
+    /// registered, revoked already or not, standing behind everything its
+    /// replica holds, signed by `root`. A key can so be revoked several
+    /// times, each revocation keeping what its writer held.
+    Revoke {
+        by: Who,
+        of: Who,
+        key: usize,
+        root: Root,
+    },
     /// `by` reads at the `at`-th instant its events are dated (0: ever).
     Read {
         by: Who,
@@ -169,6 +187,9 @@ impl<E> Step<E> {
             Step::Append {
                 by, of, writing, ..
             } => by == of && *writing == Writing::Signed,
+            // A revocation that no new key follows leaves later signatures
+            // by the key unproven.
+            Step::Revoke { .. } => false,
             Step::Pick { .. }
             | Step::Sync { .. }
             | Step::SyncAll
@@ -226,30 +247,68 @@ where
             })
         },
     );
-    prop_oneof![
-        12 => append,
-        4 => (a_who(), a_who(), prop::collection::vec(position(), 1..4))
-            .prop_map(|(from, to, chosen)| Step::Pick { from, to, chosen }),
-        3 => (a_who(), a_who()).prop_map(|(from, to)| Step::Sync { from, to }),
-        1 => Just(Step::SyncAll),
-        1 => (
-            a_who(),
-            prop::sample::select(vec![Refusal::Tampered, Refusal::Unparsed, Refusal::Orphan]),
-            position(),
-        )
-            .prop_map(|(to, refusal, with)| Step::Refuse { to, refusal, with }),
-        3 => a_who().prop_map(|by| Step::Rotate { by }),
-        2 => (
-            a_who(),
-            position(),
-            prop::sample::select(vec![Through::Memo, Through::Fresh]),
-        )
-            .prop_map(|(by, at, through)| Step::Read { by, at, through }),
-        2 => (a_who(), position()).prop_map(|(by, at)| Step::Record { by, at }),
-        1 => a_who().prop_map(|by| Step::Snapshot { by }),
-        1 => position().prop_map(|key| Step::Forget { key }),
-        1 => a_who().prop_map(|by| Step::Flush { by }),
-    ]
+    let mut steps: Vec<(u32, BoxedStrategy<Step<E>>)> = vec![
+        (12, append.boxed()),
+        (
+            4,
+            (a_who(), a_who(), prop::collection::vec(position(), 1..4))
+                .prop_map(|(from, to, chosen)| Step::Pick { from, to, chosen })
+                .boxed(),
+        ),
+        (
+            3,
+            (a_who(), a_who())
+                .prop_map(|(from, to)| Step::Sync { from, to })
+                .boxed(),
+        ),
+        (1, Just(Step::SyncAll).boxed()),
+        (
+            1,
+            (
+                a_who(),
+                prop::sample::select(vec![Refusal::Tampered, Refusal::Unparsed, Refusal::Orphan]),
+                position(),
+            )
+                .prop_map(|(to, refusal, with)| Step::Refuse { to, refusal, with })
+                .boxed(),
+        ),
+        (3, a_who().prop_map(|by| Step::Rotate { by }).boxed()),
+        (
+            2,
+            (
+                a_who(),
+                position(),
+                prop::sample::select(vec![Through::Memo, Through::Fresh]),
+            )
+                .prop_map(|(by, at, through)| Step::Read { by, at, through })
+                .boxed(),
+        ),
+        (
+            2,
+            (a_who(), position())
+                .prop_map(|(by, at)| Step::Record { by, at })
+                .boxed(),
+        ),
+        (1, a_who().prop_map(|by| Step::Snapshot { by }).boxed()),
+        (1, position().prop_map(|key| Step::Forget { key }).boxed()),
+        (1, a_who().prop_map(|by| Step::Flush { by }).boxed()),
+    ];
+    // A revocation that no new key follows is not an honest step, so an
+    // honest script draws none.
+    if faults > 0 {
+        steps.push((
+            2 * faults,
+            (
+                a_who(),
+                a_who(),
+                0..4usize,
+                prop::sample::select(vec![Root::First, Root::Second]),
+            )
+                .prop_map(|(by, of, key, root)| Step::Revoke { by, of, key, root })
+                .boxed(),
+        ));
+    }
+    proptest::strategy::Union::new_weighted(steps)
 }
 
 fn a_kind() -> impl Strategy<Value = Kind> {
