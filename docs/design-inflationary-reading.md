@@ -134,3 +134,20 @@ index that the fold already keeps, and it is the cost that the table shows:
 about three times the time of `verify` before. `verify` pays it for every
 schema, also for one with no inflationary register, because a product says
 whether a write falls only through `Product::grows`.
+
+The wasm exports (`nix build .#prodrome-wasm`, `prodrome_bg.wasm`) grow
+from 1,376,567 bytes to 1,380,680 bytes, by 4,113 bytes (0.3%).
+
+The script machine's rate, in a release build over 128 todo scripts of up
+to 80 steps (`script::a_long_run_of_todo_scripts_keeps_every_invariant`
+with `PRODROME_MAX_CASES=128`), each script drawn afresh:
+
+| Machine | Steps | Seconds | Steps per second |
+|---|---|---|---|
+| before this change | 5379 | 56.1 | 95.9 |
+| with the check that no reading falls | 4965 | 48.8 | 101.7 |
+| with the host's policy and hook (`run_with`) | 5438 | 57.4 | 94.7 |
+
+The three rates differ by less than the runs differ from each other. The
+check that no reading falls reads each entity twice after each step, and
+the hook that `script::run` passes does nothing.
