@@ -10,6 +10,19 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **`#[derive(Literal)]`, in the new crate `prodrome-derive`.** The core
+  re-exports it as `prodrome::literal::codec::Literal`. It writes the
+  `Literal` impl of a struct with named fields (one constructor), an enum
+  (one constructor for each variant) or a newtype, from the type's
+  declaration. The options `rename`, `default`, `skip`, `with` and `new`
+  keep a stored name, read a missing field as its default, leave a field
+  out, give a field its own codec, and send the fields to a smart
+  constructor. `Literal::CONSTRUCTORS` gives each derived type's
+  constructors as data, so that a test can pin them. The reference payload
+  and `Actor` derive their codec. Their prints and their reads, refusals
+  and messages included, do not change, and no stored constructor changes.
+  `docs/design-literal-derive.md` gives the routes that were weighed and
+  the measurements.
 - **`laws::script`, the script law (SPEC law 68).** A machine drives three
   replicas (in memory, an overlay, or on disk) through a random script of
   steps: appends with and without faults, partial and whole syncs in any
@@ -100,6 +113,14 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`Payload` requires `Record`, and loses `KIND`, `FIELDS`, `fields` and
+  `from_fields`.** `Record::CONSTRUCTOR` gives the record kind's name and
+  fields, `Record::values` the values, and `Record::from_call` the read. A
+  host derives `Literal` for its payload to get all four. `Literal` gains
+  `from_field`, a read that names the field's context, and the payload
+  helpers (`string_field` and the others) are reads of it. `mk_note`,
+  `mk_subtodo` and `mk_todo` take any string type for their text. No print
+  and no refusal message changes.
 - **The printable set of a string's print is the one of Unicode 16.0.0, in
   every build (SPEC §2, law 67).** This is a clarification, and it changes
   the name of no valid object. The printer writes a printable character

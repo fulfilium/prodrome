@@ -19,7 +19,7 @@
 //! interprets them.
 
 use crate::event::{mk_record, newtype_str, Name, TodoEvent};
-use crate::literal::codec::{blank, text, Constructor, Literal, Record};
+use crate::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
 use crate::literal::{Datetime, ProdromeError};
 use crate::payload::Payload;
 use crate::term::Term;
@@ -145,7 +145,7 @@ pub struct Source {
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
 #[literal(new = mk_note)]
 pub struct Note {
-    #[literal(with = text)]
+    #[literal(with = text_field)]
     pub on: NoteSite,
     pub lines: Vec<String>,
 }
@@ -163,19 +163,19 @@ pub struct SubTodo {
 #[derive(Debug, Clone, PartialEq, Literal)]
 #[literal(rename = "Authored", new = mk_todo)]
 pub struct Todo {
-    #[literal(with = text)]
+    #[literal(with = text_field)]
     pub kind: Name,
     pub created: Datetime,
-    #[literal(with = text)]
+    #[literal(with = text_field)]
     pub body: MarkupSource,
     pub spec: Option<Term>,
     #[literal(default)]
     pub rationale: Vec<String>,
-    #[literal(default, with = blank)]
+    #[literal(default, with = blank_field)]
     pub category: Option<Name>,
-    #[literal(default, with = text)]
+    #[literal(default, with = text_field)]
     pub waiting_on: StringSource,
-    #[literal(default, with = text)]
+    #[literal(default, with = text_field)]
     pub detail: MarkupSource,
     #[literal(default)]
     pub source: Option<Source>,

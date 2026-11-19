@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 
 use prodrome::event::{Actor, Hash};
-use prodrome::literal::codec::{text, Constructor, Fields, Literal, Record};
+use prodrome::literal::codec::{text_field, Constructor, Fields, Literal, Record};
 use prodrome::literal::{parse_literal, print_literal, ProdromeError, Table, Value};
 use prodrome::reference::{Note, Source, SubTodo, Todo};
 use proptest::prelude::*;
@@ -164,7 +164,7 @@ impl Literal for Thread {
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
 #[literal(new = Labelled::new)]
 struct Labelled {
-    #[literal(with = text)]
+    #[literal(with = text_field)]
     label: Tag,
 }
 

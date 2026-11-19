@@ -1,4 +1,4 @@
-//! A field codec for `#[literal(with = text)]`: a field whose literal is
+//! A field codec for `#[literal(with = text_field)]`: a field whose literal is
 //! its text, read back as a `String` for the type's smart constructor
 //! (`#[literal(new = ...)]`) to check.
 

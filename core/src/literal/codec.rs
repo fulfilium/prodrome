@@ -6,7 +6,7 @@
 //!
 //! - A record prints as a call of one [`Constructor`], with every field in
 //!   the constructor's order, so its print is canonical by construction.
-//!   [`record`] builds the call, and [`Fields`] reads it back by field name.
+//!   [`record()`] builds the call, and [`Fields`] reads it back by field name.
 //! - A sum prints one constructor for each variant. [`Fields::among`] and
 //!   [`arm`] tell a reader which variant a value is.
 //! - A list prints as a tuple, and a set prints as a sorted tuple with each
@@ -20,9 +20,9 @@
 //!   this for a type.
 //!
 //! - `#[derive(Literal)]` writes the impl for a record, a sum or a newtype
-//!   from the type's declaration. [`record`](mod@record) holds the reads
-//!   that a derived impl makes, and [`text`] and [`blank`] are two field
-//!   codecs for `#[literal(with = ...)]`.
+//!   from the type's declaration. [`Record`], [`read`] and [`read_or_default`]
+//!   are the reads that a derived impl makes, and [`text_field`] and
+//!   [`blank_field`] are two field codecs for `#[literal(with = ...)]`.
 //!
 //! The module depends on no schema. A schema's `to_value` and `from_value`
 //! ([`crate::schema::Schema`]) can use it to print and read their events'
@@ -37,9 +37,9 @@ use chrono::NaiveDate;
 
 use super::{Call, Datetime, Int, ProdromeError, Value};
 
-pub mod blank;
-pub mod record;
-pub mod text;
+pub mod blank_field;
+mod record;
+pub mod text_field;
 
 pub use prodrome_derive::Literal;
 pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
@@ -208,7 +208,7 @@ where
 
 /// Implements [`Literal`] for each type whose literal is its text. The type
 /// prints with the given function and reads back with
-/// [`text`], through its `TryFrom<String>`:
+/// [`text()`], through its `TryFrom<String>`:
 ///
 /// ```
 /// struct Tag(String);

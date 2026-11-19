@@ -88,6 +88,14 @@ moves to the top of the list. For the same example in Rust, see the
 [quick start](core/src/lib.rs) in the crate documentation. `cargo test` runs
 it.
 
+A stored type has one literal form: a call of a constructor with named
+fields. To give a Rust type that form, write
+`#[derive(prodrome::literal::codec::Literal)]` on it. The derive writes the
+print, the read, and the table of the constructor's name and field names
+from the type's declaration. A test can pin that table, so that a renamed
+field fails the test before it changes a stored object. The derive's
+documentation lists the forms and the options.
+
 ## Where to go next
 
 - [The guide](docs/guide.md) explains the model first. Then it explains the

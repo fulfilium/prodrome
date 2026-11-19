@@ -1,4 +1,4 @@
-//! A field codec for `#[literal(with = blank)]`: an optional text that
+//! A field codec for `#[literal(with = blank_field)]`: an optional text that
 //! prints as `''` when it is absent, read back as a `String` for the type's
 //! smart constructor (`#[literal(new = ...)]`) to check.
 //!
@@ -18,4 +18,4 @@ pub fn to_value<T: AsRef<str>>(value: &Option<T>) -> Value {
     Value::str(value.as_ref().map_or("", AsRef::as_ref))
 }
 
-pub use super::text::from_field;
+pub use super::text_field::from_field;

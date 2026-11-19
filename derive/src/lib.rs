@@ -67,7 +67,8 @@ use syn::{parse_macro_input, DeriveInput};
 /// - `#[literal(with = path)]` on a field: the field prints with
 ///   `path::to_value(&field) -> Value` and reads with
 ///   `path::from_field(&Value, &dyn Display) -> Result<T, ProdromeError>`.
-///   `prodrome::literal::codec::text` and `prodrome::literal::codec::blank`
+///   `prodrome::literal::codec::text_field` and
+///   `prodrome::literal::codec::blank_field`
 ///   are two such modules.
 /// - `#[literal(new = path)]` on a struct: a read calls
 ///   `path(field, ...) -> Result<Self, ProdromeError>` with the stored fields
