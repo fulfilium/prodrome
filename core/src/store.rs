@@ -156,7 +156,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// over heads that are not the store's, or answer from a history the
     /// store does not hold. So a decision, and every write that begins with
     /// one, refuses while anything is unread, naming the file; `fsck` sets
-    /// aside a file failing its hash, and a file that parses under a newer
+    /// aside a file failing its hash that is no husk, and a file that parses under a newer
     /// schema is read by opening the store at it.
     ///
     /// # Errors
@@ -716,10 +716,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// FULL FSCK: set aside every object file that fails its hash, then
-    /// [`EventStore::verify`]. An empty result means healthy.
+    /// FULL FSCK: set aside every object file that fails its hash and does
+    /// not read as a husk (SPEC §3), then [`EventStore::verify`]. An empty
+    /// result means healthy.
     ///
-    /// A file whose bytes are not the hash of its name has no honest reading:
+    /// A husk does not hash to its name, and is the object it reads as, so
+    /// it stays. Any other file whose bytes are not the hash of its name has
+    /// no honest reading:
     /// every read leaves it out, and every write refuses to guess what it
     /// held, so one damaged file would stop every write. This moves each
     /// such file to `quarantine/` (durably, under the store's lock, never
@@ -732,7 +735,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// replica (an `adopt`, or a copy of its file) and the receipt deleted;
     /// what rested on the object rejoins the history with it.
     ///
-    /// ONLY A FILE THAT FAILS ITS HASH. One that hashes to its name is that
+    /// ONLY A FILE THAT FAILS ITS HASH AND IS NO HUSK. One that hashes to its name is that
     /// object, whatever it holds — one this reader cannot parse may be a
     /// newer writer's — and setting it aside would be hiding it: it is
     /// reported, and stays. Strays are reported, never moved or deleted.
@@ -754,7 +757,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// Every file of `objects/` failing its hash, moved to `quarantine/`
+    /// Every file of `objects/` failing its hash and reading as no husk,
+    /// moved to `quarantine/`
     /// under the lock: the directory it lands in synced with each, and
     /// `objects/` once after. The files are those a cold look holds as
     /// unread ([`EventStore::cold`]), every one rehashed.

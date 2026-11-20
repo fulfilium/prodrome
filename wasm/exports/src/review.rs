@@ -104,9 +104,10 @@ fn a_review_store_verifies() {
 /// A refusal is a value the export throws, never a panic.
 #[test]
 fn a_set_that_is_not_objects_is_refused() {
-    assert!(crate::Replica::<Review>::of("{}").is_err());
+    assert!(crate::Replica::<Review>::of("{}", crate::Sender::Stranger).is_err());
     let todo = r#"[{"hash": "00", "text": "Created()"}]"#;
-    let replica = crate::Replica::<Review>::of(todo).expect("the shape is right");
+    let replica =
+        crate::Replica::<Review>::of(todo, crate::Sender::Stranger).expect("the shape is right");
     assert!(
         replica.read().is_err(),
         "a name that is no name reads nothing"

@@ -77,7 +77,12 @@ fn replica(objects: &[&(Hash, Envelope<Declared>)]) -> Replica<Declared> {
         .iter()
         .map(|(name, object)| json!({ "hash": name.as_str(), "text": canonical_envelope(object) }))
         .collect();
-    Replica::at(migrated().clone(), &Value::Array(sent).to_string()).expect("the shape is right")
+    Replica::at(
+        migrated().clone(),
+        &Value::Array(sent).to_string(),
+        crate::Sender::Stranger,
+    )
+    .expect("the shape is right")
 }
 
 fn answer(text: Result<String, String>) -> Value {

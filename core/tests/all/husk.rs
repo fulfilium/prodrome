@@ -546,6 +546,28 @@ proptest! {
         }
     }
 
+    /// Law 80: no signature is made over a name whose whole the signer
+    /// does not hold. `Secret::sign_whole` signs each object the history
+    /// holds whole, and refuses each name held as a husk, in the history or
+    /// waiting, and each name not held.
+    #[test]
+    fn no_signature_over_a_name_whose_whole_is_not_held(
+        drafts in a_history(),
+        choice in a_choice(),
+    ) {
+        let scratch = Scratch::new();
+        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
+        let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
+        let ada = Secret::new(&"1".repeat(64)).expect("a seed");
+        let dag = store.dag().expect("reads");
+        for name in dag.objects().keys() {
+            let signed = ada.sign_whole(&dag, name);
+            prop_assert_eq!(signed.is_ok(), !done.contains(name), "{}", name);
+        }
+        let absent = Hash::new("ab".repeat(32)).expect("a name");
+        prop_assert!(ada.sign_whole(&dag, &absent).is_err());
+    }
+
     /// Law 78: a husk is exactly one print. A husk's print with a comment
     /// before it, a space after any comma, or two of its fields swapped
     /// still parses, and is tampered, even from the keeper of record.
@@ -1040,4 +1062,29 @@ fn writing_a_waiting_object_again_writes_nothing() {
         .expect("a merge again writes nothing");
     assert_eq!(again, merged);
     assert_eq!(files(store.root()), files_once);
+}
+
+/// SPEC §3: an overlay whose own layer holds a whole answers the base's husk
+/// once the base takes it, with no read of the overlay between: an `accept`
+/// from the overlay hands out the husk, never the whole.
+#[test]
+fn an_overlay_answers_the_base_s_husk_without_a_read_between() {
+    let scratch = Scratch::new();
+    let drafts = [Draft::Wrote {
+        letter: 0,
+        parts: vec![Some(0)],
+    }];
+    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let name = boxed(&whole).into_iter().next().expect("a boxed change");
+    let husked = copied(&scratch, "husked", &whole);
+    husked.husk([name.clone()]).expect("husks");
+    let base = scratch.store("base");
+    let overlay = Overlay::new(&base);
+    sync(&whole, &overlay, Sender::Stranger).expect("the overlay takes the whole");
+    let tips = husked.tips().expect("tips");
+    accept(&husked, &base, tips.clone(), Sender::Keeper).expect("the base takes the husk");
+    let fresh = MemoryStore::<Letter>::default();
+    accept(&overlay, &fresh, tips, Sender::Keeper).expect("accepts from the overlay");
+    assert_eq!(fresh.kept(&name), husked.kept(&name));
+    assert_eq!(fresh.print(&name), None);
 }

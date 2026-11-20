@@ -281,7 +281,11 @@ impl Secret {
         PublicKey(hex(self.0.verifying_key().as_bytes()))
     }
 
-    /// This key's signature of the object named `object`.
+    /// This key's signature of the object named `object`. A signature
+    /// covers a name and so proves the bytes that hash to it: the caller
+    /// has hashed those bytes to `object` itself. A signer of an object it
+    /// holds signs through [`Secret::sign_whole`], which refuses a name it
+    /// holds no such bytes for.
     #[must_use]
     pub fn sign(&self, object: &Hash) -> Signed {
         Signed {
@@ -289,6 +293,32 @@ impl Secret {
             key: self.public(),
             signature: Signature(hex(&self.0.sign(&message(object)).to_bytes())),
         }
+    }
+}
+
+impl Secret {
+    /// This key's signature of the object `object`, which `dag` holds
+    /// whole in its history: a print whose bytes the holder hashed to the
+    /// name (SPEC §5, law 80). A husk's clear fields are not bound to its
+    /// name, so whoever handed the holder the husk may have written another
+    /// whole under the name, and a signature of the name would prove that
+    /// whole on every replica that holds it.
+    ///
+    /// # Errors
+    ///
+    /// `object` held as a husk, or not in the history.
+    pub fn sign_whole<E>(&self, dag: &Dag<E>, object: &Hash) -> Result<Signed, ProdromeError> {
+        if dag.husks().contains(object) {
+            return Err(ProdromeError::invalid(format!(
+                "object {object} is held as a husk: its whole is not here to sign"
+            )));
+        }
+        if dag.get(object).is_none() {
+            return Err(ProdromeError::invalid(format!(
+                "object {object} is not held"
+            )));
+        }
+        Ok(self.sign(object))
     }
 }
 
@@ -465,10 +495,11 @@ impl Proof {
     }
 
     /// Is the object `object` signed by a key that speaks for its actor,
-    /// over the bytes its name is the hash of? Never for a husk.
+    /// over the bytes its name is the hash of? Never for a husk. A reading
+    /// of [`Proof::standing`], kept for the readers that ask only this.
     #[must_use]
     pub fn proves(&self, object: &Hash) -> bool {
-        self.proven.contains(object)
+        self.standing(object) == Proved::Proven
     }
 
     /// Has `actor` a registered key in the prodrome `genesis`, revoked or

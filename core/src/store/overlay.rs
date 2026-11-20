@@ -157,25 +157,22 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
         Ok(self.layer()?.union.tips().clone())
     }
 
-    /// The print the union reads under `name`. Where the base holds the
-    /// name as an object, whole or husk, it is the base's: a husk of the
-    /// overlay's own whole hides the whole, and a dropped part is never
-    /// answered again (SPEC §3). Elsewhere, where the base holds no object
-    /// under the name (it lacks it, or its file is unread), it is the
-    /// overlay's own, and else the base's. The base is the one the union
-    /// was last taken over. Never waits on the base: a flush reads it while
-    /// the base holds its lock.
+    /// The print the union reads under `name`. Where the base keeps a
+    /// print under the name that reads as an object, whole or husk, it is
+    /// the base's: a husk of the overlay's own whole hides the whole, and a
+    /// dropped part is never answered again (SPEC §3). Elsewhere (the base
+    /// lacks the name, or its print there is no object) it is the
+    /// overlay's own. The base's print is read as it is now, whatever the
+    /// overlay read before, and is read as the base reads its own prints.
+    /// Never waits on the base's lock: a flush reads it while the base
+    /// holds its lock.
     fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
-        let (base_holds, own) = {
-            let layer = self.lock();
-            let holds = layer.under.as_ref().is_some_and(|base| base.holds(name));
-            (holds, layer.own.get(name).cloned())
-        };
-        if base_holds {
-            self.base.kept(name)
-        } else {
-            own.or_else(|| self.base.kept(name))
-        }
+        self.base
+            .kept(name)
+            .filter(|print| {
+                Verified::<E>::read(self.base.schema(), name, print, Sender::Keeper).is_ok()
+            })
+            .or_else(|| self.lock().own.get(name).cloned())
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {

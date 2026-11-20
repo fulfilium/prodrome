@@ -25,10 +25,17 @@
 //! | `public_key` | §3, static: the public key of a device key's seed          |
 //! | `declaration` | `declared` only: the schema it was admitted at          |
 //!
+//! WHOSE WORD THE OBJECTS ARE is the page's to say (SPEC §3). `new` reads
+//! them as a stranger's, so a print whose bytes do not hash to its name is
+//! no object. `fromKeeper` reads them as their keeper of record's, so such
+//! a print that is a husk at the schema is the object it reads as, and its
+//! row in `verify` says `husk: true`. `sign` refuses a husk's name either
+//! way.
+//!
 //! EVERY READING IS TOTAL OVER WHAT THE REPLICA HOLDS. A print that is not
 //! an object at the class's schema (one written under a constructor the
-//! schema has since changed, one whose bytes do not hash to its name) is
-//! left out of the history with everything resting on it, as a store's
+//! schema has since changed, one whose bytes do not hash to its name and is
+//! no husk from the keeper) is left out of the history with everything resting on it, as a store's
 //! largest down-set leaves it (SPEC law 40), and every other object reads
 //! as it would had the print never arrived. So `tips`, `since`,
 //! `readings`, `proven`, `entries`, `prices` and `next_changes` each answer
@@ -92,7 +99,8 @@ use prodrome::policy::Everything;
 use prodrome::registers::Node;
 use prodrome::schema::{self, Bind, History, Schema};
 use prodrome::sign::{Proof, Registrar, Secret};
-use prodrome::store::{MemoryStore, Replica as _, Sender};
+pub use prodrome::store::Sender;
+use prodrome::store::{MemoryStore, Replica as _};
 use prodrome::todo::{self, TodoVocabulary};
 use prodrome::view::{list_order, Entry};
 use serde_json::{json, Value};
@@ -242,10 +250,22 @@ macro_rules! schema {
 
         #[wasm_bindgen::prelude::wasm_bindgen]
         impl $name {
-            /// The objects, `[{hash, text}]`, read once at this schema.
+            /// The objects, `[{hash, text}]`, read once at this schema, as
+            /// a stranger's: a print that does not hash to its name is
+            /// left out.
             #[wasm_bindgen(constructor)]
             pub fn new(objects: &str) -> Result<$name, wasm_bindgen::JsError> {
-                $crate::Replica::of(objects)
+                $crate::Replica::of(objects, $crate::Sender::Stranger)
+                    .map($name)
+                    .map_err(|refusal| wasm_bindgen::JsError::new(&refusal))
+            }
+
+            /// The objects, read as their keeper of record's: a page that
+            /// takes the sender's husks says so by this constructor
+            /// (SPEC §3).
+            #[wasm_bindgen(js_name = fromKeeper)]
+            pub fn from_keeper(objects: &str) -> Result<$name, wasm_bindgen::JsError> {
+                $crate::Replica::of(objects, $crate::Sender::Keeper)
                     .map($name)
                     .map_err(|refusal| wasm_bindgen::JsError::new(&refusal))
             }
@@ -261,7 +281,19 @@ macro_rules! schema {
             /// text}]`, read once at it.
             #[wasm_bindgen(constructor)]
             pub fn new(schema: &str, objects: &str) -> Result<$name, wasm_bindgen::JsError> {
-                $crate::Replica::declared(schema, objects)
+                $crate::Replica::declared(schema, objects, $crate::Sender::Stranger)
+                    .map($name)
+                    .map_err(|refusal| wasm_bindgen::JsError::new(&refusal))
+            }
+
+            /// The same, with the objects read as their keeper of
+            /// record's (SPEC §3).
+            #[wasm_bindgen(js_name = fromKeeper)]
+            pub fn from_keeper(
+                schema: &str,
+                objects: &str,
+            ) -> Result<$name, wasm_bindgen::JsError> {
+                $crate::Replica::declared(schema, objects, $crate::Sender::Keeper)
                     .map($name)
                     .map_err(|refusal| wasm_bindgen::JsError::new(&refusal))
             }
@@ -467,11 +499,17 @@ impl<E: Schema> Replica<E> {
     /// `objects` is `[{hash, text}]`: every object's claimed name beside the
     /// exact canonical print that name is a hash of. Refused only where it is
     /// not that shape; what the objects are is [`verify`]'s to say.
-    pub fn of(objects: &str) -> Result<Replica<E>, Refusal>
+    ///
+    /// `sender` is whose word the objects are: a print that does not hash
+    /// to its name is read as a husk only from the keeper of record
+    /// ([`Sender::Keeper`]), and from a stranger it is left out as any
+    /// tampered print is (SPEC §3). The page knows where it got the bytes;
+    /// the module does not.
+    pub fn of(objects: &str, sender: Sender) -> Result<Replica<E>, Refusal>
     where
         E::Vocabulary: Default,
     {
-        Replica::at(E::Vocabulary::default(), objects)
+        Replica::at(E::Vocabulary::default(), objects, sender)
     }
 
     /// [`Replica::of`], read at the schema `schema`, a value: a declared
@@ -480,7 +518,7 @@ impl<E: Schema> Replica<E> {
     /// # Errors
     ///
     /// [`Replica::of`]'s: `objects` is not `[{hash, text}]`.
-    pub fn at(schema: E::Vocabulary, objects: &str) -> Result<Replica<E>, Refusal> {
+    pub fn at(schema: E::Vocabulary, objects: &str, sender: Sender) -> Result<Replica<E>, Refusal> {
         let mut seen = BTreeSet::new();
         let mut sent = Vec::new();
         let mut prints = Vec::new();
@@ -503,10 +541,7 @@ impl<E: Schema> Replica<E> {
                 twice,
             });
         }
-        // The page that sends the objects is this replica's keeper of
-        // record: the replica holds nothing but what the page sends, so it
-        // takes the page's husks as the page's store holds them (SPEC §3).
-        let prints = Arc::new(Dag::from_prints(&schema, prints, Sender::Keeper));
+        let prints = Arc::new(Dag::from_prints(&schema, prints, sender));
         let excluded = prints.excluded();
         let history = if excluded.is_empty() {
             Arc::clone(&prints)
@@ -563,9 +598,13 @@ impl Replica<Declared> {
     /// # Errors
     ///
     /// The law the schema does not keep, named; then [`Replica::at`]'s.
-    pub fn declared(schema: &str, objects: &str) -> Result<Replica<Declared>, Refusal> {
+    pub fn declared(
+        schema: &str,
+        objects: &str,
+        sender: Sender,
+    ) -> Result<Replica<Declared>, Refusal> {
         let schema = Declaration::admit(schema).map_err(|refusal| format!("schema: {refusal}"))?;
-        Replica::at(schema, objects)
+        Replica::at(schema, objects, sender)
     }
 }
 
@@ -638,7 +677,9 @@ pub fn append<E: Schema>(
 /// # Errors
 ///
 /// Objects with no honest reading; a secret that is not a seed; an object
-/// name that is not one, or that this replica does not hold.
+/// name that is not one, or that this replica does not hold whole: a husk is
+/// refused, since a signature of its name would prove a whole the replica
+/// never hashed (SPEC law 80).
 pub fn sign<E: Schema>(
     replica: &mut Replica<E>,
     secret: &str,
@@ -646,13 +687,11 @@ pub fn sign<E: Schema>(
 ) -> Result<String, Refusal> {
     let read = replica.read()?;
     let object = Hash::new(object).map_err(|e| format!("object: {e}"))?;
-    if read.dag.get(&object).is_none() {
-        return Err(format!("object: {object} is not held"));
-    }
     let signed = Envelope::<E>::Signed(
         Secret::new(secret)
             .map_err(|e| format!("secret: {e}"))?
-            .sign(&object),
+            .sign_whole(read.dag, &object)
+            .map_err(|e| format!("object: {e}"))?,
     );
     let (name, print) = (seal_hash(&signed), canonical_envelope(&signed).into_bytes());
     write(replica, None, |store| {
@@ -922,15 +961,25 @@ impl Row {
         }
     }
 
-    fn json<E: Json>(&self, schema: &E::Vocabulary) -> Value {
+    /// The row as the page reads it. A row the replica holds as a husk
+    /// (SPEC §3), whose bytes do not hash to its name, says `husk: true`;
+    /// every other row has no `husk` field, so a store without husks
+    /// answers as it did before husks.
+    fn json<E: Json>(&self, schema: &E::Vocabulary, husk: Form) -> Value {
         let mut fields = vec![
             ("hash", json!(self.hash)),
             ("computed", json!(self.computed)),
             ("hashOk", json!(self.hash_ok())),
+        ];
+        match husk {
+            Form::Husk => fields.push(("husk", json!(true))),
+            Form::Whole => {}
+        }
+        fields.extend(vec![
             ("reachable", json!(self.reachable)),
             ("depth", json!(self.depth)),
             ("kind", json!(self.kind)),
-        ];
+        ]);
         fields.extend(keyed::<E>(schema, &self.key));
         fields.extend(vec![
             ("actor", json!(self.actor)),
@@ -939,6 +988,13 @@ impl Row {
         ]);
         object(fields)
     }
+}
+
+/// Which print a row's object was read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Form {
+    Whole,
+    Husk,
 }
 
 /// Each of a row's key fields under its name, with its value in `values`,
@@ -1069,7 +1125,13 @@ pub fn verify<E: Json>(replica: &Replica<E>) -> Result<String, Refusal> {
             Value::Array(
                 listed
                     .iter()
-                    .map(|at| rows[*at].json::<E>(&replica.schema))
+                    .map(|at| {
+                        let row = &rows[*at];
+                        let husk = Hash::new(row.hash.clone())
+                            .is_ok_and(|name| dag.husks().contains(&name));
+                        let form = if husk { Form::Husk } else { Form::Whole };
+                        row.json::<E>(&replica.schema, form)
+                    })
                     .collect(),
             ),
         ),

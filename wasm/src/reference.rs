@@ -9,7 +9,7 @@ use prodrome::fold::{self, Product};
 use prodrome::fpl::{datetime_of, instant_of, iso, print_term, scalars};
 use prodrome::policy::Policy;
 use prodrome::registers;
-use prodrome_wasm_exports::{self as exports, json, name_of, Read, Replica};
+use prodrome_wasm_exports::{self as exports, json, name_of, Read, Replica, Sender};
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
@@ -71,7 +71,8 @@ pub fn printable() -> String {
 /// canonical print that name is a hash of.
 #[wasm_bindgen]
 pub fn verify_objects(objects: &str) -> Result<String, JsError> {
-    exports::verify(&Replica::<Event>::of(objects).map_err(refused)?).map_err(refused)
+    exports::verify(&Replica::<Event>::of(objects, Sender::Stranger).map_err(refused)?)
+        .map_err(refused)
 }
 
 /// Per todo, its events in causal order with the object that carries each —
@@ -119,7 +120,7 @@ fn streams(read: &Read<'_, Event>) -> BTreeMap<String, Vec<(Hash, Event)>> {
 /// one computed here.
 #[wasm_bindgen]
 pub fn fold(objects: &str, at: Option<String>, untrusted: &str) -> Result<String, JsError> {
-    let replica = Replica::<Event>::of(objects).map_err(refused)?;
+    let replica = Replica::<Event>::of(objects, Sender::Stranger).map_err(refused)?;
     let read = replica.read().and_then(Read::whole).map_err(refused)?;
     let policy = parse_untrusted(untrusted).map_err(refused)?;
     let moment = read
@@ -214,7 +215,7 @@ pub fn fold(objects: &str, at: Option<String>, untrusted: &str) -> Result<String
 /// per object is not a cost to pay on every fold to learn that again.
 #[wasm_bindgen]
 pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<String, JsError> {
-    let replica = Replica::<Event>::of(objects).map_err(refused)?;
+    let replica = Replica::<Event>::of(objects, Sender::Stranger).map_err(refused)?;
     let read = replica.read().and_then(Read::whole).map_err(refused)?;
     let policy = parse_untrusted(untrusted).map_err(refused)?;
     let moment = parse_moment("at", at)
@@ -274,7 +275,7 @@ pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<S
 /// gathers them; the rows say what `at` believes.
 #[wasm_bindgen]
 pub fn entries(objects: &str, at: Option<String>, untrusted: &str) -> Result<String, JsError> {
-    let replica = Replica::<Event>::of(objects).map_err(refused)?;
+    let replica = Replica::<Event>::of(objects, Sender::Stranger).map_err(refused)?;
     let read = replica.read().and_then(Read::whole).map_err(refused)?;
     let policy = parse_untrusted(untrusted).map_err(refused)?;
     let moment = read

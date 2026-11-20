@@ -221,8 +221,11 @@ since this grammar has tuples and no mapping.
     `Dag::from_prints`. From a stranger a print that does not hash to its
     name is tampered, as at a schema without husks, and the receipt takes
     nothing. An overlay's flush gives its base its own objects as their
-    keeper. A replica in a page reads the objects that the page sends it,
-    and its own history, as their keeper's: it holds nothing else.
+    keeper. A replica in a page reads the objects that the page sends it
+    as a stranger's, unless the page names itself their keeper
+    (`fromKeeper`): the module cannot know where the page got the bytes,
+    and the page can. It reads its own history, when it writes, as its
+    keeper's, and a husk's row in its `verify` says `husk: true`.
   - THE DIRECTORY IS ITS OWN KEEPER'S WORD. A store reads every file of
     `objects/` as their keeper, so the party that writes a file there
     speaks as keeper: the store itself, or a program that puts files there
@@ -285,6 +288,12 @@ since this grammar has tuples and no mapping.
     replica takes a husk only from its keeper, no receipt from another
     party makes an object proven or vouched for whose bytes the receiver
     did not hash to its name (law 77).
+  - A SIGNER SIGNS ONLY BYTES IT HAS HASHED. A husk's clear fields are not
+    bound to its name: whoever hands a holder a husk under a name may have
+    written another whole under it, and a signature of the name proves
+    that whole on every replica that holds it. So a holder signs an object
+    only where it holds it whole in its history (`Secret::sign_whole`),
+    and refuses a name it holds as a husk or not at all (law 80).
   - `verify` reports no finding for a husk as a husk, and does not count
     husks: `Dag::husks` names them. It reports a husk as it reports a
     whole for what the husk says: a broken chain where a parent is absent,
@@ -2379,11 +2388,15 @@ faults and without.
     event of the DAG or of the fold under it holds a sealed part, in the
     handle and in a fresh one. An overlay answers its base's print only
     where the base holds the name as an object, so where the base's file is
-    damaged it answers its own whole. A replica in a page that holds a husk
-    reads, appends and signs, since it reads its own history as its
-    keeper's. `husk.rs::a_dropped_part_is_never_taken_back`,
+    damaged it answers its own whole, and where the base takes a husk of the
+    overlay's own whole it answers the husk at once, with no read of the
+    overlay between. A replica in a page that holds a keeper's husk reads
+    it and appends over it, since it reads its own history as its keeper's,
+    and never signs its name (law 80).
+    `husk.rs::a_dropped_part_is_never_taken_back`,
     `husk.rs::an_overlay_answers_its_own_whole_over_a_damaged_base`,
-    `wasm/exports/src/husk.rs::a_replica_that_holds_a_husk_appends_and_signs`.
+    `husk.rs::an_overlay_answers_the_base_s_husk_without_a_read_between`,
+    `wasm/exports/src/husk.rs::a_replica_reads_a_keepers_husk_and_never_signs_it`.
 
 74. **A replica of a husked store reads as it.** A replica that pulls from
     a store that holds husks, as from its keeper of record, on disk or in
@@ -2442,6 +2455,14 @@ faults and without.
     append again writes it. Once the cause is gone, the run completes as in
     a store where it never failed.
     `husk.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
+
+80. **No signature is made over a name whose whole the signer does not
+    hold.** For any history and any set of its objects husked,
+    `Secret::sign_whole` signs exactly the objects the history holds whole,
+    and refuses every name held as a husk and every name not held. A page's
+    `sign` refuses a husk's name, and signs a whole the replica holds.
+    `husk.rs::no_signature_over_a_name_whose_whole_is_not_held`,
+    `wasm/exports/src/husk.rs::a_replica_reads_a_keepers_husk_and_never_signs_it`.
 
 ## 10. Non-goals
 

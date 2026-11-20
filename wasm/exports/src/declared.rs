@@ -76,6 +76,7 @@ fn a_declared_store_reads_and_appends_through_the_exports() {
             1,
         ),
         &objects,
+        crate::Sender::Stranger,
     );
     let Err(refusal) = refused else {
         panic!("a total order over a list is ill-typed")

@@ -186,11 +186,12 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
         Ok(name)
     }
 
-    /// One object, sealed here or received, into `run`. Where the history
-    /// holds its name it is that object, a twin or a husk whose whole is
-    /// never written back (SPEC §3), and nothing is taken. Where a file held
-    /// outside the history holds its name, the file holds other bytes, a
-    /// sha256 collision, and the object is refused rather than clobber them.
+    /// One object, sealed here or received, into `run`. Where the store
+    /// keeps its name, in the history or waiting outside it, nothing is
+    /// taken when what it keeps is the same object: the same bytes, or a
+    /// husk of it, whose whole is never written back (SPEC §3). Other bytes
+    /// under the name are a sha256 collision, and the object is refused
+    /// rather than clobber them.
     /// Otherwise it is admitted to the memory, so that what is decided next
     /// sees it, and its print joins what `run` places. Before the first, the
     /// record of heads is removed, so that the memory is never ahead of the
@@ -201,8 +202,12 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
             return Ok(());
         }
         if self.memory.keeps(&name) {
-            // Held outside the history, waiting for a parent: the same bytes
-            // are already placed, and other bytes are a collision.
+            // Held outside the history, waiting for a parent: its husk, or
+            // the same bytes, are already placed, and other bytes are a
+            // collision.
+            if self.memory.dag().husks().contains(&name) {
+                return Ok(());
+            }
             let path = self.store.object_path(&name);
             let held = fs::read(&path).map_err(|e| ProdromeError::io(&path, &e))?;
             if held == print {

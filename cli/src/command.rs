@@ -116,8 +116,9 @@ pub enum Command {
     /// parent exists, no cycle, nothing in `objects/` that is not an object.
     Verify,
 
-    /// `verify`, after moving every object file that fails its hash out of
-    /// `objects/` into `quarantine/`, so the store writes again (§3): its
+    /// `verify`, after moving every object file that fails its hash, and is
+    /// no husk at the store's schema, out of `objects/` into `quarantine/`,
+    /// so the store writes again (§3): its
     /// reads answer throughout, leaving such a file out, but every write
     /// refuses while one is there. The report names each one until it is
     /// restored from a replica.
