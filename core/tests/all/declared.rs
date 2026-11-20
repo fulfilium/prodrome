@@ -35,6 +35,7 @@ use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::registers::{fold, Folded};
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{sync, EventStore, MemoryStore, Replica};
 use proptest::prelude::*;
 use sha2::{Digest, Sha256};
@@ -197,7 +198,7 @@ fn through_stores(events: &[Proposal]) -> Result<(), TestCaseError> {
     let data = EventStore::<Declared, Everything>::at(scratch.dir(), Everything, schema.clone());
     let genesis = rust.init("proposals").expect("begins");
     let print = Replica::print(&rust, &genesis).expect("held");
-    data.receive([genesis].into(), &|_| Some(print.clone()))
+    data.receive([genesis].into(), &|_| Some(print.clone()), Sender::Stranger)
         .expect("a genesis is any schema's");
     for event in events {
         let written = rust.append(event.clone()).map_err(|_| ());
@@ -213,7 +214,7 @@ fn through_stores(events: &[Proposal]) -> Result<(), TestCaseError> {
             .to_owned())
     );
     let memory = MemoryStore::<Declared>::at(schema.clone());
-    sync(&data, &memory).expect("syncs");
+    sync(&data, &memory, Sender::Stranger).expect("syncs");
     prop_assert_eq!(memory.tips().expect("tips"), data.tips().expect("tips"));
     prop_assert_eq!(
         named(&memory.held().expect("holds").folded, None, |slot| schema

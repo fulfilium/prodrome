@@ -305,7 +305,8 @@ pub enum Sender {
     Keeper,
 }
 
-/// `print` is exactly `bytes`.
+/// A husk's bytes against the print of the husk they parse to: a print
+/// that parses to a husk and is not its print is no husk.
 fn exact(print: &str, bytes: &[u8]) -> Result<(), NotAHusk> {
     if print.as_bytes() == bytes {
         Ok(())

@@ -18,6 +18,7 @@ use prodrome::genesis::mk_genesis;
 use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::schema::headed::{Constructors, Event};
+use prodrome::store::Sender;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 
 #[path = "../../src/schema/headed/example.rs"]
@@ -89,9 +90,11 @@ fn two_replicas() -> [MemoryStore<Note>; 2] {
     let begun = || {
         let memory = MemoryStore::default();
         memory
-            .receive([name.clone()].into(), &|held| {
-                (*held == name).then(|| print.clone())
-            })
+            .receive(
+                [name.clone()].into(),
+                &|held| (*held == name).then(|| print.clone()),
+                Sender::Stranger,
+            )
             .expect("receives its genesis");
         memory
     };
@@ -118,14 +121,14 @@ fn a_third_title_settles_two_concurrent_ones() {
     let [mine, theirs] = two_replicas();
     mine.append(by_ada("n1", at(0), titled("a")))
         .expect("appends");
-    sync(&mine, &theirs).expect("syncs");
+    sync(&mine, &theirs, Sender::Stranger).expect("syncs");
     let b = mine
         .append(by_ada("n1", at(60), titled("b")))
         .expect("appends");
     let c = theirs
         .append(by_ada("n1", at(120), titled("c")))
         .expect("appends");
-    sync(&theirs, &mine).expect("syncs");
+    sync(&theirs, &mine, Sender::Stranger).expect("syncs");
 
     let mut both = vec![b, c];
     both.sort();

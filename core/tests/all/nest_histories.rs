@@ -31,6 +31,7 @@ use prodrome::nest::{pointer, History, Holding, Leaf, Level, Nest, Path, Segment
 use prodrome::reference::Todo;
 use prodrome::registers::Folded;
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{accept, sync, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -54,7 +55,11 @@ pub(crate) fn sub<E: Schema>(schema: E::Vocabulary, label: &str) -> Sub<E> {
     let name = seal_hash(&object);
     let store = MemoryStore::at(schema);
     store
-        .receive([name.clone()].into(), &|_| Some(print.clone()))
+        .receive(
+            [name.clone()].into(),
+            &|_| Some(print.clone()),
+            Sender::Stranger,
+        )
         .expect("a genesis verifies");
     Sub {
         store: store.in_genesis(name),
@@ -121,7 +126,7 @@ fn reading<E: Schema>(replica: &impl Replica<E>) -> Reading<E> {
 pub(crate) fn union<E: Schema>(subs: &[&Sub<E>]) -> MemoryStore<E> {
     let union = MemoryStore::at(subs[0].store.schema().clone());
     for sub in subs {
-        sync(&sub.store, &union).expect("syncs");
+        sync(&sub.store, &union, Sender::Stranger).expect("syncs");
     }
     union
 }
@@ -266,7 +271,13 @@ fn two_levels<I: Schema<Key: AsRef<str>>>(two: &Two<I>) -> Result<(), TestCaseEr
         prop_assert_eq!(&flat.at(&path), &level(&sub.store));
         prop_assert_eq!(&flat.at(&path), &nest.held()[&path].flatten());
         let read = MemoryStore::<I>::at(inner.schema().clone());
-        accept(&inner, &read, flat.at(&path).values().cloned().collect()).expect("accepts");
+        accept(
+            &inner,
+            &read,
+            flat.at(&path).values().cloned().collect(),
+            Sender::Stranger,
+        )
+        .expect("accepts");
         prop_assert_eq!(reading(&read), reading(&sub.store));
         // The pointer reads as the heads its last write saw.
         prop_assert_eq!(pointed(s), sub.store.tips().expect("derives"));
@@ -461,7 +472,7 @@ proptest! {
                 let path = at.then(&held(&shelf(m)));
                 prop_assert_eq!(&flat.at(&path), &level(&leaf.store));
                 let read = MemoryStore::<Review>::default();
-                accept(&leaf.store, &read, flat.at(&path).values().cloned().collect())
+                accept(&leaf.store, &read, flat.at(&path).values().cloned().collect(), Sender::Stranger)
                     .expect("accepts");
                 prop_assert_eq!(reading(&read), reading(&leaf.store));
             }
@@ -648,7 +659,7 @@ fn concurrent_pointers_read_as_the_union_of_their_histories() {
         .expect("a review is opened");
     let fork = || {
         let store = MemoryStore::default();
-        sync(&base.store, &store).expect("syncs");
+        sync(&base.store, &store, Sender::Stranger).expect("syncs");
         let genesis = genesis_of(&store);
         Sub {
             store: store.in_genesis(genesis),
@@ -667,13 +678,13 @@ fn concurrent_pointers_read_as_the_union_of_their_histories() {
     let mut seen = BTreeMap::new();
     let here: Sub<Holder<Review>> = sub(Default::default(), "outer");
     let there = MemoryStore::default();
-    sync(&here.store, &there).expect("syncs");
+    sync(&here.store, &there, Sender::Stranger).expect("syncs");
     let there = Sub {
         store: there.in_genesis(genesis_of(&here.store)),
     };
     point(&here, "s0", &left, 3, &mut seen);
     point(&there, "s0", &right, 4, &mut seen);
-    sync(&there.store, &here.store).expect("syncs");
+    sync(&there.store, &here.store, Sender::Stranger).expect("syncs");
 
     let two = Two {
         outer: here,

@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use prodrome::event::{canonical_envelope, mk_created, mk_sealed, seal_hash};
 use prodrome::literal::Datetime;
 use prodrome::policy::Untrusted;
+use prodrome::store::Sender;
 use prodrome_cli::command::Cli;
 use prodrome_cli::{run, Outcome, Store};
 
@@ -404,7 +405,11 @@ fn weave_settles_a_legacy_store_s_two_heads_and_is_a_no_op_on_changes() {
     for object in [&root_object].into_iter().chain(&branches) {
         let name = seal_hash(object);
         store
-            .adopt_objects(&[(name.clone(), canonical_envelope(object))].into(), &name)
+            .adopt_objects(
+                &[(name.clone(), canonical_envelope(object))].into(),
+                &name,
+                Sender::Stranger,
+            )
             .expect("writes");
     }
     assert_eq!(

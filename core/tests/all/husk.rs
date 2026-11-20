@@ -20,12 +20,11 @@ use prodrome::event::{canonical_envelope, seal_hash, Actor, Envelope, Hash};
 use prodrome::genesis::mk_genesis;
 use prodrome::laws::Registers;
 use prodrome::literal::{Datetime, ProdromeError};
-use prodrome::policy::Untrusted;
+use prodrome::policy::{Everything, Policy, Proven, Standing, Untrusted};
 use prodrome::reference::Todo;
-use prodrome::sign::{KeyAdded, Proof, Registrar, Secret};
+use prodrome::sign::{KeyAdded, Proof, Proved, Registrar, Secret};
 use prodrome::store::{
-    accept_from, sync, EventStore, HuskObject, MemoryStore, Overlay, Replica, Sender, Stopped,
-    Stored,
+    accept, sync, EventStore, HuskObject, MemoryStore, Overlay, Replica, Sender, Stopped, Stored,
 };
 use proptest::prelude::*;
 
@@ -69,6 +68,7 @@ impl Scratch {
             .adopt_objects(
                 &[(digest.clone(), canonical_envelope(&genesis))].into(),
                 &digest,
+                Sender::Stranger,
             )
             .expect("begins");
         store
@@ -359,31 +359,31 @@ proptest! {
             husked.append(event).expect("appends");
         }
         husked.append_all(events(&drafts)).expect("appends");
-        sync(&whole, &husked).expect("syncs");
-        accept_from(&whole, &husked, everything.clone(), Sender::Keeper).expect("accepts");
+        sync(&whole, &husked, Sender::Stranger).expect("syncs");
+        accept(&whole, &husked, everything.clone(), Sender::Keeper).expect("accepts");
         husked
-            .receive_from(done.clone(), &|name| whole.kept(name), Sender::Keeper)
+            .receive(done.clone(), &|name| whole.kept(name), Sender::Keeper)
             .expect("receives");
         for name in &done {
-            husked.adopt_from(&whole, name, Sender::Keeper).expect("adopts");
+            husked.adopt(&whole, name, Sender::Keeper).expect("adopts");
         }
         never_taken_back(&husked, &kept)?;
         never_taken_back(&Store::new(husked.root(), Untrusted::none()), &kept)?;
 
         let memory = MemoryStore::<Letter>::default();
-        accept_from(&husked, &memory, husked.tips().expect("tips"), Sender::Keeper)
+        accept(&husked, &memory, husked.tips().expect("tips"), Sender::Keeper)
             .expect("accepts");
         for event in events(&drafts) {
             memory.append(event).expect("appends");
         }
-        sync(&whole, &memory).expect("syncs");
-        accept_from(&whole, &memory, everything.clone(), Sender::Keeper).expect("accepts");
+        sync(&whole, &memory, Sender::Stranger).expect("syncs");
+        accept(&whole, &memory, everything.clone(), Sender::Keeper).expect("accepts");
         never_taken_back(&memory, &kept)?;
 
         let base = scratch.store("base");
         let overlay = Overlay::new(&base);
-        accept_from(&whole, &overlay, everything, Sender::Keeper).expect("takes the wholes");
-        accept_from(&husked, &base, husked.tips().expect("tips"), Sender::Keeper)
+        accept(&whole, &overlay, everything, Sender::Keeper).expect("takes the wholes");
+        accept(&husked, &base, husked.tips().expect("tips"), Sender::Keeper)
             .expect("the base takes the husks");
         never_taken_back(&overlay, &kept)?;
         overlay.flush().expect("flushes");
@@ -402,9 +402,9 @@ proptest! {
         let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
         let tips = store.tips().expect("tips");
         let disk = Store::new(scratch.at("disk"), Untrusted::none());
-        accept_from(&store, &disk, tips.clone(), Sender::Keeper).expect("pulls");
+        accept(&store, &disk, tips.clone(), Sender::Keeper).expect("pulls");
         let memory = MemoryStore::<Letter>::default();
-        accept_from(&store, &memory, tips.clone(), Sender::Keeper).expect("pulls");
+        accept(&store, &memory, tips.clone(), Sender::Keeper).expect("pulls");
         prop_assert_eq!(keyless(&disk), keyless(&store));
         prop_assert_eq!(keyless(&memory), keyless(&store));
         let on_disk = disk.dag().expect("reads");
@@ -413,9 +413,9 @@ proptest! {
         prop_assert_eq!(in_memory.dag.husks(), &done);
         prop_assert_eq!(store.verify(), Vec::<Finding>::new());
         prop_assert_eq!(disk.verify(), Vec::<Finding>::new());
-        prop_assert!(accept_from(&store, &disk, tips, Sender::Keeper).expect("pulls").is_empty());
+        prop_assert!(accept(&store, &disk, tips, Sender::Keeper).expect("pulls").is_empty());
         let stranger = MemoryStore::<Letter>::default();
-        prop_assert_eq!(sync(&store, &stranger).is_err(), !done.is_empty());
+        prop_assert_eq!(sync(&store, &stranger, Sender::Stranger).is_err(), !done.is_empty());
         if !done.is_empty() {
             prop_assert!(stranger.held().expect("reads").dag.objects().is_empty());
         }
@@ -464,11 +464,13 @@ proptest! {
     }
 
     /// Law 77: for any sequence of receipts from a party whose word is not
-    /// taken, no object reads as proven, or vouched for, whose bytes the
-    /// receiver did not hash to its name. The party holds a true signature
-    /// of every change, by the key registered to its actor, and forged
-    /// husks under some of their names. From the keeper of record the same
-    /// husks are taken, and a signature vouches for each and proves none.
+    /// taken, into a store in memory or on disk, no object reads as proven,
+    /// or vouched for, whose bytes the receiver did not hash to its name.
+    /// The party holds a true signature of every change, by the key
+    /// registered to its actor under a root's signature, and forged husks
+    /// under some of their names. From the keeper of record the same husks
+    /// are taken: the signature vouches for each and proves none, and the
+    /// policy that requires signatures binds each, on the keeper's word.
     #[test]
     fn a_signature_proves_no_husk(drafts in a_history(), choice in a_choice()) {
         let scratch = Scratch::new();
@@ -501,30 +503,46 @@ proptest! {
             prints.insert(name.clone(), lie.into_bytes());
             forged.insert(name.clone());
         }
-        let stranger = MemoryStore::<Letter>::default();
-        for name in prints.keys() {
-            let _ = stranger.receive([name.clone()].into(), &|name| prints.get(name).cloned());
-        }
-        let held = stranger.held().expect("reads");
-        let proof = Proof::of(&held.dag, &Registrar::Anyone);
-        for name in held.dag.objects().keys() {
-            if proof.proves(name) || proof.vouches(name) {
-                prop_assert!(stranger.print(name).is_some(), "{} stands unhashed", name);
+        let root = Secret::new(&"9".repeat(64)).expect("a seed");
+        let rooted: Envelope<Letter> = Envelope::Signed(root.sign(&seal_hash(&added)));
+        prints.insert(seal_hash(&rooted), canonical_envelope(&rooted).into_bytes());
+        let print_of = |name: &Hash| prints.get(name).cloned();
+
+        let in_memory = MemoryStore::<Letter>::default();
+        let on_disk = Store::new(scratch.at("stranger"), Untrusted::none());
+        for stranger in [&in_memory as &dyn Replica<Letter>, &on_disk] {
+            for name in prints.keys() {
+                let _ = stranger.receive([name.clone()].into(), &print_of, Sender::Stranger);
             }
-            prop_assert!(!forged.contains(name), "a stranger's husk was taken");
+            let held = stranger.held().expect("reads");
+            let proof = Proof::of(&held.dag, &Registrar::Anyone);
+            for name in held.dag.objects().keys() {
+                match proof.standing(name) {
+                    Proved::Proven | Proved::Vouched => {
+                        prop_assert!(stranger.print(name).is_some(), "{} stands unhashed", name);
+                    }
+                    Proved::Unsigned => {}
+                }
+                prop_assert!(!forged.contains(name), "a stranger's husk was taken");
+            }
         }
 
-        let keeper = MemoryStore::<Letter>::default();
-        let tips: BTreeSet<Hash> = prints.keys().cloned().collect();
-        keeper
-            .receive_from(tips, &|name| prints.get(name).cloned(), Sender::Keeper)
-            .expect("takes the keeper's word");
-        let held = keeper.held().expect("reads");
-        let proof = Proof::of(&held.dag, &Registrar::Anyone);
-        for name in &forged {
-            prop_assert!(held.dag.husks().contains(name));
-            prop_assert!(!proof.proves(name), "a signature proves a husk");
-            prop_assert!(proof.vouches(name), "a signature vouches for the keeper's husk");
+        let in_memory = MemoryStore::<Letter>::default();
+        let on_disk = Store::new(scratch.at("keeper"), Untrusted::none());
+        let everything: BTreeSet<Hash> = prints.keys().cloned().collect();
+        for keeper in [&in_memory as &dyn Replica<Letter>, &on_disk] {
+            keeper
+                .receive(everything.clone(), &print_of, Sender::Keeper)
+                .expect("takes the keeper's word");
+            let held = keeper.held().expect("reads");
+            let proof = Proof::of(&held.dag, &Registrar::Anyone);
+            let policy = Proven::new(Everything, [root.public()], &held.dag);
+            for name in &forged {
+                prop_assert!(held.dag.husks().contains(name));
+                prop_assert_eq!(proof.standing(name), Proved::Vouched);
+                let event = held.dag.get(name).and_then(Envelope::event).expect("an event");
+                prop_assert_eq!(policy.standing(name, event), Standing::Binds);
+            }
         }
     }
 
@@ -810,8 +828,11 @@ fn a_schema_without_husks_reads_a_husk_as_tampered() {
     );
     assert!(matches!(read, Err(Unread::Tampered(_))));
     let refused: Result<Vec<Hash>, ProdromeError> =
-        MemoryStore::<prodrome::event::TodoEvent<Todo>>::default()
-            .receive([name.clone()].into(), &|_| Some(print.as_bytes().to_vec()));
+        MemoryStore::<prodrome::event::TodoEvent<Todo>>::default().receive(
+            [name.clone()].into(),
+            &|_| Some(print.as_bytes().to_vec()),
+            Sender::Stranger,
+        );
     assert!(refused.is_err());
 }
 
@@ -940,4 +961,83 @@ fn a_frontier_sends_a_husk() {
         store.kept(&name)
     );
     assert_eq!(store.print(&name), None);
+}
+
+/// SPEC §3: an overlay answers the base's print only where the base holds
+/// the name as an object. Where the base's file under a name is damaged and
+/// the overlay's own layer holds the whole, the union reads the whole, the
+/// overlay answers it, and a sync from the overlay takes it.
+#[test]
+fn an_overlay_answers_its_own_whole_over_a_damaged_base() {
+    let scratch = Scratch::new();
+    let drafts = [Draft::Wrote {
+        letter: 0,
+        parts: vec![None],
+    }];
+    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let name = whole
+        .tips()
+        .expect("tips")
+        .into_iter()
+        .next()
+        .expect("a tip");
+    let base = copied(&scratch, "base", &whole);
+    fs::write(
+        base.root().join(format!("objects/{}.py", name.as_str())),
+        "damaged",
+    )
+    .expect("damages");
+    let overlay = Overlay::new(&base);
+    sync(&whole, &overlay, Sender::Stranger).expect("the overlay takes the whole");
+    assert_eq!(overlay.kept(&name), whole.kept(&name));
+    let fresh = MemoryStore::<Letter>::default();
+    sync(&overlay, &fresh, Sender::Stranger).expect("syncs from the overlay");
+    assert_eq!(fresh.print(&name), whole.print(&name));
+}
+
+/// A write of an object the store holds outside its history, waiting for a
+/// parent, is no write where the bytes are the same: a merge over a waiting
+/// parent, run twice, answers one name and writes one file.
+#[test]
+fn writing_a_waiting_object_again_writes_nothing() {
+    let scratch = Scratch::new();
+    let drafts = [
+        Draft::Titled {
+            letter: 0,
+            title: 0,
+        },
+        Draft::Titled {
+            letter: 1,
+            title: 1,
+        },
+        Draft::Titled {
+            letter: 1,
+            title: 2,
+        },
+    ];
+    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let [first, middle, last] = drafts.map(|draft| {
+        let event = events(&[draft])[0].clone();
+        whole
+            .dag()
+            .expect("reads")
+            .objects()
+            .iter()
+            .find(|(_, object)| object.event().is_some_and(|held| held.says == event.says))
+            .map(|(name, _)| name.clone())
+            .expect("appended")
+    });
+    let store = copied(&scratch, "store", &whole);
+    fs::remove_file(store.root().join(format!("objects/{}.py", middle.as_str())))
+        .expect("removes the parent");
+    assert!(store.dag().expect("reads").get(&last).is_none(), "it waits");
+    let merged = store
+        .merge(Some(&[first.clone(), last.clone()]), None)
+        .expect("merges");
+    let files_once = files(store.root());
+    let again = store
+        .merge(Some(&[first, last]), None)
+        .expect("a merge again writes nothing");
+    assert_eq!(again, merged);
+    assert_eq!(files(store.root()), files_once);
 }

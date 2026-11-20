@@ -201,6 +201,13 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
             return Ok(());
         }
         if self.memory.keeps(&name) {
+            // Held outside the history, waiting for a parent: the same bytes
+            // are already placed, and other bytes are a collision.
+            let path = self.store.object_path(&name);
+            let held = fs::read(&path).map_err(|e| ProdromeError::io(&path, &e))?;
+            if held == print {
+                return Ok(());
+            }
             return Err(ProdromeError::Store(format!(
                 "object {} exists with different bytes — sha256 collision or corruption",
                 name.as_str()
@@ -225,6 +232,12 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
     /// run admitted is forgotten, and the files are looked at again, since
     /// the objects renamed into place before the failure are in the store.
     /// The record stays removed for the rest of the hold.
+    ///
+    /// # Errors
+    ///
+    /// The placement's. Where `objects/` then cannot be listed either, the
+    /// refusal names both, and the memory holds what it held before the run
+    /// until the next look.
     fn place_run(&mut self, run: Run) -> Result<(), ProdromeError> {
         match run {
             Run::Nothing => Ok(()),
@@ -232,17 +245,20 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
                 let placed = self
                     .store
                     .place(prints.iter().map(|(name, print)| (name, print.as_slice())));
-                let names = prints.into_iter().map(|(name, _)| name);
                 match placed {
                     Ok(()) => {
-                        self.reseen(names);
+                        self.reseen(prints.into_iter().map(|(name, _)| name));
                         self.record = removal.placed();
                         Ok(())
                     }
                     Err(why) => {
-                        self.memory.admit(&names.collect::<Vec<_>>(), Vec::new());
-                        self.store.look(&mut self.memory)?;
-                        Err(why)
+                        self.forget(prints);
+                        match self.store.look(&mut self.memory) {
+                            Ok(()) => Err(why),
+                            Err(looked) => Err(ProdromeError::Store(format!(
+                                "{why}; and objects/ was not listed after it: {looked}"
+                            ))),
+                        }
                     }
                 }
             }
@@ -254,11 +270,14 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
     fn give_up(&mut self, run: Run) {
         match run {
             Run::Nothing => {}
-            Run::Placing(_, prints) => {
-                let names: Vec<Hash> = prints.into_iter().map(|(name, _)| name).collect();
-                self.memory.admit(&names, Vec::new());
-            }
+            Run::Placing(_, prints) => self.forget(prints),
         }
+    }
+
+    /// The objects of a run's `prints`, admitted to the memory, forgotten.
+    fn forget(&mut self, prints: Vec<(Hash, Vec<u8>)>) {
+        let names: Vec<Hash> = prints.into_iter().map(|(name, _)| name).collect();
+        self.memory.admit(&names, Vec::new());
     }
 
     /// [`EventStore::husk`] under this lock: each object `names` names that

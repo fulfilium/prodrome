@@ -64,6 +64,8 @@
 
 #[cfg(test)]
 mod declared;
+#[cfg(test)]
+mod husk;
 pub mod json;
 #[cfg(test)]
 mod review;
@@ -90,7 +92,7 @@ use prodrome::policy::Everything;
 use prodrome::registers::Node;
 use prodrome::schema::{self, Bind, History, Schema};
 use prodrome::sign::{Proof, Registrar, Secret};
-use prodrome::store::{MemoryStore, Replica as _};
+use prodrome::store::{MemoryStore, Replica as _, Sender};
 use prodrome::todo::{self, TodoVocabulary};
 use prodrome::view::{list_order, Entry};
 use serde_json::{json, Value};
@@ -501,7 +503,10 @@ impl<E: Schema> Replica<E> {
                 twice,
             });
         }
-        let prints = Arc::new(Dag::from_prints(&schema, prints));
+        // The page that sends the objects is this replica's keeper of
+        // record: the replica holds nothing but what the page sends, so it
+        // takes the page's husks as the page's store holds them (SPEC §3).
+        let prints = Arc::new(Dag::from_prints(&schema, prints, Sender::Keeper));
         let excluded = prints.excluded();
         let history = if excluded.is_empty() {
             Arc::clone(&prints)
@@ -652,9 +657,11 @@ pub fn sign<E: Schema>(
     let (name, print) = (seal_hash(&signed), canonical_envelope(&signed).into_bytes());
     write(replica, None, |store| {
         store
-            .receive([name.clone()].into(), &|wanted| {
-                (*wanted == name).then(|| print.clone())
-            })
+            .receive(
+                [name.clone()].into(),
+                &|wanted| (*wanted == name).then(|| print.clone()),
+                Sender::Stranger,
+            )
             .map_err(|e| e.to_string())?;
         Ok(name.clone())
     })
@@ -707,13 +714,19 @@ fn write<E: Schema>(
     let mut store = if let Some(store) = replica.store.take() {
         store
     } else {
+        // The replica's own history, read as its keeper's: a husk it holds
+        // is taken as it is held (SPEC §3).
         let dag = &replica.history;
         let store = MemoryStore::at(replica.schema.clone());
         store
-            .receive(dag.tips(), &|name| {
-                dag.get(name)
-                    .map(|object| canonical_envelope(object).into_bytes())
-            })
+            .receive(
+                dag.tips(),
+                &|name| {
+                    dag.get(name)
+                        .map(|object| canonical_envelope(object).into_bytes())
+                },
+                Sender::Keeper,
+            )
             .map_err(|e| e.to_string())?;
         store
     };

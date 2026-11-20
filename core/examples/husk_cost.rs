@@ -36,6 +36,7 @@ use prodrome::literal::Datetime;
 use prodrome::policy::{Policy, Untrusted};
 use prodrome::reference::Todo;
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{EventStore, MemoryStore, Replica};
 
 use letter::{Id, Letter, Part, Says};
@@ -82,7 +83,7 @@ fn write<E: Schema<Vocabulary: Default>>(root: &Path, events: Vec<E>) {
     let name = seal_hash(&genesis);
     let print = canonical_envelope(&genesis).into_bytes();
     memory
-        .receive([name].into(), &|_| Some(print.clone()))
+        .receive([name].into(), &|_| Some(print.clone()), Sender::Stranger)
         .expect("begins");
     for event in events {
         memory.append(event).expect("appends");

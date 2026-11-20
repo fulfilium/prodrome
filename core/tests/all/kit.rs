@@ -268,14 +268,14 @@ impl<E: Schema> Replica<E> for Forgetful<E> {
         self.0.append(event)
     }
 
-    fn receive_from(
+    fn receive(
         &self,
         mut seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
         sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         seeds.pop_last();
-        self.0.receive_from(seeds, print_of, sender)
+        self.0.receive(seeds, print_of, sender)
     }
 }
 

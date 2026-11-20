@@ -23,7 +23,7 @@ use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
 use crate::registers::{fold, Genesis, Node};
 use crate::schema::Schema;
-use crate::sign::{Proof, Registrar};
+use crate::sign::{Proof, Proved, Registrar};
 use crate::spread::spread;
 use crate::store::{Hashed, HuskObject, Sender, Stored};
 
@@ -481,17 +481,19 @@ impl<E> Dag<E> {
 }
 
 impl<E: Schema> Dag<E> {
-    /// Each print decoded under its name at the schema `schema`, a print
-    /// that is not an object kept with why. The prints are a store's files,
-    /// read as the store reads its own, as their keeper of record.
+    /// Each print from `sender` decoded under its name at the schema
+    /// `schema`, a print that is not an object kept with why. A print that
+    /// does not hash to its name is a husk only from the keeper of record
+    /// (SPEC §3).
     pub fn from_prints(
         schema: &E::Vocabulary,
         prints: impl IntoIterator<Item = (Hash, Result<Vec<u8>, ProdromeError>)>,
+        sender: Sender,
     ) -> Dag<E> {
         Dag::decoded(prints.into_iter().collect(), |(name, bytes)| {
             let read = bytes
                 .map_err(Unread::Io)
-                .and_then(|bytes| decode(schema, &name, &bytes, Sender::Keeper));
+                .and_then(|bytes| decode(schema, &name, &bytes, sender));
             (name, read)
         })
     }
@@ -658,14 +660,16 @@ impl<E: Schema> Dag<E> {
                 });
             }
             if let Some(event) = object.event() {
-                if proof.keyed(&self.prodrome(name, object), event.actor())
-                    && !proof.proves(name)
-                    && !proof.vouches(name)
-                {
-                    findings.push(Finding::Unsigned {
-                        object: name.clone(),
-                        actor: event.actor().clone(),
-                    });
+                match proof.standing(name) {
+                    Proved::Proven | Proved::Vouched => {}
+                    Proved::Unsigned => {
+                        if proof.keyed(&self.prodrome(name, object), event.actor()) {
+                            findings.push(Finding::Unsigned {
+                                object: name.clone(),
+                                actor: event.actor().clone(),
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -1037,6 +1041,7 @@ mod tests {
         let dag: Dag<TodoEvent<Todo>> = Dag::from_prints(
             &crate::todo::TodoVocabulary::default(),
             [(unread.clone(), Ok(junk)), print(&first), print(&second)],
+            Sender::Stranger,
         );
         let excluded = dag.excluded();
         assert_eq!(excluded.len(), 1);

@@ -22,6 +22,7 @@ use prodrome::event::{canonical_envelope, parents_of, seal_hash, Envelope, Hash,
 use prodrome::genesis::mk_genesis;
 use prodrome::reference::Todo;
 use prodrome::store::frontier::{Frontiers, Reached, Records, Since, Token, Unrecorded};
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -49,12 +50,16 @@ fn holding(prints: &Prints) -> Memory {
     let replica = Memory::default();
     let seeds = prints.iter().map(|(name, _)| name.clone()).collect();
     replica
-        .receive(seeds, &|name| {
-            prints
-                .iter()
-                .find(|(held, _)| held == name)
-                .map(|(_, print)| print.clone())
-        })
+        .receive(
+            seeds,
+            &|name| {
+                prints
+                    .iter()
+                    .find(|(held, _)| held == name)
+                    .map(|(_, print)| print.clone())
+            },
+            Sender::Stranger,
+        )
         .expect("the prints are objects closed under parents");
     replica
 }
@@ -252,9 +257,11 @@ impl Puller {
         let rest = lacking.lacking().len() - sent.len();
         let answered = lacking.record(size).expect("memory keeps");
         self.replica
-            .receive(sent.iter().cloned().collect(), &|name| {
-                record.store.print(name)
-            })
+            .receive(
+                sent.iter().cloned().collect(),
+                &|name| record.store.print(name),
+                Sender::Stranger,
+            )
             .expect("a piece is closed under parents over what the replica holds");
         let fell_back = reached.is_none();
         let mut held = reached.unwrap_or_default();
@@ -265,7 +272,7 @@ impl Puller {
 
     /// What the replica holds, posted, and the frontier of the receipt.
     fn post(&mut self, record: &mut Record) -> Result<(), TestCaseError> {
-        sync(&self.replica, &record.store).expect("a replica's objects verify");
+        sync(&self.replica, &record.store, Sender::Stranger).expect("a replica's objects verify");
         record.earlier.push(prints(&record.store));
         let dag = dag(&record.store);
         let lacking = record

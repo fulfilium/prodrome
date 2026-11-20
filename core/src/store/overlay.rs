@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::memory::{self, Memory, Verified};
-use super::replica::{accept_from, Held, Replica};
+use super::replica::{accept, Held, Replica};
 use crate::dag::Dag;
 use crate::event::Hash;
 use crate::literal::ProdromeError;
@@ -102,7 +102,7 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
     /// as its keeper's ([`Sender::Keeper`]): each one the overlay took
     /// from a keeper of its own.
     pub fn accept(&self, chosen: BTreeSet<Hash>) -> Result<Vec<Hash>, ProdromeError> {
-        accept_from(self, &self.base, chosen, Sender::Keeper)
+        accept(self, &self.base, chosen, Sender::Keeper)
     }
 
     fn lock(&self) -> MutexGuard<'_, Layer<E>> {
@@ -157,14 +157,25 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
         Ok(self.layer()?.union.tips().clone())
     }
 
-    /// The base's print, or else its own: where both keep a name, the
-    /// union reads the base's, which may be a husk of its own whole, and a
-    /// dropped part is never answered again (SPEC §3). Never waits on the
-    /// base: a flush reads it while the base holds its lock.
+    /// The print the union reads under `name`. Where the base holds the
+    /// name as an object, whole or husk, it is the base's: a husk of the
+    /// overlay's own whole hides the whole, and a dropped part is never
+    /// answered again (SPEC §3). Elsewhere, where the base holds no object
+    /// under the name (it lacks it, or its file is unread), it is the
+    /// overlay's own, and else the base's. The base is the one the union
+    /// was last taken over. Never waits on the base: a flush reads it while
+    /// the base holds its lock.
     fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
-        self.base
-            .kept(name)
-            .or_else(|| self.lock().own.get(name).cloned())
+        let (base_holds, own) = {
+            let layer = self.lock();
+            let holds = layer.under.as_ref().is_some_and(|base| base.holds(name));
+            (holds, layer.own.get(name).cloned())
+        };
+        if base_holds {
+            self.base.kept(name)
+        } else {
+            own.or_else(|| self.base.kept(name))
+        }
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -179,7 +190,7 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
 
     /// Walked over the union as it read when it began, without the lock, as
     /// [`super::MemoryStore`] walks.
-    fn receive_from(
+    fn receive(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,

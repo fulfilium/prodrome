@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use crate::event::{canonical_envelope, Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
-use crate::store::{MemoryStore, Replica};
+use crate::store::{MemoryStore, Replica, Sender};
 
 /// A store in memory, opened at the schema `vocabulary`, that holds
 /// `objects`, received as any replica receives them.
@@ -24,6 +24,7 @@ pub fn holding<E: Schema>(
     store.receive(
         objects.iter().map(|(name, _)| name.clone()).collect(),
         &|name| prints.get(name).cloned(),
+        Sender::Stranger,
     )?;
     Ok(store)
 }

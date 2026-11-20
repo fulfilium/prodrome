@@ -314,6 +314,20 @@ pub enum Registrar {
     Roots(BTreeSet<PublicKey>),
 }
 
+/// What a [`Proof`] says of one object (SPEC §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Proved {
+    /// A signature by a key that speaks for the object's actor covers its
+    /// name, and the object is the bytes that hash to the name.
+    Proven,
+    /// Such a signature covers the name of a husk (SPEC §3): the husk
+    /// stands on its maker's word, and on the signature its maker verified
+    /// over the whole.
+    Vouched,
+    /// No such signature covers it.
+    Unsigned,
+}
+
 /// THE READING OF A HISTORY'S SIGNATURES AND KEYS: which objects carrying
 /// an event a key registered to that event's actor has signed, and which
 /// actors have a registered key, each in its prodrome.
@@ -344,6 +358,7 @@ pub enum Registrar {
 /// they arrived in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
+    // Two sets of names and no third: an object in neither is unsigned.
     proven: BTreeSet<Hash>,
     vouched: BTreeSet<Hash>,
     keyed: BTreeSet<(Genesis, Actor)>,
@@ -436,18 +451,24 @@ impl Proof {
         }
     }
 
+    /// What the proof says of `object`: proven, vouched for as a husk, or
+    /// unsigned.
+    #[must_use]
+    pub fn standing(&self, object: &Hash) -> Proved {
+        if self.proven.contains(object) {
+            Proved::Proven
+        } else if self.vouched.contains(object) {
+            Proved::Vouched
+        } else {
+            Proved::Unsigned
+        }
+    }
+
     /// Is the object `object` signed by a key that speaks for its actor,
     /// over the bytes its name is the hash of? Never for a husk.
     #[must_use]
     pub fn proves(&self, object: &Hash) -> bool {
         self.proven.contains(object)
-    }
-
-    /// Is `object` a husk whose name such a signature covers? It stands on
-    /// its maker's word, and the signature its maker verified.
-    #[must_use]
-    pub fn vouches(&self, object: &Hash) -> bool {
-        self.vouched.contains(object)
     }
 
     /// Has `actor` a registered key in the prodrome `genesis`, revoked or

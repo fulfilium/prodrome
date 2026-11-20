@@ -11,32 +11,34 @@ constructor's fields never change, in any release.
 ### Added
 
 - **The file store reads, keeps and makes husks (SPEC §3, laws 71 to
-  75, 77 and 78).** A husk is a `Change` whose event has each sealed part replaced by
-  the name of its key, kept under the name of the whole change. A schema
-  that has sealed parts implements `store::Husking` and answers the new
-  defaulted method `Schema::husk` with `HuskObject::of_other`. At such a
-  schema, every read of a store, a replica's receipt and `verify` read a
-  print that does not hash to its name as the husk that it holds, or as
-  tampered; at every other schema such a print is tampered, as before.
+  75, 77 and 78).** A husk is a `Change` whose event has each sealed part
+  replaced by the name of its key, kept under the name of the whole
+  change. A schema that has sealed parts implements `store::Husking` and
+  answers the new defaulted method `Schema::husk` with
+  `HuskObject::of_other`. At such a schema, a print that does not hash to
+  its name, from its keeper of record, reads as the husk that it holds or
+  as tampered; at every other schema such a print is tampered, as before.
   `EventStore::husk(names)` replaces each named whole that holds a sealed
   part with its husk, under the store's lock, and never takes a whole
   back. `Dag::husks` names the husks that a DAG holds. `dag::decode` now
   takes a `store::Sender` and answers `store::Stored`, the whole or the
   husk. A husk is exactly one print: any other print that parses to the
-  same object is tampered (law 78).
+  same object is tampered (law 78). The stored format gains the husk; no
+  stored constructor changes, and `conformance/husk.py` holds the new
+  vectors.
 - **`store::Sender`, whose word a receipt takes for a husk.** A replica
   reads a print that does not hash to its name as a husk only from its
-  keeper of record (`Sender::Keeper`), through the new
-  `Replica::receive_from`, `accept_from` and `EventStore::adopt_from`.
-  `receive`, `accept`, `sync`, `adopt` and `adopt_objects` take no husk
-  (`Sender::Stranger`). A replica that implements `Replica` implements
-  `receive_from` in place of `receive`, which is now a provided method.
-- **`Proof::vouches`.** A signature proves only the bytes that hash to its
-  name. For a husk held under that name it vouches instead (§5, law 77).
-  `Proven` binds a husk that the proof vouches for, and `verify` does not
-  report one as unsigned. The stored format gains
-  the husk; no stored constructor changes, and `conformance/husk.py` holds
-  the new vectors.
+  keeper of record (`Sender::Keeper`). `Replica::receive`, `accept`,
+  `sync`, `EventStore::adopt`, `EventStore::adopt_objects` and
+  `Dag::from_prints` each take the sender as their last argument, so a
+  caller that passed none before passes `Sender::Stranger`. From a
+  stranger, a print that does not hash to its name is tampered. The party
+  that writes a store's directory speaks as its keeper (SPEC §3).
+- **`Proof::standing`, and `sign::Proved`.** A signature proves only the
+  bytes that hash to its name. For a husk held under that name it vouches
+  instead (§5, law 77): `standing` answers `Proven`, `Vouched` or
+  `Unsigned`. `Proven` binds a husk that the proof vouches for, and
+  `verify` does not report one as unsigned.
 - **`Replica::kept`, the print a replica keeps under a name**: the whole,
   or its husk. `accept`, and so `sync`, `adopt` and an overlay's flush,
   sends `kept`. `Replica::print` is now a provided method that answers

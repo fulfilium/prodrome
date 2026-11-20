@@ -137,16 +137,16 @@ impl<E: Schema> Replica<E> for Kept<E> {
         }
     }
 
-    fn receive_from(
+    fn receive(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
         sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         match self {
-            Kept::Memory(store) => store.receive_from(seeds, print_of, sender),
-            Kept::Overlay(overlay) => overlay.receive_from(seeds, print_of, sender),
-            Kept::Disk(store) => store.receive_from(seeds, print_of, sender),
+            Kept::Memory(store) => store.receive(seeds, print_of, sender),
+            Kept::Overlay(overlay) => overlay.receive(seeds, print_of, sender),
+            Kept::Disk(store) => store.receive(seeds, print_of, sender),
         }
     }
 }

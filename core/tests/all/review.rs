@@ -16,6 +16,7 @@ use prodrome::fold::{maximal, read};
 use prodrome::policy::Everything;
 use prodrome::reference::Todo;
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use proptest::prelude::*;
 
 #[path = "../schemas/review.rs"]
@@ -170,7 +171,7 @@ proptest! {
         try_all(&here.0, 1, &shared);
         let tips: Vec<Hash> = here.0.tips().expect("derive").into_iter().collect();
         for tip in std::iter::once(&genesis).chain(&tips) {
-            there.0.adopt(&here.0, tip).expect("adopts");
+            there.0.adopt(&here.0, tip, Sender::Stranger).expect("adopts");
         }
         try_all(&here.0, 10, &mine);
         try_all(&there.0, 10, &theirs);

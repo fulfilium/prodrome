@@ -194,7 +194,7 @@ fn a_review_store_reads_its_phases() {
 #[test]
 fn a_page_seals_into_its_replica() {
     use prodrome::event::canonical;
-    use prodrome::store::{MemoryStore, Replica as _};
+    use prodrome::store::{MemoryStore, Replica as _, Sender};
 
     let (mut replica, names) = replica();
     let (objects, _) = store();
@@ -204,9 +204,11 @@ fn a_page_seals_into_its_replica() {
         .map(|object| (seal_hash(object), canonical_envelope(object).into_bytes()))
         .collect();
     store
-        .receive(prints.keys().cloned().collect(), &|name| {
-            prints.get(name).cloned()
-        })
+        .receive(
+            prints.keys().cloned().collect(),
+            &|name| prints.get(name).cloned(),
+            Sender::Stranger,
+        )
         .expect("receives");
 
     let mut sealed = Vec::new();

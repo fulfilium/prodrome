@@ -105,7 +105,7 @@ impl<E: Schema> Replica<E> for MemoryStore<E> {
     /// Walked without the lock, over what was held when it began, so a
     /// `print_of` that reads this store again does not wait on it; what
     /// another receipt took meanwhile is not taken twice.
-    fn receive_from(
+    fn receive(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,

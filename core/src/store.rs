@@ -66,7 +66,7 @@ use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
 use record::Record;
-pub use replica::{accept, accept_from, sync, Held, Replica};
+pub use replica::{accept, sync, Held, Replica};
 
 /// A chain rooted at `root`, of the schema `E`, read under one host
 /// [`Policy`] (§5).
@@ -543,24 +543,17 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// anything else is a second tip. Answers `digest`.
     ///
     /// [`accept`], the restricted join, with one tip chosen.
-    pub fn adopt(&self, source: &EventStore<E, Pol>, digest: &Hash) -> Result<Hash, ProdromeError> {
-        self.adopt_from(source, digest, Sender::Stranger)
-    }
-
-    /// [`EventStore::adopt`], with `source` named as `sender`: from the
-    /// keeper of record ([`Sender::Keeper`]) the husks `source` keeps are
-    /// taken (SPEC §3); from any other party they are refused.
     ///
-    /// # Errors
-    ///
-    /// [`EventStore::adopt`]'s.
-    pub fn adopt_from(
+    /// `sender` names whose word `source` is: from the keeper of record
+    /// ([`Sender::Keeper`]) the husks `source` keeps are taken (SPEC §3);
+    /// from a stranger they are refused.
+    pub fn adopt(
         &self,
         source: &EventStore<E, Pol>,
         digest: &Hash,
         sender: Sender,
     ) -> Result<Hash, ProdromeError> {
-        accept_from(source, self, [digest.clone()].into(), sender)?;
+        accept(source, self, [digest.clone()].into(), sender)?;
         Ok(digest.clone())
     }
 
@@ -582,11 +575,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         &self,
         objects: &BTreeMap<Hash, String>,
         digest: &Hash,
+        sender: Sender,
     ) -> Result<Hash, ProdromeError> {
         self.copy_in_from(
             [digest.clone()],
             |name| objects.get(name).map(|text| text.as_bytes().to_vec()),
-            Sender::Stranger,
+            sender,
         )?;
         Ok(digest.clone())
     }
@@ -982,7 +976,7 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
         EventStore::append(self, event)
     }
 
-    fn receive_from(
+    fn receive(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
@@ -1305,7 +1299,7 @@ mod tests {
             mk_created("alpha", at(1), "bassel", "", "").expect("valid"),
         );
         there
-            .adopt(&here, &shared)
+            .adopt(&here, &shared, Sender::Stranger)
             .expect("fast-forwards into an empty store");
         assert_eq!(tips(&there), [shared.clone()].into_iter().collect());
 
@@ -1317,7 +1311,8 @@ mod tests {
             &there,
             mk_created("beta", at(2), "bassel", "theirs", "").expect("valid"),
         );
-        here.adopt(&there, &theirs).expect("adopts");
+        here.adopt(&there, &theirs, Sender::Stranger)
+            .expect("adopts");
         assert_eq!(
             tips(&here),
             [mine.clone(), theirs.clone()].into_iter().collect()
@@ -1348,7 +1343,9 @@ mod tests {
         let here = Store::new(scratch("weave-here"), roster());
         let there = Store::new(scratch("weave-there"), roster());
         let genesis = here.init("union").expect("begins");
-        there.adopt(&here, &genesis).expect("adopts the genesis");
+        there
+            .adopt(&here, &genesis, Sender::Stranger)
+            .expect("adopts the genesis");
         let mine = here
             .append(mk_completed("alpha", at(2), "bassel", "mine").expect("valid"))
             .expect("appends");
@@ -1445,7 +1442,9 @@ mod tests {
             mk_created("beta", at(2), "bassel", "theirs", "").expect("valid"),
         );
 
-        by_dir.adopt(&there, &theirs).expect("adopts a directory");
+        by_dir
+            .adopt(&there, &theirs, Sender::Stranger)
+            .expect("adopts a directory");
         // The same objects, as the wire carries them: a name and the canonical
         // print that name is the hash of.
         let over_the_wire: BTreeMap<Hash, String> = there
@@ -1456,7 +1455,7 @@ mod tests {
             .map(|(name, object)| (name.clone(), crate::event::canonical_envelope(object)))
             .collect();
         by_bytes
-            .adopt_objects(&over_the_wire, &theirs)
+            .adopt_objects(&over_the_wire, &theirs, Sender::Stranger)
             .expect("adopts bytes");
 
         assert_eq!(tips(&by_bytes), tips(&by_dir));
@@ -1471,14 +1470,18 @@ mod tests {
         if let Some(text) = tampered.get_mut(&theirs) {
             text.push(' ');
         }
-        assert!(liar.adopt_objects(&tampered, &theirs).is_err());
+        assert!(liar
+            .adopt_objects(&tampered, &theirs, Sender::Stranger)
+            .is_err());
         let orphan: BTreeMap<Hash, String> = over_the_wire
             .iter()
             .filter(|(name, _)| **name == theirs)
             .map(|(name, text)| (name.clone(), text.clone()))
             .collect();
         let missing = Store::new(scratch("bytes-orphan"), roster());
-        assert!(missing.adopt_objects(&orphan, &theirs).is_err());
+        assert!(missing
+            .adopt_objects(&orphan, &theirs, Sender::Stranger)
+            .is_err());
         // And a refused adoption WROTE NOTHING: with derived tips an object is
         // in the store the moment its file is, so the tip whose parent never
         // arrived must not have landed on its own.
@@ -1498,14 +1501,18 @@ mod tests {
             &here,
             mk_created("alpha", at(1), "bassel", "", "").expect("valid"),
         );
-        there.adopt(&here, &first).expect("adopts");
+        there
+            .adopt(&here, &first, Sender::Stranger)
+            .expect("adopts");
         let second = seal(
             &there,
             mk_completed("alpha", at(2), "bassel", "").expect("valid"),
         );
-        here.adopt(&there, &second).expect("fast-forwards");
+        here.adopt(&there, &second, Sender::Stranger)
+            .expect("fast-forwards");
         assert_eq!(tips(&here), [second.clone()].into_iter().collect());
-        here.adopt(&there, &first).expect("a contained tip");
+        here.adopt(&there, &first, Sender::Stranger)
+            .expect("a contained tip");
         assert_eq!(tips(&here), [second].into_iter().collect());
         let _ = fs::remove_dir_all(here.root());
         let _ = fs::remove_dir_all(there.root());

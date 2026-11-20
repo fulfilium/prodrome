@@ -26,6 +26,7 @@ use prodrome::policy::Everything;
 use prodrome::reference::{mk_authored, Todo};
 use prodrome::registers::{Folded, Stamp};
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -43,9 +44,11 @@ fn two_replicas<E: Schema<Vocabulary: Default>>() -> [MemoryStore<E>; 2] {
     let begun = || {
         let memory = MemoryStore::default();
         memory
-            .receive([name.clone()].into(), &|held| {
-                (*held == name).then(|| print.clone())
-            })
+            .receive(
+                [name.clone()].into(),
+                &|held| (*held == name).then(|| print.clone()),
+                Sender::Stranger,
+            )
             .expect("receives its genesis");
         memory
     };
@@ -176,12 +179,12 @@ where
                 seen.push((event, name, held));
             }
             Act::Sync(from) => {
-                sync(&replicas[*from], &replicas[1 - from]).expect("syncs");
+                sync(&replicas[*from], &replicas[1 - from], Sender::Stranger).expect("syncs");
             }
         }
     }
-    sync(&replicas[0], &replicas[1]).expect("syncs");
-    sync(&replicas[1], &replicas[0]).expect("syncs");
+    sync(&replicas[0], &replicas[1], Sender::Stranger).expect("syncs");
+    sync(&replicas[1], &replicas[0], Sender::Stranger).expect("syncs");
     let state = folded(&replicas[0]);
     prop_assert_eq!(&state, &folded(&replicas[1]));
 

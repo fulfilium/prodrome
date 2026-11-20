@@ -23,6 +23,7 @@ use prodrome::genesis::mk_genesis;
 use prodrome::policy::{Everything, Policy, Proven, Standing, Untrusted};
 use prodrome::reference::Todo;
 use prodrome::sign::{mk_key_revoked, Checks, KeyAdded, Proof, Registrar, Secret, Signed};
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use prodrome::todo::TodoVocabulary;
 use prodrome::view::{entries, Entry};
@@ -104,6 +105,7 @@ impl History {
             self.prints
                 .iter()
                 .map(|(name, print)| (name.clone(), Ok(print.clone()))),
+            Sender::Stranger,
         )
     }
 
@@ -128,7 +130,11 @@ impl History {
         let replica = MemoryStore::default();
         for name in names {
             replica
-                .receive([name].into(), &|name| self.prints.get(name).cloned())
+                .receive(
+                    [name].into(),
+                    &|name| self.prints.get(name).cloned(),
+                    Sender::Stranger,
+                )
                 .expect("every print is held");
         }
         replica
@@ -147,7 +153,7 @@ impl History {
         }
         let mine = self.received(mine);
         let theirs = self.received(theirs.into_iter().rev());
-        sync(&mine, &theirs).expect("syncs");
+        sync(&mine, &theirs, Sender::Stranger).expect("syncs");
         theirs
     }
 }
@@ -167,7 +173,11 @@ pub fn build(log: &[Event], steps: &[Step]) -> History {
     );
     let store = MemoryStore::<Event>::default();
     store
-        .receive([genesis.clone()].into(), &|name| prints.get(name).cloned())
+        .receive(
+            [genesis.clone()].into(),
+            &|name| prints.get(name).cloned(),
+            Sender::Stranger,
+        )
         .expect("a genesis");
     let store = store.in_genesis(genesis.clone());
     for event in log {

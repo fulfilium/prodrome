@@ -602,7 +602,11 @@ pub fn seal<Pol: prodrome::policy::Policy<TodoEvent<Todo>>>(
     let name = seal_hash(&object);
     let print = prodrome::event::canonical_envelope(&object);
     store
-        .adopt_objects(&[(name.clone(), print)].into(), &name)
+        .adopt_objects(
+            &[(name.clone(), print)].into(),
+            &name,
+            prodrome::store::Sender::Stranger,
+        )
         .expect("writes")
 }
 
