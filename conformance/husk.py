@@ -1,0 +1,14 @@
+# conformance/husk.py — SPEC §3's husks, in the grammar of §2, read through
+# `tests/common/vectors.rs`'s VECTORS vocabulary. Frozen evidence: nothing
+# under `cargo test` writes this file. One case per line: a print kept under
+# a name, and how the letter schema of the tests (which has husks) and the
+# todo schema (which has none) read it: as the whole, as a husk, as
+# tampered, or as a whole that does not parse.
+Husks(cases=(
+HuskCase(why='a whole', name='3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=(), event=Wrote(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', body=(Boxed(key='k0', box='00ff'), Clear(text='hello'), Boxed(key='k1', box='0aa0'))))", letter='whole', todo='unparsed'),
+HuskCase(why="its husk, under the whole's name", name='3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=(), event=Wrote(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', body=(Dropped(key='k0'), Clear(text='hello'), Dropped(key='k1'))))", letter='husk', todo='tampered'),
+HuskCase(why='a husk that keeps one box', name='3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=(), event=Wrote(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', body=(Dropped(key='k0'), Clear(text='hello'), Boxed(key='k1', box='0aa0'))))", letter='tampered', todo='tampered'),
+HuskCase(why='a print with no dropped part, under another name', name='3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=('3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab',), event=Titled(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', title='a title'))", letter='tampered', todo='tampered'),
+HuskCase(why='a whole with no sealed part', name='212a3d9649ac3d8a0b9ed69eb023deea574f584702185e76cba0aac6e9369a0d', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=('3c20c7d4698dba35724b95975676085a8e361fa1c6223150656a0a8c54a44dab',), event=Titled(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', title='a title'))", letter='whole', todo='unparsed'),
+HuskCase(why="a husk's print under its own hash", name='860379dd4fdda561f2d1924a3c4e7cdf6668629cf9eec5b6a8590cb50be7ba07', print="Change(genesis='5779ab5b4a2636eb35cd6013d166793c61a2c0d1d3e7449cd1ae88ecc546cefb', deps=(), event=Wrote(letter='l0', at=datetime(2026, 10, 1, 9, 0, 0), actor='ada', body=(Dropped(key='k0'), Clear(text='hello'), Dropped(key='k1'))))", letter='unparsed', todo='unparsed'),
+))

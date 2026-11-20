@@ -60,9 +60,19 @@ pub trait Replica<E: Schema> {
         Ok(self.held()?.dag.heads())
     }
 
-    /// The print it holds under `name`, the bytes that name is the hash of,
-    /// unchecked: whoever receives it verifies it.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>>;
+    /// The print it keeps under `name`, unchecked: the bytes that name is
+    /// the hash of, or a husk of them (SPEC §3). Whoever receives it
+    /// verifies it: it rehashes the bytes, and reads bytes that are not the
+    /// whole as a husk or refuses them.
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>>;
+
+    /// The print it holds under `name` whose hash is `name`: what
+    /// [`Replica::kept`] answers, and nothing for a husk, which holds no
+    /// such bytes.
+    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+        self.kept(name)
+            .filter(|bytes| Hash::of_bytes(bytes) == *name)
+    }
 
     /// Write `event` as a `Change` over its entity's heads in this
     /// replica, or nothing where it holds a twin (SPEC §3): the decision is
@@ -76,8 +86,10 @@ pub trait Replica<E: Schema> {
 
     /// Take in what `seeds` rest on that it lacks, each object read by
     /// `print_of` and VERIFIED on receipt (it hashes to its name and
-    /// parses), nothing taken unless all of it verified, and held parents
-    /// first. Answers what it took, parents first.
+    /// parses, or it reads as a husk at the replica's schema), nothing
+    /// taken unless all of it verified, and held parents first. A name it
+    /// holds, whole or husk, ends the walk and is not asked for. Answers
+    /// what it took, parents first.
     ///
     /// # Errors
     ///
@@ -108,8 +120,8 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
         (**self).heads()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        (**self).print(name)
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        (**self).kept(name)
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -137,7 +149,9 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 /// is closed under parents over what `to` holds, `to` reads as it did plus
 /// exactly `chosen`; elsewhere it takes what they rest on too, since a
 /// replica is closed under parents. No object is renamed or rewritten: what
-/// arrives is the bytes `from` holds under each name.
+/// arrives is the bytes `from` keeps under each name ([`Replica::kept`]), a
+/// whole or a husk, and a name `to` already holds, whole or husk, is not
+/// asked for.
 ///
 /// # Errors
 ///
@@ -148,7 +162,7 @@ pub fn accept<E: Schema>(
     to: &(impl Replica<E> + ?Sized),
     chosen: BTreeSet<Hash>,
 ) -> Result<Vec<Hash>, ProdromeError> {
-    to.receive(chosen, &|name| from.print(name))
+    to.receive(chosen, &|name| from.kept(name))
 }
 
 /// `to ∪ from`: adopt into `to` every object of `from` that `to` lacks,

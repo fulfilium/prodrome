@@ -44,6 +44,7 @@ pub const VECTORS: Table = Table(&[
     ("Links", &["specs", "env", "cases"]),
     ("Recurs", &["untrusted", "events", "at", "cases"]),
     ("Changes", &["cases"]),
+    ("Husks", &["cases"]),
     // --- one case of each ---------------------------------------------------
     (
         "FoldCase",
@@ -100,6 +101,9 @@ pub const VECTORS: Table = Table(&[
             "name", "dag", "base", "steps", "objects", "verify", "at", "prices",
         ],
     ),
+    // A print kept under a name, and how a schema with husks (the letter
+    // schema of the tests) and one without (the todo schema) read it.
+    ("HuskCase", &["why", "name", "print", "letter", "todo"]),
     // --- what a case is made of ---------------------------------------------
     // One todo's outcome: §6.1's environment as a tuple instead of a map.
     ("Bound", &["todo", "kind", "at"]),

@@ -260,8 +260,8 @@ impl<E: Schema> Replica<E> for Forgetful<E> {
         self.0.tips()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        self.0.print(name)
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        self.0.kept(name)
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {

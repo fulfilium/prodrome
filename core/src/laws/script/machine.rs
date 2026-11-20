@@ -370,7 +370,7 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
                 format!("an append answered {name} and wrote {fresh:?}"),
             ));
         }
-        if let Some(print) = replica.print(&name) {
+        if let Some(print) = replica.kept(&name) {
             self.wire.insert(name.clone(), print);
         }
         self.emit(by, Layer::Replica, &fresh, &[])?;

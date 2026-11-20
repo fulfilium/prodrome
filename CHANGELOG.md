@@ -10,6 +10,31 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The file store reads, keeps and makes husks (SPEC §3, laws 71 to
+  75).** A husk is a `Change` whose event has each sealed part replaced by
+  the name of its key, kept under the name of the whole change. A schema
+  that has sealed parts implements `store::Husking` and answers the new
+  defaulted method `Schema::husk` with `HuskObject::of_other`. At such a
+  schema, every read of a store, a replica's receipt and `verify` read a
+  print that does not hash to its name as the husk that it holds, or as
+  tampered; at every other schema such a print is tampered, as before.
+  `EventStore::husk(names)` replaces each named whole that holds a sealed
+  part with its husk, under the store's lock, and never takes a whole
+  back. `Dag::husks` names the husks that a DAG holds. `dag::decode` now
+  answers `store::Stored`, the whole or the husk. The stored format gains
+  the husk; no stored constructor changes, and `conformance/husk.py` holds
+  the new vectors.
+- **`Replica::kept`, the print a replica keeps under a name**: the whole,
+  or its husk. `accept`, and so `sync`, `adopt` and an overlay's flush,
+  sends `kept`. `Replica::print` is now a provided method that answers
+  only the bytes whose hash is the name, and nothing for a husk. A
+  replica that implements `Replica` implements `kept` in place of `print`.
+- **A run of appends (law 76).** `EventStore::append_all` and
+  `Decision::append_all` decide a sequence of events over one look and
+  place every new object at the end, with one directory sync, and stop at
+  the first refusal with `Stopped`, which names the events placed before
+  it. An append is a run of one. 10,000 appends as one run cost one look
+  in place of 10,000.
 - **`codec::assert_pinned`, a pin of a schema's stored names.** A test
   gives the constructors as text, one `Name(field, …)` on each line, and
   the function fails unless the declared constructors spell that text. The

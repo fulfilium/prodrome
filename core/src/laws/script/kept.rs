@@ -121,11 +121,11 @@ impl<E: Schema> Replica<E> for Kept<E> {
         }
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         match self {
-            Kept::Memory(store) => store.print(name),
-            Kept::Overlay(overlay) => overlay.print(name),
-            Kept::Disk(store) => store.print(name),
+            Kept::Memory(store) => store.kept(name),
+            Kept::Overlay(overlay) => overlay.kept(name),
+            Kept::Disk(store) => store.kept(name),
         }
     }
 

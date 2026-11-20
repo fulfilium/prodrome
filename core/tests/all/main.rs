@@ -30,6 +30,7 @@ mod fpl_vectors;
 mod frontier;
 mod frontier_reach;
 mod fuzz;
+mod husk;
 mod kit;
 mod link_vectors;
 mod literal_parser;

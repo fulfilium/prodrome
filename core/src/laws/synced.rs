@@ -31,10 +31,10 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for Cut<'_, E, R> {
         self.replica.tips()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         let left = self.left.load(Ordering::Relaxed);
         self.left.store(left.saturating_sub(1), Ordering::Relaxed);
-        (left > 0).then(|| self.replica.print(name)).flatten()
+        (left > 0).then(|| self.replica.kept(name)).flatten()
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -65,20 +65,23 @@ fn observed<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<Replicate
 }
 
 /// Law 1 at every object `replica` holds: it reads back by its name as its
-/// print, which parses, prints back and hashes to the name.
+/// print, and the print of a whole parses, prints back and hashes to the
+/// name. A husk's print is not the hash of its name (SPEC §3).
 fn read_back<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<(), Broken> {
     let held = replica.held().map_err(unread)?;
     let mut prints = Vec::new();
     for (name, object) in held.dag.objects() {
         let print = replica
-            .print(name)
+            .kept(name)
             .ok_or_else(|| Broken::of(1, format!("{name} is held and does not read back")))?;
         let print = String::from_utf8(print)
             .map_err(|_| Broken::of(1, format!("{name} reads back as no text")))?;
         if print != canonical_envelope(object) {
             return Err(Broken::of(1, format!("{name} reads back as {print}")));
         }
-        prints.push((name.clone(), print));
+        if !held.dag.husks().contains(name) {
+            prints.push((name.clone(), print));
+        }
     }
     printed::<E>(replica.schema(), &prints)
 }
@@ -168,7 +171,7 @@ where
         .collect();
     if !theirs.is_empty() {
         let seed = theirs[partial % theirs.len()].clone();
-        copy.receive([seed].into(), &|name| there.print(name))
+        copy.receive([seed].into(), &|name| there.kept(name))
             .map_err(unread)?;
     }
     sync(there, &copy).map_err(unread)?;

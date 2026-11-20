@@ -87,7 +87,7 @@ impl<E: Schema> Replica<E> for MemoryStore<E> {
         Ok(self.objects().memory.tips().clone())
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         self.objects().prints.get(name).cloned()
     }
 

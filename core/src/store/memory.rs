@@ -9,16 +9,18 @@ use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
 use crate::change::mk_change;
-use crate::dag::{decode, lacked_among, Dag, Heads, Unread};
+use crate::dag::{decode, lacked_among, Dag, Heads, Prints, Unread};
 use crate::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope, Hash};
 use crate::literal::{Datetime, ProdromeError};
 use crate::registers::{deps_for, fold, Folded, Genesis};
 use crate::schema::Schema;
+use crate::store::{HuskObject, Stored};
 
 /// A store's objects as it last read them, and their fold.
 ///
 /// VERIFIED, NOT TRUSTED FOR BEING HELD. An object enters only as
-/// [`Verified`]: its bytes rehashed to its name, or sealed here. Its FILE is
+/// [`Verified`]: its bytes rehashed to its name, read as a husk of it at the
+/// schema (SPEC §3), or sealed here. Its FILE is
 /// only held: [`Seen`] is how it looked then, and a file that no longer looks
 /// so is read and verified again before anything is read from memory.
 ///
@@ -63,11 +65,22 @@ pub struct Memory<E: Schema> {
 /// and holds.
 pub type Printed<E> = (Verified<E>, Vec<u8>);
 
-/// An object whose name is the hash of its bytes, which is the only way into
-/// a [`Memory`].
+/// An object read under its name, which is the only way into a [`Memory`]:
+/// a whole, whose name is the hash of its bytes, or a husk, which the
+/// schema read from bytes that are not (SPEC §3).
 pub struct Verified<E> {
     name: Hash,
     object: Envelope<E>,
+    form: Form,
+}
+
+/// Which print an object was read from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Form {
+    /// The print its name is the hash of.
+    Whole,
+    /// A husk of that print.
+    Husk,
 }
 
 impl<E: Schema> Verified<E> {
@@ -76,7 +89,14 @@ impl<E: Schema> Verified<E> {
     pub fn sealed(object: Envelope<E>) -> Printed<E> {
         let print = canonical_envelope(&object).into_bytes();
         let name = Hash::of_bytes(&print);
-        (Verified { name, object }, print)
+        (
+            Verified {
+                name,
+                object,
+                form: Form::Whole,
+            },
+            print,
+        )
     }
 
     pub fn name(&self) -> &Hash {
@@ -87,11 +107,19 @@ impl<E: Schema> Verified<E> {
         &self.object
     }
 
-    /// `bytes` under `name`, rehashed and parsed at the schema `schema`.
+    /// `bytes` under `name`, rehashed, and parsed at the schema `schema` as
+    /// the whole or read as its husk ([`decode`]).
     pub fn read(schema: &E::Vocabulary, name: &Hash, bytes: &[u8]) -> Result<Verified<E>, Unread> {
-        decode(schema, name, bytes).map(|object| Verified {
-            name: name.clone(),
-            object,
+        decode(schema, name, bytes).map(|stored| {
+            let form = match stored {
+                Stored::Whole(_) => Form::Whole,
+                Stored::Husk(_) => Form::Husk,
+            };
+            Verified {
+                name: name.clone(),
+                object: stored.into_object(),
+                form,
+            }
         })
     }
 }
@@ -313,7 +341,7 @@ impl<E: Schema> Memory<E> {
 
     /// A held object's file, read again and found to hold its bytes, as it
     /// looks now.
-    fn reseen(&mut self, name: &Hash, seen: Option<Seen>) {
+    pub fn reseen(&mut self, name: &Hash, seen: Option<Seen>) {
         if let Some(held) = self.files.get_mut(name) {
             *held = seen;
         }
@@ -336,7 +364,11 @@ impl<E: Schema> Memory<E> {
         read: Dag<E>,
         seen: &BTreeMap<Hash, Option<Seen>>,
     ) {
-        let (objects, unread) = read.into_prints();
+        let Prints {
+            objects,
+            unread,
+            husks,
+        } = read.into_prints();
         gone.extend(
             unread
                 .keys()
@@ -346,10 +378,22 @@ impl<E: Schema> Memory<E> {
         let mut fresh = Vec::new();
         for (name, object) in objects {
             let at = seen.get(&name).cloned().flatten();
-            if self.files.contains_key(&name) {
+            let form = if husks.contains(&name) {
+                Form::Husk
+            } else {
+                Form::Whole
+            };
+            let held = self.dag.husks().contains(&name);
+            if self.files.contains_key(&name) && held == (form == Form::Husk) {
                 self.reseen(&name, at);
             } else {
-                fresh.push((Verified { name, object }, at));
+                // A held file now read in the other form (a whole replaced
+                // by its husk, or the reverse by another door) is the held
+                // object gone and the object read arrived.
+                if self.files.contains_key(&name) {
+                    gone.push(name.clone());
+                }
+                fresh.push((Verified { name, object, form }, at));
             }
         }
         self.admit(&gone, fresh);
@@ -390,7 +434,11 @@ impl<E: Schema> Memory<E> {
             self.files.remove(name);
         }
         let mut arrived = BTreeMap::new();
-        for (Verified { name, object }, seen) in fresh {
+        let mut husks = Vec::new();
+        for (Verified { name, object, form }, seen) in fresh {
+            if form == Form::Husk {
+                husks.push(name.clone());
+            }
             if let Some(event) = object.event() {
                 self.twins
                     .entry((event.key().clone(), event.at()))
@@ -401,6 +449,7 @@ impl<E: Schema> Memory<E> {
             arrived.insert(name, object);
         }
         let names = dag.grow(arrived);
+        dag.hold_husks(husks);
         if !gone.is_empty() {
             // What rested on a gone object leaves the history with it.
             dag.settle();
@@ -461,6 +510,31 @@ impl<E: Schema> Memory<E> {
     }
 }
 
+impl<E: Schema> Memory<E> {
+    /// Each object of `husked`, held whole in the history, replaced by its
+    /// husk, with its file as it is now seen. The husk rests on what the
+    /// whole rests on, and its event keeps every clear field, so the tips,
+    /// the geneses, the order and the twins are as they were; the fold's
+    /// stamp of each takes the husk's event, so no reading holds a sealed
+    /// part of it again.
+    pub fn husk(&mut self, husked: Vec<(Hash, HuskObject<E>, Option<Seen>)>) {
+        if husked.is_empty() {
+            return;
+        }
+        let dag = Arc::make_mut(&mut self.dag);
+        let mut folded = self.folded.as_mut().map(Arc::make_mut);
+        for (name, husk, seen) in husked {
+            if let (Some(folded), Some(event)) = (folded.as_deref_mut(), husk.object().event()) {
+                folded.rewrite(&name, event);
+            }
+            dag.husk(&name, husk);
+            if let Some(held) = self.files.get_mut(&name) {
+                *held = seen;
+            }
+        }
+    }
+}
+
 /// What an object of the history of `dag` names (a parent, a genesis)
 /// that the history does not hold.
 fn wanted<E>(dag: &Dag<E>) -> BTreeSet<Hash> {
@@ -481,8 +555,9 @@ fn wanted<E>(dag: &Dag<E>) -> BTreeSet<Hash> {
 /// # Errors
 ///
 /// A name `print_of` has no print for ("missing object …, named as a
-/// parent"), and a print that does not hash to its name or does not parse
-/// at the schema `schema`. Nothing is answered unless everything verified.
+/// parent"), and a print that does not hash to its name and is no husk, or
+/// does not parse, at the schema `schema`. Nothing is answered unless
+/// everything verified.
 pub fn receive<E: Schema>(
     schema: &E::Vocabulary,
     held: impl Fn(&Hash) -> bool,

@@ -154,9 +154,9 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
 
     /// Its own print, or the base's. Never waits on the base: a flush reads
     /// it while the base holds its lock.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         let own = self.lock().own.get(name).cloned();
-        own.or_else(|| self.base.print(name))
+        own.or_else(|| self.base.kept(name))
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {

@@ -25,6 +25,15 @@ use crate::registers::{fold, Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
 use crate::spread::spread;
+use crate::store::{Hashed, HuskObject, Stored};
+
+/// What a [`Dag`] holds, let go of: every object, every print that is not
+/// one, and the names of the objects held as husks.
+pub(crate) struct Prints<E> {
+    pub(crate) objects: BTreeMap<Hash, Envelope<E>>,
+    pub(crate) unread: BTreeMap<Hash, Unread>,
+    pub(crate) husks: BTreeSet<Hash>,
+}
 
 /// Named prints read at the schema `E`: each an object or, `unread`, a print
 /// that is not one. The objects are `objects` and `waiting`: of a DAG made
@@ -33,11 +42,16 @@ use crate::spread::spread;
 /// the history is; of any other, `waiting` is empty. So the history is
 /// `objects` once read, and what it leaves out ([`Dag::excluded`]) is still
 /// a function of every print held.
+///
+/// `husks` names the objects held, in the history or waiting, whose prints
+/// are husks (SPEC §3): each reads as the object it holds, and no print
+/// under its name hashes to the name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dag<E> {
     history: History<E>,
     waiting: BTreeMap<Hash, Envelope<E>>,
     unread: BTreeMap<Hash, Unread>,
+    husks: BTreeSet<Hash>,
 }
 
 impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
@@ -46,36 +60,45 @@ impl<E> FromIterator<(Hash, Envelope<E>)> for Dag<E> {
             history: History::new(objects.into_iter().collect()),
             waiting: BTreeMap::new(),
             unread: BTreeMap::new(),
+            husks: BTreeSet::new(),
         }
     }
 }
 
 /// The union with more objects, the join of replicas (design §1): an object
-/// is held once, and a name it is held under is no longer unread.
+/// is held once, and a name it is held under is no longer unread. Each
+/// object given is a whole.
 impl<E> Extend<(Hash, Envelope<E>)> for Dag<E> {
     fn extend<I: IntoIterator<Item = (Hash, Envelope<E>)>>(&mut self, objects: I) {
         let held = self.history.edit();
         for (name, object) in objects {
             self.unread.remove(&name);
             self.waiting.remove(&name);
+            self.husks.remove(&name);
             held.insert(name, object);
         }
     }
 }
 
-/// A stored print, rehashed against its name before it is parsed at the
-/// schema `schema`.
+/// A stored print, rehashed against its name: a print that hashes to it is
+/// the whole, parsed at the schema `schema`; any other is the husk
+/// [`Schema::husk`] reads, or else tampered.
 pub fn decode<E: Schema>(
     schema: &E::Vocabulary,
     name: &Hash,
     bytes: &[u8],
-) -> Result<Envelope<E>, Unread> {
-    let computed = Hash::of_bytes(bytes);
-    if computed != *name {
-        return Err(Unread::Tampered(computed));
+) -> Result<Stored<E>, Unread> {
+    match Hashed::of(name, bytes) {
+        Hashed::Whole(bytes) => {
+            let text = std::str::from_utf8(bytes).map_err(|_| Unread::NotText)?;
+            parse_envelope(schema, text)
+                .map(Stored::Whole)
+                .map_err(Unread::Unparsed)
+        }
+        Hashed::Other(other) => E::husk(&other)
+            .map(Stored::Husk)
+            .ok_or_else(|| Unread::Tampered(other.computed().clone())),
     }
-    let text = std::str::from_utf8(bytes).map_err(|_| Unread::NotText)?;
-    parse_envelope(schema, text).map_err(Unread::Unparsed)
 }
 
 impl<E> Dag<E> {
@@ -85,6 +108,12 @@ impl<E> Dag<E> {
 
     pub fn unread(&self) -> &BTreeMap<Hash, Unread> {
         &self.unread
+    }
+
+    /// The objects held, in the history or waiting, whose prints are husks
+    /// (SPEC §3).
+    pub fn husks(&self) -> &BTreeSet<Hash> {
+        &self.husks
     }
 
     pub fn get(&self, name: &Hash) -> Option<&Envelope<E>> {
@@ -104,6 +133,7 @@ impl<E> Dag<E> {
     /// Every print `name` was held as, an object or unread, let go.
     pub(crate) fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
         self.unread.remove(name);
+        self.husks.remove(name);
         self.history
             .edit()
             .remove(name)
@@ -115,11 +145,32 @@ impl<E> Dag<E> {
         self.unread = unread;
     }
 
-    /// Every object held, and every print that is not one.
-    pub(crate) fn into_prints(self) -> (BTreeMap<Hash, Envelope<E>>, BTreeMap<Hash, Unread>) {
+    /// `names`, held as objects, are held as husks.
+    pub(crate) fn hold_husks(&mut self, names: impl IntoIterator<Item = Hash>) {
+        self.husks.extend(names);
+    }
+
+    /// The object `name` of the history replaced by its husk, which rests on
+    /// what the object rests on, since it is the object's `Change` with its
+    /// event husked. So the kept facts (the tips, the order and its index)
+    /// still describe the objects, and are kept.
+    /// A name the history does not hold is passed over.
+    pub(crate) fn husk(&mut self, name: &Hash, husk: HuskObject<E>) {
+        if self.history.replace(name, husk.into_object()).is_some() {
+            self.husks.insert(name.clone());
+        }
+    }
+
+    /// Every object held, every print that is not one, and the names of the
+    /// objects held as husks.
+    pub(crate) fn into_prints(self) -> Prints<E> {
         let mut objects = self.history.into_objects();
         objects.extend(self.waiting);
-        (objects, self.unread)
+        Prints {
+            objects,
+            unread: self.unread,
+            husks: self.husks,
+        }
     }
 
     /// THE HISTORY THESE OBJECTS HOLD: the largest down-set among them, every
@@ -461,13 +512,17 @@ impl<E: Schema> Dag<E> {
     /// held under its name and a print that is not one kept with why.
     fn decoded<T: Send>(
         items: Vec<T>,
-        decode: impl Fn(T) -> (Hash, Result<Envelope<E>, Unread>) + Sync,
+        decode: impl Fn(T) -> (Hash, Result<Stored<E>, Unread>) + Sync,
     ) -> Dag<E> {
         let mut dag: Dag<E> = Dag::from_iter([]);
         for (name, read) in spread(items, decode) {
             match read {
-                Ok(object) => {
+                Ok(Stored::Whole(object)) => {
                     dag.history.edit().insert(name, object);
+                }
+                Ok(Stored::Husk(husk)) => {
+                    dag.history.edit().insert(name.clone(), husk.into_object());
+                    dag.husks.insert(name);
                 }
                 Err(why) => {
                     dag.unread.insert(name, why);

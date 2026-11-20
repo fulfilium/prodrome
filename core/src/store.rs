@@ -18,7 +18,11 @@
 //!
 //! - a read VERIFIES, hashing the STORED BYTES against the filename before
 //!   parsing — tamper-evidence on read — and never a reprint→rehash, which
-//!   would couple every old object's validity to the current printer. A
+//!   would couple every old object's validity to the current printer. At a
+//!   schema with sealed parts, bytes that do not hash to the filename may
+//!   be a HUSK, the whole with its sealed parts dropped ([`husk`], SPEC
+//!   §3), which reads as the object it prints; any other such bytes are
+//!   tampered. A
 //!   handle verifies each object once and holds it (`store::memory`); a held
 //!   object is read again only when its file no longer looks as it did, and
 //!   `verify` rehashes everything, on purpose;
@@ -28,6 +32,7 @@
 //!   crash leaves a store half-written or an object empty.
 
 mod decision;
+mod husk;
 mod memory;
 mod memory_store;
 mod overlay;
@@ -55,7 +60,8 @@ use crate::schema::Schema;
 use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
-pub use decision::Decision;
+pub use decision::{Decision, Stopped};
+pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Stored};
 use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
@@ -452,6 +458,52 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         self.decision()?.append(event)
     }
 
+    /// A RUN OF APPENDS under one lock and one look: each event decided as
+    /// [`EventStore::append`] decides it, over the changes decided before
+    /// it, and every new object placed at the end, with one directory sync
+    /// ([`Decision::append_all`]). Answers each event's name.
+    ///
+    /// # Errors
+    ///
+    /// [`Stopped`]: the decision not taken, with no names; or the first
+    /// event refused, with the names of the events before it, which are
+    /// placed.
+    pub fn append_all(&self, events: impl IntoIterator<Item = E>) -> Result<Vec<Hash>, Stopped> {
+        self.decision()
+            .map_err(|why| Stopped {
+                placed: Vec::new(),
+                why,
+            })?
+            .append_all(events)
+    }
+
+    /// DROP THE SEALED PARTS of the objects `names` names (SPEC §3): each
+    /// object the history holds whole, as a `Change` whose event holds a
+    /// sealed part, has its file replaced by its husk, under the store's
+    /// lock ([`Decision::husk`]). A name already a husk, an event with no
+    /// sealed part, any other object and a name not held are passed over.
+    /// Answers the names husked.
+    ///
+    /// Which names are dead is the caller's knowledge: it knows which keys
+    /// are gone ([`Husk::opens`]). The store drops what it is told to drop
+    /// and nothing else, and never takes a whole back once it is dropped.
+    ///
+    /// Each file is replaced as an object is placed: the husk written to a
+    /// temp file and synced, the temp renamed over the whole, and
+    /// `objects/` synced once after the last. A stop at any point leaves
+    /// each file the whole or the husk (law 75). The heads do not change.
+    ///
+    /// # Errors
+    ///
+    /// The decision not taken, or a file not written or renamed: the files
+    /// replaced before it are husks.
+    pub fn husk(&self, names: impl IntoIterator<Item = Hash>) -> Result<Vec<Hash>, ProdromeError>
+    where
+        E: Husking,
+    {
+        self.decision()?.husk(names)
+    }
+
     /// Attest the writer's prodrome: a `Snapshot` of its tips, chained to the
     /// last snapshot among them. With nothing new since that one, it is the
     /// answer and nothing is written.
@@ -508,8 +560,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// this function with a directory for a source.
     ///
     /// The same refusals, in the same words: bytes that do not hash to the name
-    /// given, an object that does not parse, and a parent neither `objects` nor
-    /// this store holds.
+    /// given and are no husk at the store's schema, an object that does not
+    /// parse, and a parent neither `objects` nor this store holds.
     pub fn adopt_objects(
         &self,
         objects: &BTreeMap<Hash, String>,
@@ -567,14 +619,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             .iter()
             .map(|(verified, _)| verified.name().clone())
             .collect();
-        // A waiting object is walked through, to what it waits for, and its
-        // file, already here, is not written again.
+        // A waiting object is walked through, to what it waits for. Its
+        // file, already here, is kept as it is, whole or husk, and the
+        // object it holds joins the history when what it waits for does.
         let taken = taken
             .into_iter()
-            .map(|(verified, print)| {
-                let held = memory.files().contains_key(verified.name());
-                (verified, (!held).then_some(print))
-            })
+            .filter(|(verified, _)| !memory.files().contains_key(verified.name()))
+            .map(|(verified, print)| (verified, Some(print)))
             .collect();
         decision.place(taken)?;
         Ok(names)
@@ -614,14 +665,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// filename, then parse. Deliberately NOT a reparse→reprint→rehash — git
     /// hashes bytes and not semantics, so that a future printer change cannot
     /// false-alarm the whole store as tampered.
+    ///
+    /// A file that does not hash to its name and reads as a husk at the
+    /// store's schema loads as the object it reads as (SPEC §3).
     pub fn load(&self, digest: &Hash) -> Result<Envelope<E>, ProdromeError> {
-        decode(&self.schema, digest, &self.raw(digest)?).map_err(|why| why.refusal(digest))
-    }
-
-    /// The print held under `name`, unchecked: what an adoption from this
-    /// store reads, and verifies.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        fs::read(self.object_path(name)).ok()
+        decode(&self.schema, digest, &self.raw(digest)?)
+            .map(Stored::into_object)
+            .map_err(|why| why.refusal(digest))
     }
 
     /// One object file's bytes, unchecked.
@@ -901,8 +951,10 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
         EventStore::heads(self)
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        EventStore::print(self, name)
+    /// The file's bytes, unchecked: what an adoption from this store reads,
+    /// and verifies.
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        fs::read(self.object_path(name)).ok()
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
