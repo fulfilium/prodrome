@@ -14,6 +14,9 @@ use prodrome::registers::Stamp;
 use prodrome::schema::Schema;
 use prodrome::store::{HuskObject, Husking, Other};
 
+/// The one title an append refuses.
+pub const REFUSED: &str = "refused";
+
 /// A letter's name: any text.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Id(pub String);
@@ -215,8 +218,15 @@ impl<'a> Product<'a> for Registers<'a> {
         }
     }
 
-    fn grows(&self, _: &Letter) -> Result<(), ProdromeError> {
-        Ok(())
+    /// The title `refused` is refused, so that a law can draw where a run
+    /// of appends stops (law 76).
+    fn grows(&self, event: &Letter) -> Result<(), ProdromeError> {
+        match &event.says {
+            Says::Titled(title) if title == REFUSED => {
+                Err(ProdromeError::invalid("the title `refused` is refused"))
+            }
+            Says::Titled(_) | Says::Wrote(_) => Ok(()),
+        }
     }
 
     fn climbed(&self, _: &Self) -> Result<(), ProdromeError> {
@@ -327,18 +337,12 @@ impl Husking for Letter {
     }
 
     fn read_dropped(value: &Value) -> Result<Letter, ProdromeError> {
-        let husk = letter(value, |part| match Part::from_value(part)? {
+        letter(value, |part| match Part::from_value(part)? {
             Part::Boxed { key, .. } => Err(ProdromeError::invalid(format!(
                 "a husk holds no sealed part, and this one is sealed under {key}"
             ))),
             read @ (Part::Clear(_) | Part::Dropped { .. }) => Ok(read),
-        })?;
-        if husk.sealed_under().next().is_none() {
-            return Err(ProdromeError::invalid(
-                "a husk holds a dropped part, and this holds none",
-            ));
-        }
-        Ok(husk)
+        })
     }
 
     fn sealed_under(&self) -> impl Iterator<Item = &String> {

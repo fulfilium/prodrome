@@ -15,7 +15,8 @@
 //!   object names is bound by its maker's word alone: SHA-256 cannot be recomputed without the
 //!   dropped bytes;
 //! - its clear fields are its maker's word: the holder that dropped them from a whole it had
-//!   verified ([`HuskObject::of`]), or the party a replica took it from.
+//!   verified ([`HuskObject::of`]), or the keeper of record a replica took it from
+//!   ([`Sender::Keeper`]). A replica takes a husk from no other party.
 //!
 //! This is git's promisor object, and it is the one answer for a store on disk and for a replica.
 //! A schema says that it has husks by implementing [`Husking`] and by answering
@@ -93,7 +94,21 @@ impl<E: Husking> Husk<E> {
     /// [`NotAHusk`] for a print that is not one of the schema's events with every part dropped.
     pub fn read(text: &str) -> Result<Self, NotAHusk> {
         let value = parse_literal(text, &E::Husks::default()).map_err(refused)?;
-        E::read_dropped(&value).map(Self).map_err(refused)
+        let husk = Self::dropped(E::read_dropped(&value).map_err(refused)?)?;
+        exact(&husk.print(), text.as_bytes())?;
+        Ok(husk)
+    }
+
+    /// `event`, read from a husk's print, as a husk: it holds at least one dropped part and no
+    /// sealed part, whatever the schema's [`Husking::read_dropped`] checked.
+    fn dropped(event: E) -> Result<Self, NotAHusk> {
+        if event.holds_sealed() {
+            return Err(NotAHusk("it holds a sealed part".to_owned()));
+        }
+        if event.sealed_under().next().is_none() {
+            return Err(NotAHusk("it holds no dropped part".to_owned()));
+        }
+        Ok(Self(event))
     }
 
     /// Whether a key `live` says is still kept opens a part of the whole it was.
@@ -153,8 +168,13 @@ impl<E: Husking> HuskObject<E> {
 
     /// The husk object `other` prints, a print already found not to hash to its name.
     ///
+    /// A husk is exactly one print: the canonical print of the object it reads as. A comment, a
+    /// space or a field out of order would let a print hold bytes beside the husk, a sealed part
+    /// among them, so every other print that parses to the same object is no husk.
+    ///
     /// # Errors
-    /// [`NotAHusk`] for a print that is not text, or not a `Change` whose event is a husk.
+    /// [`NotAHusk`] for a print that is not text, not a `Change` whose event is a husk, or not
+    /// that husk's canonical print.
     pub fn of_other(other: &Other<'_>) -> Result<Self, NotAHusk> {
         let text = std::str::from_utf8(other.bytes).map_err(refused)?;
         let value = parse_literal(text, &ObjectVocabulary(E::Husks::default())).map_err(refused)?;
@@ -169,9 +189,11 @@ impl<E: Husking> HuskObject<E> {
         let genesis =
             Hash::new(fields.get::<String>("genesis").map_err(refused)?).map_err(refused)?;
         let event = crate::payload::required(fields.call(), "event").map_err(refused)?;
-        let husk = Husk(E::read_dropped(event).map_err(refused)?);
+        let husk = Husk::dropped(E::read_dropped(event).map_err(refused)?)?;
         let Change { genesis, deps, .. } = mk_change(genesis, deps, ()).map_err(refused)?;
-        Ok(Self::over(genesis, deps, husk))
+        let husk = Self::over(genesis, deps, husk);
+        exact(&husk.print(), other.bytes)?;
+        Ok(husk)
     }
 
     fn over(genesis: Hash, deps: Vec<Hash>, husk: Husk<E>) -> Self {
@@ -264,6 +286,33 @@ impl<'t> Hashed<'t> {
         } else {
             Self::Other(Other { bytes, computed })
         }
+    }
+}
+
+/// Whose word a receipt takes for a print that does not hash to its name (SPEC §3).
+///
+/// A whole proves itself: its bytes hash to its name. A husk does not, so a replica takes one
+/// only on the word of a party whose word it takes for that, its keeper of record. The caller
+/// names that party; a schema cannot, since the same schema is read from many parties. From any
+/// other party a print that does not hash to its name is tampered, as at a schema without husks.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Sender {
+    /// A party whose word is not taken: only prints that hash to their names are read.
+    #[default]
+    Stranger,
+    /// The keeper of record: a print that does not hash to its name is read as a husk, where the
+    /// schema has husks. A store reads its own files so.
+    Keeper,
+}
+
+/// `print` is exactly `bytes`.
+fn exact(print: &str, bytes: &[u8]) -> Result<(), NotAHusk> {
+    if print.as_bytes() == bytes {
+        Ok(())
+    } else {
+        Err(NotAHusk(
+            "it is not the canonical print of the husk it parses to".to_owned(),
+        ))
     }
 }
 

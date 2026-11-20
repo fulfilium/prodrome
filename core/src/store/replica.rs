@@ -9,6 +9,7 @@ use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::registers::Folded;
 use crate::schema::Schema;
+use crate::store::Sender;
 
 /// What a replica holds, of one look: its objects, their fold and their
 /// tips.
@@ -86,19 +87,35 @@ pub trait Replica<E: Schema> {
 
     /// Take in what `seeds` rest on that it lacks, each object read by
     /// `print_of` and VERIFIED on receipt (it hashes to its name and
-    /// parses, or it reads as a husk at the replica's schema), nothing
-    /// taken unless all of it verified, and held parents first. A name it
-    /// holds, whole or husk, ends the walk and is not asked for. Answers
-    /// what it took, parents first.
+    /// parses, or, where `sender` is its keeper of record, it reads as a
+    /// husk at the replica's schema), nothing taken unless all of it
+    /// verified, and held parents first. A name it keeps, whole or husk, in
+    /// its history or waiting outside it, is not replaced. Answers what it
+    /// took, parents first.
     ///
     /// # Errors
     ///
     /// A print missing, or one that is not the object its name says.
+    fn receive_from(
+        &self,
+        seeds: BTreeSet<Hash>,
+        print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
+    ) -> Result<Vec<Hash>, ProdromeError>;
+
+    /// [`Replica::receive_from`] a party whose word is not taken
+    /// ([`Sender::Stranger`]): only prints that hash to their names.
+    ///
+    /// # Errors
+    ///
+    /// [`Replica::receive_from`]'s.
     fn receive(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
-    ) -> Result<Vec<Hash>, ProdromeError>;
+    ) -> Result<Vec<Hash>, ProdromeError> {
+        self.receive_from(seeds, print_of, Sender::Stranger)
+    }
 }
 
 /// A replica borrowed is that replica: an overlay over `&store` reads and
@@ -128,12 +145,13 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
         (**self).append(event)
     }
 
-    fn receive(
+    fn receive_from(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        (**self).receive(seeds, print_of)
+        (**self).receive_from(seeds, print_of, sender)
     }
 }
 
@@ -153,6 +171,9 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 /// whole or a husk, and a name `to` already holds, whole or husk, is not
 /// asked for.
 ///
+/// `from` is a party whose word `to` does not take ([`Sender::Stranger`]):
+/// a husk `from` keeps is refused. [`accept_from`] names the sender.
+///
 /// # Errors
 ///
 /// [`Replica::receive`] of `to`, a chosen name `from` does not hold among
@@ -162,7 +183,22 @@ pub fn accept<E: Schema>(
     to: &(impl Replica<E> + ?Sized),
     chosen: BTreeSet<Hash>,
 ) -> Result<Vec<Hash>, ProdromeError> {
-    to.receive(chosen, &|name| from.kept(name))
+    accept_from(from, to, chosen, Sender::Stranger)
+}
+
+/// [`accept`], with `from` named as `sender`: where `from` is `to`'s
+/// keeper of record ([`Sender::Keeper`]), `to` takes the husks it keeps.
+///
+/// # Errors
+///
+/// [`accept`]'s.
+pub fn accept_from<E: Schema>(
+    from: &(impl Replica<E> + ?Sized),
+    to: &(impl Replica<E> + ?Sized),
+    chosen: BTreeSet<Hash>,
+    sender: Sender,
+) -> Result<Vec<Hash>, ProdromeError> {
+    to.receive_from(chosen, &|name| from.kept(name), sender)
 }
 
 /// `to ∪ from`: adopt into `to` every object of `from` that `to` lacks,
@@ -178,7 +214,9 @@ pub fn accept<E: Schema>(
 /// # Errors
 ///
 /// [`Replica::tips`] of `from` and [`Replica::receive`] of `to`; `to` takes
-/// nothing then.
+/// nothing then. `from` is a party whose word `to` does not take, so a husk
+/// it keeps is refused; a pull from a keeper of record is
+/// `accept_from(from, to, from.tips()?, Sender::Keeper)`.
 pub fn sync<E: Schema>(
     from: &(impl Replica<E> + ?Sized),
     to: &(impl Replica<E> + ?Sized),

@@ -14,6 +14,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use prodrome::dag::decode;
 use prodrome::dag::{Finding, Unread};
 use prodrome::event::{canonical_envelope, seal_hash, Actor, Envelope, Hash};
 use prodrome::genesis::mk_genesis;
@@ -21,7 +22,11 @@ use prodrome::laws::Registers;
 use prodrome::literal::{Datetime, ProdromeError};
 use prodrome::policy::Untrusted;
 use prodrome::reference::Todo;
-use prodrome::store::{sync, EventStore, HuskObject, MemoryStore, Replica, Stopped};
+use prodrome::sign::{KeyAdded, Proof, Registrar, Secret};
+use prodrome::store::{
+    accept_from, sync, EventStore, HuskObject, MemoryStore, Overlay, Replica, Sender, Stopped,
+    Stored,
+};
 use proptest::prelude::*;
 
 use common::vectors::{each, text_at, vectors};
@@ -328,12 +333,16 @@ proptest! {
         prop_assert_eq!(store.verify(), Vec::<Finding>::new());
     }
 
-    /// Law 73, never take back: after `husk`, no sequence of the store's
-    /// own operations makes a sealed part of a husked object readable from
-    /// it: not an append of each whole event again (one by one and as a
-    /// run), and not a sync, a receipt or an adoption from a replica that
-    /// holds every whole. Each husked name still holds its husk's print,
-    /// and its `print` answers nothing.
+    /// Law 73, never take back: after `husk`, no sequence of operations of
+    /// any replica the law kit has makes a sealed part of a husked object
+    /// readable from it. The store on disk appends each whole event again,
+    /// one by one and as a run, and syncs, receives and adopts every whole
+    /// from a replica that holds them, as a stranger and as its keeper. A
+    /// store in memory that took the husks from the store does the same. An
+    /// overlay whose own layer holds the wholes, over a base that then takes
+    /// the husks, reads and answers the husks, and its flush keeps them.
+    /// Each husked name keeps its husk's print, and its `print` answers
+    /// nothing.
     #[test]
     fn a_dropped_part_is_never_taken_back(drafts in a_history(), choice in a_choice()) {
         let scratch = Scratch::new();
@@ -344,38 +353,58 @@ proptest! {
             .iter()
             .map(|name| (name.clone(), husked.kept(name).expect("kept")))
             .collect();
+        let everything = whole.tips().expect("tips");
+
         for event in events(&drafts) {
             husked.append(event).expect("appends");
         }
         husked.append_all(events(&drafts)).expect("appends");
         sync(&whole, &husked).expect("syncs");
+        accept_from(&whole, &husked, everything.clone(), Sender::Keeper).expect("accepts");
         husked
-            .receive(done.clone(), &|name| whole.kept(name))
+            .receive_from(done.clone(), &|name| whole.kept(name), Sender::Keeper)
             .expect("receives");
         for name in &done {
-            husked.adopt(&whole, name).expect("adopts");
-            prop_assert_eq!(husked.print(name), None);
+            husked.adopt_from(&whole, name, Sender::Keeper).expect("adopts");
         }
-        prop_assert!(!opens_any(&husked, &done));
-        prop_assert!(!opens_any(&Store::new(husked.root(), Untrusted::none()), &done));
-        for (name, print) in &kept {
-            let now = husked.kept(name);
-            prop_assert_eq!(now.as_ref(), Some(print));
+        never_taken_back(&husked, &kept)?;
+        never_taken_back(&Store::new(husked.root(), Untrusted::none()), &kept)?;
+
+        let memory = MemoryStore::<Letter>::default();
+        accept_from(&husked, &memory, husked.tips().expect("tips"), Sender::Keeper)
+            .expect("accepts");
+        for event in events(&drafts) {
+            memory.append(event).expect("appends");
         }
+        sync(&whole, &memory).expect("syncs");
+        accept_from(&whole, &memory, everything.clone(), Sender::Keeper).expect("accepts");
+        never_taken_back(&memory, &kept)?;
+
+        let base = scratch.store("base");
+        let overlay = Overlay::new(&base);
+        accept_from(&whole, &overlay, everything, Sender::Keeper).expect("takes the wholes");
+        accept_from(&husked, &base, husked.tips().expect("tips"), Sender::Keeper)
+            .expect("the base takes the husks");
+        never_taken_back(&overlay, &kept)?;
+        overlay.flush().expect("flushes");
+        never_taken_back(&base, &kept)?;
     }
 
     /// Law 74, two stores agree: a replica that pulls from a store holding
-    /// husks, on disk or in memory, holds the husks and reads as the store
-    /// does, and `verify` is clean on both stores.
+    /// husks, as from its keeper of record, on disk or in memory, holds the
+    /// husks and reads as the store does, and `verify` is clean on both
+    /// stores. A pull from the same store as from a stranger refuses every
+    /// husk and takes nothing.
     #[test]
     fn a_replica_of_a_husked_store_reads_as_it(drafts in a_history(), choice in a_choice()) {
         let scratch = Scratch::new();
         let (store, chosen) = made(&scratch, "store", &drafts, &choice);
         let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
+        let tips = store.tips().expect("tips");
         let disk = Store::new(scratch.at("disk"), Untrusted::none());
-        sync(&store, &disk).expect("syncs");
+        accept_from(&store, &disk, tips.clone(), Sender::Keeper).expect("pulls");
         let memory = MemoryStore::<Letter>::default();
-        sync(&store, &memory).expect("syncs");
+        accept_from(&store, &memory, tips.clone(), Sender::Keeper).expect("pulls");
         prop_assert_eq!(keyless(&disk), keyless(&store));
         prop_assert_eq!(keyless(&memory), keyless(&store));
         let on_disk = disk.dag().expect("reads");
@@ -384,13 +413,20 @@ proptest! {
         prop_assert_eq!(in_memory.dag.husks(), &done);
         prop_assert_eq!(store.verify(), Vec::<Finding>::new());
         prop_assert_eq!(disk.verify(), Vec::<Finding>::new());
-        prop_assert!(sync(&store, &disk).expect("syncs").is_empty());
+        prop_assert!(accept_from(&store, &disk, tips, Sender::Keeper).expect("pulls").is_empty());
+        let stranger = MemoryStore::<Letter>::default();
+        prop_assert_eq!(sync(&store, &stranger).is_err(), !done.is_empty());
+        if !done.is_empty() {
+            prop_assert!(stranger.held().expect("reads").dag.objects().is_empty());
+        }
     }
 
     /// Law 76: a run of appends writes the objects that one append after
-    /// another writes, and answers the same names.
+    /// another writes, and answers the same names. A run with a refused
+    /// event at any place stops there: the events before it are placed, as
+    /// one append after another places them, and none after it is.
     #[test]
-    fn a_run_writes_what_appends_one_by_one_write(drafts in a_history()) {
+    fn a_run_writes_what_appends_one_by_one_write(drafts in a_history(), at in 0..13_usize) {
         let scratch = Scratch::new();
         let run = scratch.store("run");
         let one = scratch.store("one");
@@ -399,31 +435,163 @@ proptest! {
             .into_iter()
             .map(|event| one.append(event).expect("appends"))
             .collect();
-        prop_assert_eq!(names, each);
+        prop_assert_eq!(names, each.clone());
         prop_assert_eq!(files(run.root()), files(one.root()));
         prop_assert_eq!(run.heads().expect("heads"), one.heads().expect("heads"));
+
+        let at = at.min(drafts.len());
+        let mut refused = events(&drafts);
+        let mut refusal = refused[0].clone();
+        refusal.says = Says::Titled(letter::REFUSED.to_owned());
+        refused.insert(at, refusal);
+        let stopped = scratch.store("stopped");
+        let before = scratch.store("before");
+        for event in events(&drafts).into_iter().take(at) {
+            before.append(event).expect("appends");
+        }
+        match stopped.append_all(refused) {
+            Err(Stopped { placed, why }) => {
+                prop_assert_eq!(placed, each[..at].to_vec());
+                prop_assert!(why.to_string().contains("refused"), "{}", why);
+            }
+            Ok(names) => {
+                return Err(TestCaseError::fail(format!("a refused run answered {names:?}")));
+            }
+        }
+        prop_assert_eq!(files(stopped.root()), files(before.root()));
+        prop_assert_eq!(stopped.heads().expect("heads"), before.heads().expect("heads"));
+        prop_assert_eq!(stopped.verify(), Vec::<Finding>::new());
+    }
+
+    /// Law 77: for any sequence of receipts from a party whose word is not
+    /// taken, no object reads as proven, or vouched for, whose bytes the
+    /// receiver did not hash to its name. The party holds a true signature
+    /// of every change, by the key registered to its actor, and forged
+    /// husks under some of their names. From the keeper of record the same
+    /// husks are taken, and a signature vouches for each and proves none.
+    #[test]
+    fn a_signature_proves_no_husk(drafts in a_history(), choice in a_choice()) {
+        let scratch = Scratch::new();
+        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
+        let ada = Secret::new(&"1".repeat(64)).expect("a seed");
+        let dag = store.dag().expect("reads");
+        let genesis = dag.geneses().into_iter().next().expect("a genesis");
+        let mut prints: BTreeMap<Hash, Vec<u8>> = dag
+            .objects()
+            .keys()
+            .map(|name| (name.clone(), store.kept(name).expect("kept")))
+            .collect();
+        let added: Envelope<Letter> = Envelope::KeyAdded(KeyAdded {
+            genesis,
+            actor: Actor::new("ada").expect("an actor"),
+            key: ada.public(),
+        });
+        prints.insert(seal_hash(&added), canonical_envelope(&added).into_bytes());
+        let mut forged = BTreeSet::new();
+        for (name, object) in dag.objects() {
+            let Some(event) = object.event() else { continue };
+            let signed: Envelope<Letter> = Envelope::Signed(ada.sign(name));
+            prints.insert(seal_hash(&signed), canonical_envelope(&signed).into_bytes());
+            let Envelope::Change(change) = object else { continue };
+            if !chosen.contains(name) || !event.boxed() {
+                continue;
+            }
+            let husk = HuskObject::of(change).expect("a box").print();
+            let lie = husk.replacen(&format!("letter='{}'", event.letter.0), "letter='forged'", 1);
+            prints.insert(name.clone(), lie.into_bytes());
+            forged.insert(name.clone());
+        }
+        let stranger = MemoryStore::<Letter>::default();
+        for name in prints.keys() {
+            let _ = stranger.receive([name.clone()].into(), &|name| prints.get(name).cloned());
+        }
+        let held = stranger.held().expect("reads");
+        let proof = Proof::of(&held.dag, &Registrar::Anyone);
+        for name in held.dag.objects().keys() {
+            if proof.proves(name) || proof.vouches(name) {
+                prop_assert!(stranger.print(name).is_some(), "{} stands unhashed", name);
+            }
+            prop_assert!(!forged.contains(name), "a stranger's husk was taken");
+        }
+
+        let keeper = MemoryStore::<Letter>::default();
+        let tips: BTreeSet<Hash> = prints.keys().cloned().collect();
+        keeper
+            .receive_from(tips, &|name| prints.get(name).cloned(), Sender::Keeper)
+            .expect("takes the keeper's word");
+        let held = keeper.held().expect("reads");
+        let proof = Proof::of(&held.dag, &Registrar::Anyone);
+        for name in &forged {
+            prop_assert!(held.dag.husks().contains(name));
+            prop_assert!(!proof.proves(name), "a signature proves a husk");
+            prop_assert!(proof.vouches(name), "a signature vouches for the keeper's husk");
+        }
+    }
+
+    /// Law 78: a husk is exactly one print. A husk's print with a comment
+    /// before it, a space after any comma, or two of its fields swapped
+    /// still parses, and is tampered, even from the keeper of record.
+    #[test]
+    fn a_husk_is_exactly_one_print(drafts in a_history(), comma in 0..64_usize) {
+        let scratch = Scratch::new();
+        let (store, _) = made(&scratch, "store", &drafts, &[]);
+        for name in boxed(&store) {
+            let Envelope::Change(change) = store.load(&name).expect("loads") else {
+                return Err(TestCaseError::fail("a boxed change"));
+            };
+            let print = HuskObject::of(&change).expect("a box").print();
+            prop_assert!(matches!(
+                decode::<Letter>(&Default::default(), &name, print.as_bytes(), Sender::Keeper),
+                Ok(Stored::Husk(_))
+            ));
+            let commas: Vec<usize> = print.match_indices(", ").map(|(at, _)| at + 1).collect();
+            let at = commas[comma % commas.len()];
+            let genesis = format!("genesis='{}'", change.genesis);
+            let deps = &print[print.find("deps=").expect("deps")..print.find(", event=").expect("an event")];
+            let changed = [
+                format!("# Boxed(key='k0', box='00ff')\n{print}"),
+                format!("{} {}", &print[..at], &print[at..]),
+                print.replacen(&format!("{genesis}, {deps}"), &format!("{deps}, {genesis}"), 1),
+            ];
+            for other in changed {
+                prop_assert_ne!(&other, &print);
+                prop_assert!(
+                    matches!(
+                        decode::<Letter>(&Default::default(), &name, other.as_bytes(), Sender::Keeper),
+                        Err(Unread::Tampered(_))
+                    ),
+                    "{}", other
+                );
+            }
+        }
     }
 }
 
-/// Law 76: a run stops at the first event refused, and places the events
-/// decided before it. Here the refusal is a store with no genesis, which
-/// refuses the first event and places nothing.
-#[test]
-fn a_run_places_what_it_decided_before_a_refusal() {
-    let scratch = Scratch::new();
-    let empty = Store::new(scratch.at("empty"), Untrusted::none());
-    let drafts = [Draft::Titled {
-        letter: 0,
-        title: 0,
-    }];
-    match empty.append_all(events(&drafts)) {
-        Err(Stopped { placed, why }) => {
-            assert!(placed.is_empty());
-            assert!(why.to_string().contains("no genesis"), "{why}");
-        }
-        Ok(names) => panic!("a store with no genesis appended {names:?}"),
+/// The checks of law 73 at one replica: no event of its DAG or its fold
+/// under a husked name holds a box, each husked name keeps its husk's
+/// print, and its `print` answers nothing.
+fn never_taken_back(
+    replica: &impl Replica<Letter>,
+    kept: &BTreeMap<Hash, Vec<u8>>,
+) -> Result<(), TestCaseError> {
+    let names: BTreeSet<Hash> = kept.keys().cloned().collect();
+    prop_assert!(!opens_any(replica, &names));
+    for (name, print) in kept {
+        let now = replica.kept(name);
+        prop_assert_eq!(now.as_ref(), Some(print));
+        prop_assert_eq!(replica.print(name), None);
     }
-    let store = scratch.store("store");
+    Ok(())
+}
+
+/// Law 79: after a placement fails, the memory reads as a cold read of the
+/// files. A run of two appends whose second name is taken by a directory
+/// places the first and fails on the second; the decision's memory is a
+/// fresh handle's, the same append again places nothing it did not, and
+/// once the name is free the run completes as a store that never failed.
+#[test]
+fn a_failed_placement_leaves_the_memory_as_a_cold_read() {
+    let scratch = Scratch::new();
     let drafts = [
         Draft::Titled {
             letter: 0,
@@ -434,9 +602,40 @@ fn a_run_places_what_it_decided_before_a_refusal() {
             title: 1,
         },
     ];
-    let names = store.append_all(events(&drafts)).expect("appends");
-    assert_eq!(names.len(), 2);
-    assert_eq!(store.verify(), Vec::<Finding>::new());
+    let clean = scratch.store("clean");
+    let names = clean.append_all(events(&drafts)).expect("appends");
+    let store = scratch.store("store");
+    let blocked = store
+        .root()
+        .join(format!("objects/{}.py", names[1].as_str()));
+    {
+        let mut decision = store.decide().expect("decides");
+        fs::create_dir(&blocked).expect("blocks the second name");
+        let stopped = decision.append_all(events(&drafts));
+        assert!(matches!(stopped, Err(Stopped { ref placed, .. }) if placed.is_empty()));
+        let cold = Store::new(store.root(), Untrusted::none());
+        assert_eq!(**decision.dag(), *cold.dag().expect("reads"));
+        assert_eq!(
+            decision.append(events(&drafts)[0].clone()).expect("a twin"),
+            names[0]
+        );
+        assert!(decision.append(events(&drafts)[1].clone()).is_err());
+        assert_eq!(**decision.dag(), *cold.dag().expect("reads"));
+    }
+    fs::remove_dir(&blocked).expect("unblocks");
+    assert_eq!(store.append_all(events(&drafts)).expect("appends"), names);
+    let objects = |root: &Path| {
+        let mut held = files(root);
+        held.retain(|file, _| file.ends_with(".py"));
+        held
+    };
+    assert_eq!(objects(store.root()), objects(clean.root()));
+    // Each failed rename left its temp, which `verify` names, as after any
+    // write cut short.
+    assert!(store
+        .verify()
+        .iter()
+        .all(|finding| matches!(finding, Finding::Garbage(file) if file.ends_with(".tmp"))));
 }
 
 /// What a stop leaves: the file under the name, and the temp, if one.
@@ -453,7 +652,8 @@ enum Reads {
     Husk,
 }
 
-/// Law 75: a stop at each step of the replacement of one file leaves under
+/// Law 75, read at the store: each state that a stop of the replacement of
+/// one file can leave (`store.rs` stops the replacement itself) leaves under
 /// the name a file that reads as the whole or as the husk, never one that
 /// reads as neither. The steps are the husk written to a temp file (in
 /// full, or cut short before its sync), the rename over the whole, and the
@@ -534,12 +734,23 @@ fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
         let findings: Vec<String> = reader.verify().iter().map(ToString::to_string).collect();
         assert_eq!(findings, expected, "step {at}");
     }
-    // The husking itself, from the whole: the name reads as the husk.
+    // The husking itself, from the whole: the name reads as the husk, in a
+    // file that replaced the whole by a rename and was not written over in
+    // place. The stops inside the replacement are law 75's test in
+    // `store.rs`.
+    let inode = |store: &Store| {
+        use std::os::unix::fs::MetadataExt;
+        fs::metadata(store.root().join(format!("objects/{}.py", name.as_str())))
+            .expect("a file")
+            .ino()
+    };
+    let before = inode(&store);
     assert_eq!(
         store.husk([name.clone()]).expect("husks"),
         vec![name.clone()]
     );
     assert_eq!(store.kept(&name), Some(husk));
+    assert_ne!(inode(&store), before, "a rename, not a write in place");
 }
 
 /// SPEC §3: at a husking schema a print that still holds a box, or that
@@ -591,10 +802,11 @@ fn a_print_that_is_no_husk_is_tampered() {
 fn a_schema_without_husks_reads_a_husk_as_tampered() {
     let print = "Change(genesis='aa', deps=(), event=None)";
     let name = Hash::new("ab".repeat(32)).expect("a name");
-    let read = prodrome::dag::decode::<prodrome::event::TodoEvent<Todo>>(
+    let read = decode::<prodrome::event::TodoEvent<Todo>>(
         &Default::default(),
         &name,
         print.as_bytes(),
+        Sender::Keeper,
     );
     assert!(matches!(read, Err(Unread::Tampered(_))));
     let refused: Result<Vec<Hash>, ProdromeError> =
@@ -605,7 +817,8 @@ fn a_schema_without_husks_reads_a_husk_as_tampered() {
 
 /// The vectors of `conformance/husk.py`: how the letter schema, which has
 /// husks, and the todo schema, which has none, read each print under its
-/// name.
+/// name from the keeper of record. From a stranger, the letter schema reads
+/// each print the vectors call a husk as tampered.
 #[test]
 fn the_husk_vectors_read_as_frozen() {
     let data = vectors("husk.py");
@@ -615,9 +828,9 @@ fn the_husk_vectors_read_as_frozen() {
         let name = Hash::new(text_at(case, "name")).expect("a name");
         let print = text_at(case, "print");
         let letter =
-            match prodrome::dag::decode::<Letter>(&Default::default(), &name, print.as_bytes()) {
-                Ok(prodrome::store::Stored::Whole(_)) => "whole",
-                Ok(prodrome::store::Stored::Husk(husk)) => {
+            match decode::<Letter>(&Default::default(), &name, print.as_bytes(), Sender::Keeper) {
+                Ok(Stored::Whole(_)) => "whole",
+                Ok(Stored::Husk(husk)) => {
                     assert_eq!(husk.print(), print, "a husk reads back as its print");
                     "husk"
                 }
@@ -625,10 +838,23 @@ fn the_husk_vectors_read_as_frozen() {
                 Err(Unread::NotText | Unread::Unparsed(_) | Unread::Io(_)) => "unparsed",
             };
         assert_eq!(letter, text_at(case, "letter"), "{print}");
-        let todo = match prodrome::dag::decode::<prodrome::event::TodoEvent<Todo>>(
+        let from_a_stranger = decode::<Letter>(
             &Default::default(),
             &name,
             print.as_bytes(),
+            Sender::Stranger,
+        );
+        if letter == "husk" {
+            assert!(
+                matches!(from_a_stranger, Err(Unread::Tampered(_))),
+                "{print}"
+            );
+        }
+        let todo = match decode::<prodrome::event::TodoEvent<Todo>>(
+            &Default::default(),
+            &name,
+            print.as_bytes(),
+            Sender::Keeper,
         ) {
             Ok(_) => "read",
             Err(Unread::Tampered(_)) => "tampered",

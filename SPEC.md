@@ -159,7 +159,8 @@ since this grammar has tuples and no mapping.
   every prodrome's heads held its genesis and the linearisation could put a
   change before it; no stored object's bytes or reading changed with it.)
 - An object's **name** is `sha256(utf8(print(object)))` in lowercase hex.
-  The file `objects/<name>.py` holds exactly that print, and a loader
+  The file `objects/<name>.py` holds exactly that print, or, for a
+  `Change` whose sealed parts were dropped, its husk (below), and a loader
   re-hashes the bytes before parsing them. `event_id(e) =
   sha256(utf8(print(e)))` names an EVENT apart from where it was written; it
   is never stored.
@@ -205,9 +206,22 @@ since this grammar has tuples and no mapping.
   schema a print that does not hash to its name is tampered, as above.
   - A loader hashes the bytes once. Bytes that hash to the name are the
     whole. Other bytes are read as a husk at the schema's husk vocabulary,
-    which has the dropped forms and no sealed form. A husk holds at least
-    one dropped part and no sealed part, and its fields are a `Change`'s.
+    which has the dropped forms and no sealed form, but only where the
+    bytes come from their KEEPER OF RECORD (below). A husk holds at least
+    one dropped part and no sealed part, its fields are a `Change`'s, and
+    its bytes are exactly the canonical print of the object they parse
+    to: a comment, a space or a field out of order is no husk (law 78).
     Bytes that do not read as a husk are tampered (`conformance/husk.py`).
+  - WHOSE WORD A REPLICA TAKES is the receiver's decision, and no
+    schema's. A whole proves itself, and a husk does not, so a replica
+    takes a husk only from a party that its caller names as its keeper of
+    record (`Sender::Keeper`), at `receive_from`, `accept_from` and
+    `adopt_from`. From any other party (`Sender::Stranger`, the default,
+    and what `receive`, `accept`, `sync`, `adopt` and `adopt_objects`
+    read) a print that does not hash to its name is tampered, as at a
+    schema without husks, and the receipt takes nothing. A store reads its
+    own files as their keeper, and an overlay's flush gives its base its
+    own objects as their keeper.
   - A husk reads as the object that it prints. For a holder that keeps no
     key, a sealed part reads as the name of its key, so a husk reads as
     its whole. The dropped form keeps every clear field: the key, the
@@ -222,7 +236,7 @@ since this grammar has tuples and no mapping.
     binds the name, and a husk that no such object names is bound by its
     maker's word alone. The clear fields are its maker's word too: the
     holder that dropped the parts from a whole it had verified, or the
-    replica that a holder received the husk from.
+    keeper of record that a holder received the husk from.
   - `husk(names)` replaces each named object that the history holds whole,
     as a `Change` whose event holds a sealed part, with its husk, made from
     the whole that the look under the store's lock verified. It passes over
@@ -234,18 +248,29 @@ since this grammar has tuples and no mapping.
     record of heads do not change, and the record is not removed (law
     72). The caller decides which names to husk, because only the caller
     knows which keys are destroyed.
-  - A store never takes back a sealed part that it dropped (law 73).
-    `receive` stops at every name that the history holds, whole or husk,
-    so a whole offered for a husked name is never read. An append that
-    decides a change under a name that the history holds as a husk writes
-    nothing.
+  - A replica never takes back a sealed part that it dropped or took
+    dropped (law 73). `receive` stops at every name that the history
+    holds, whole or husk, so a whole offered for a husked name is never
+    read, and a receipt never replaces a print that a replica keeps
+    outside its history. An append that decides a change under a name that
+    the history holds as a husk writes nothing. An overlay answers its
+    base's print where both keep a name, so a husk in the base hides a
+    whole in the overlay's own layer.
   - A replica's `kept(name)` answers the print that it keeps under a name,
     the whole or the husk, and `accept` sends `kept`. `print(name)`
     answers only bytes whose hash is the name, and nothing for a husk. A
-    replica at a husking schema takes a husk for a name that it does not
-    hold, on the word of the sender, which holds no more of the name. A
-    replica at any other schema refuses it as tampered. A frontier's
-    answer sends a husked object as its husk (law 74).
+    replica takes a husk for a name that it does not hold from its keeper
+    of record, which holds no more of the name, and refuses it from any
+    other party. A frontier's answer sends a husked object as its husk
+    (law 74).
+  - A SIGNATURE PROVES A WHOLE AND VOUCHES FOR A HUSK. A `Signed` covers a
+    name, and proves the bytes that hash to it (§5). Where a signature
+    would prove the whole, it VOUCHES for the husk held under the name:
+    the husk stands on its maker's word, and on the signature that its
+    maker verified over the whole. No signature proves a husk. Since a
+    replica takes a husk only from its keeper, no receipt from another
+    party makes an object proven or vouched for whose bytes the receiver
+    did not hash to its name (law 77).
   - `verify` reports no finding for a husk, and does not count husks:
     `Dag::husks` names them. A print that holds a sealed part, or no
     dropped part, under a name that it does not hash to, is tampered, and
@@ -255,7 +280,12 @@ since this grammar has tuples and no mapping.
   new object at the end, with one directory sync. A run writes the objects
   that one append after another writes (law 76). A run stops at the first
   event that is refused, and places the changes decided before it. An
-  append is a run of one.
+  append, a write of a `Genesis`, a `Snapshot` or a merge, and the
+  placement of a receipt are each a run. Each change of a run is admitted
+  to the store's memory as it is decided, so that the next event sees it.
+  A placement that fails leaves the memory as a cold read of the files:
+  the run's objects are forgotten, and the files are looked at again,
+  since those renamed before the failure are in the store (law 79).
 - **A read is total; a write is not.** A file of `objects/` that is no
   object (it fails its hash, it is not text, it does not parse at the
   schema the store is opened at) is held as UNREAD, with why, beside the
@@ -426,7 +456,8 @@ since this grammar has tuples and no mapping.
   head to report: every object is a tip or beneath one, and no tip rests on
   another.
 - **`fsck`** is `verify` after QUARANTINE: every file of `objects/` whose
-  bytes do not hash to its name is moved, under the lock and durably, to
+  bytes do not hash to its name, and that the store does not read as a
+  husk (§3, "A husk"), is moved, under the lock and durably, to
   `quarantine/<name>.py`, or, where other bytes already lie there,
   `quarantine/<name>.<sha256 of its bytes>.py`, so no set-aside bytes are
   ever overwritten or deleted and the same bytes set aside twice are one
@@ -639,10 +670,19 @@ key registers or revokes no key; only a root does, because a key that could
 would make what a revocation means depend on which of two revocations came
 first.
 
+A signature covers a name, and so proves the bytes that hash to the name.
+A husk (§3) is not those bytes. Where a signature would prove the whole,
+it VOUCHES for the husk held under the name instead: the husk stands on the
+word of its maker, the holder that dropped the parts or the keeper of
+record that a replica took it from. No signature proves a husk.
+
 **The policy that requires signatures**, over any policy `P`, with a set
 of ROOT keys: an object by actor `A` binds only where the proof of its
-history, key objects counted where a root signed them, proves it, and then
-as `P` says; it is the host's own word where it is proven and `P` confirms
+history, key objects counted where a root signed them, proves it or, for a
+husk, vouches for it, and then as `P` says. A host takes husks only from
+its own store and its keepers of record, so a husk that the proof vouches
+for binds as its whole bound, and husking a store changes no reading under
+this policy; it is the host's own word where it is proven and `P` confirms
 it. An object it does not prove CLAIMS, whatever its kind, a content record
 included, and is stored and shown as every claim is. It is the meet of `P`
 and "proven", so it composes with any policy, and under it the reading is
@@ -2303,35 +2343,68 @@ faults and without.
     changes nothing. `husk.rs::a_husk_changes_only_the_named_files`.
 
 73. **A dropped part is never taken back.** After `husk`, no sequence of
-    the store's own operations makes a sealed part of a husked object
-    readable from the store: an append of each whole event again, one by
-    one or as a run, a sync, a receipt or an adoption from a replica that
-    holds every whole. Each husked name keeps its husk's print, its
-    `print` answers nothing, and no event of the DAG or of the fold under
-    it holds a sealed part, in the handle and in a fresh one.
-    `husk.rs::a_dropped_part_is_never_taken_back`.
+    operations of any replica (a store on disk, a store in memory, an
+    overlay) makes a sealed part of a husked object readable from it: an
+    append of each whole event again, one by one or as a run, a sync, a
+    receipt or an adoption from a replica that holds every whole, as a
+    stranger or as the keeper of record, and an overlay whose own layer
+    holds the wholes over a base that takes the husks, and its flush. Each
+    husked name keeps its husk's print, its `print` answers nothing, and no
+    event of the DAG or of the fold under it holds a sealed part, in the
+    handle and in a fresh one. `husk.rs::a_dropped_part_is_never_taken_back`.
 
-74. **A replica of a husked store reads as it.** A replica that syncs from
-    a store that holds husks, on disk or in memory, holds the same husks
-    and reads as the store reads, and `verify` is clean on both stores. A
-    replica at a schema without husks refuses a husk as tampered.
+74. **A replica of a husked store reads as it.** A replica that pulls from
+    a store that holds husks, as from its keeper of record, on disk or in
+    memory, holds the same husks and reads as the store reads, and
+    `verify` is clean on both stores. A pull from the same store as from a
+    stranger, and a replica at a schema without husks, refuse a husk as
+    tampered and take nothing.
     `husk.rs::a_replica_of_a_husked_store_reads_as_it`,
     `husk.rs::a_schema_without_husks_reads_a_husk_as_tampered`, and the
     vectors of `conformance/husk.py`
     (`husk.rs::the_husk_vectors_read_as_frozen`).
 
-75. **A stop at each step of a husking leaves the whole or the husk.** A
-    stop after the temp is written, in full or cut short, leaves the
-    whole and a temp that `verify` reports; a stop after the rename, or
-    after the directory sync, leaves the husk. In no state does the name
-    read as neither. `husk.rs::a_stop_at_each_step_leaves_the_whole_or_the_husk`.
+75. **A stop at each step of a husking leaves the whole or the husk.** The
+    replacement of one file is three steps: the temp written, the temp
+    synced, and the rename over the whole. A stop after each step leaves
+    under the name the old bytes until the rename and the new bytes after
+    it, and a fresh handle reads the old object until the rename. A stop
+    after the temp is written, in full or cut short, leaves the whole and
+    a temp that `verify` reports; a stop after the rename, or after the
+    directory sync, leaves the husk. In no state does the name read as
+    neither. `husk` replaces the file by a rename and never writes it in
+    place.
+    `store.rs::a_stop_at_each_step_of_a_replacement_leaves_the_old_or_the_new_file`,
+    `husk.rs::a_stop_at_each_step_leaves_the_whole_or_the_husk`.
 
 76. **A run of appends writes what appends one by one write.** For every
     history, `append_all` of its events answers the names that one
     `append` after another answers, and leaves the same files and the same
-    heads. A run that stops at a refused event places the events decided
-    before it. `husk.rs::a_run_writes_what_appends_one_by_one_write`,
-    `husk.rs::a_run_places_what_it_decided_before_a_refusal`.
+    heads. For a refused event at any place in the run, the run stops
+    there: it answers the names of the events before it and places them as
+    one append after another places them, and places none after it.
+    `husk.rs::a_run_writes_what_appends_one_by_one_write`.
+
+77. **A signature proves no husk.** For any sequence of receipts from a
+    party whose word is not taken, which holds a true signature of every
+    change by the key registered to its actor and forged husks under some
+    of their names, no object reads as proven or vouched for whose bytes
+    the receiver did not hash to its name, and no forged husk is taken.
+    From the keeper of record the same husks are taken, and the signature
+    vouches for each and proves none.
+    `husk.rs::a_signature_proves_no_husk`.
+
+78. **A husk is exactly one print.** For any husk's print, the print with a
+    comment before it, with a space after any comma, or with two of its
+    fields swapped is tampered, from every party.
+    `husk.rs::a_husk_is_exactly_one_print`.
+
+79. **A failed placement leaves the memory as a cold read.** After a
+    placement fails, the decision's memory equals a fresh handle's reading
+    of the files: an object that was not placed is not held, and the same
+    append again writes it. Once the cause is gone, the run completes as in
+    a store where it never failed.
+    `husk.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
 
 ## 10. Non-goals
 

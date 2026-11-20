@@ -330,12 +330,22 @@ pub enum Registrar {
 /// A key revoked stays revoked: a later `KeyAdded` of it is the object it
 /// always was, one object, and adds nothing.
 ///
+/// A signature covers a name, and it proves the bytes that hash to the
+/// name. A HUSK (SPEC §3) is not those bytes, so no signature proves it.
+/// Where a signature would prove the whole, it VOUCHES for the husk: the
+/// husk stands on the word of its maker, the holder that dropped the parts
+/// from a whole it had verified, or the keeper of record a replica took it
+/// from. A replica takes a husk from no other party, so no object of a
+/// receipt from a party whose word is not taken is proven or vouched for
+/// without its bytes hashing to its name (law 77).
+///
 /// A FUNCTION OF THE OBJECT SET (law 42): every clause above is a question
 /// about which objects exist and what each rests on, none about the order
 /// they arrived in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
     proven: BTreeSet<Hash>,
+    vouched: BTreeSet<Hash>,
     keyed: BTreeSet<(Genesis, Actor)>,
 }
 
@@ -395,7 +405,7 @@ impl Proof {
                 _ => {}
             }
         }
-        let proven = dag
+        let (vouched, proven): (BTreeSet<Hash>, BTreeSet<Hash>) = dag
             .objects()
             .iter()
             .filter(|(name, object)| {
@@ -414,18 +424,30 @@ impl Proof {
                 })
             })
             .map(|(name, _)| name.clone())
-            .collect();
+            .partition(|name| dag.husks().contains(name));
         let keyed = keys
             .into_iter()
             .map(|(genesis, actor, _)| (genesis, actor.clone()))
             .collect();
-        Proof { proven, keyed }
+        Proof {
+            proven,
+            vouched,
+            keyed,
+        }
     }
 
-    /// Is the object `object` signed by a key that speaks for its actor?
+    /// Is the object `object` signed by a key that speaks for its actor,
+    /// over the bytes its name is the hash of? Never for a husk.
     #[must_use]
     pub fn proves(&self, object: &Hash) -> bool {
         self.proven.contains(object)
+    }
+
+    /// Is `object` a husk whose name such a signature covers? It stands on
+    /// its maker's word, and the signature its maker verified.
+    #[must_use]
+    pub fn vouches(&self, object: &Hash) -> bool {
+        self.vouched.contains(object)
     }
 
     /// Has `actor` a registered key in the prodrome `genesis`, revoked or

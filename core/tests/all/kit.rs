@@ -21,7 +21,7 @@ use prodrome::reference::Todo;
 use prodrome::registers::Stamp;
 use prodrome::schema::headed::{Body, Event};
 use prodrome::schema::Schema;
-use prodrome::store::{Held, MemoryStore, Replica};
+use prodrome::store::{Held, MemoryStore, Replica, Sender};
 use proptest::prelude::*;
 
 use crate::common::draw::{a_draw, history, Draw};
@@ -268,13 +268,14 @@ impl<E: Schema> Replica<E> for Forgetful<E> {
         self.0.append(event)
     }
 
-    fn receive(
+    fn receive_from(
         &self,
         mut seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         seeds.pop_last();
-        self.0.receive(seeds, print_of)
+        self.0.receive_from(seeds, print_of, sender)
     }
 }
 

@@ -262,11 +262,21 @@ impl<P> Proven<P> {
     pub fn proof(&self) -> &Proof {
         &self.proof
     }
+
+    /// Does the proof prove `object`, or vouch for it as a husk?
+    fn signed(&self, object: &Hash) -> bool {
+        self.proof.proves(object) || self.proof.vouches(object)
+    }
 }
 
+/// A husk (SPEC §3) binds where the proof VOUCHES for it, as an object
+/// binds where the proof proves it: the host took the husk from its own
+/// store or from its keeper of record, whose word it takes, and the maker
+/// verified the signature over the whole. So husking a store changes no
+/// reading under this policy (law 71).
 impl<E: Schema, P: Policy<E> + Clone> Policy<E> for Proven<P> {
     fn standing(&self, object: &Hash, event: &E) -> Standing {
-        let proven = if self.proof.proves(object) {
+        let proven = if self.signed(object) {
             Standing::Binds
         } else {
             Standing::Claims
@@ -275,7 +285,7 @@ impl<E: Schema, P: Policy<E> + Clone> Policy<E> for Proven<P> {
     }
 
     fn confirms(&self, object: &Hash, event: &E) -> bool {
-        self.proof.proves(object) && self.policy.confirms(object, event)
+        self.signed(object) && self.policy.confirms(object, event)
     }
 
     fn at(&self, history: &Dag<E>) -> Option<Self> {

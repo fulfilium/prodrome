@@ -61,12 +61,12 @@ use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
 pub use decision::{Decision, Stopped};
-pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Stored};
+pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
 use record::Record;
-pub use replica::{accept, sync, Held, Replica};
+pub use replica::{accept, accept_from, sync, Held, Replica};
 
 /// A chain rooted at `root`, of the schema `E`, read under one host
 /// [`Policy`] (§5).
@@ -544,7 +544,23 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     ///
     /// [`accept`], the restricted join, with one tip chosen.
     pub fn adopt(&self, source: &EventStore<E, Pol>, digest: &Hash) -> Result<Hash, ProdromeError> {
-        accept(source, self, [digest.clone()].into())?;
+        self.adopt_from(source, digest, Sender::Stranger)
+    }
+
+    /// [`EventStore::adopt`], with `source` named as `sender`: from the
+    /// keeper of record ([`Sender::Keeper`]) the husks `source` keeps are
+    /// taken (SPEC §3); from any other party they are refused.
+    ///
+    /// # Errors
+    ///
+    /// [`EventStore::adopt`]'s.
+    pub fn adopt_from(
+        &self,
+        source: &EventStore<E, Pol>,
+        digest: &Hash,
+        sender: Sender,
+    ) -> Result<Hash, ProdromeError> {
+        accept_from(source, self, [digest.clone()].into(), sender)?;
         Ok(digest.clone())
     }
 
@@ -567,9 +583,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         objects: &BTreeMap<Hash, String>,
         digest: &Hash,
     ) -> Result<Hash, ProdromeError> {
-        self.copy_in_from([digest.clone()], |name| {
-            objects.get(name).map(|text| text.as_bytes().to_vec())
-        })?;
+        self.copy_in_from(
+            [digest.clone()],
+            |name| objects.get(name).map(|text| text.as_bytes().to_vec()),
+            Sender::Stranger,
+        )?;
         Ok(digest.clone())
     }
 
@@ -611,10 +629,17 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         &self,
         seeds: impl IntoIterator<Item = Hash>,
         print_of: impl Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         let mut decision = self.decision()?;
         let memory = &decision.memory;
-        let taken = memory::receive(&self.schema, |name| memory.holds(name), seeds, print_of)?;
+        let taken = memory::receive(
+            &self.schema,
+            |name| memory.holds(name),
+            seeds,
+            print_of,
+            sender,
+        )?;
         let names = taken
             .iter()
             .map(|(verified, _)| verified.name().clone())
@@ -622,11 +647,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         // A waiting object is walked through, to what it waits for. Its
         // file, already here, is kept as it is, whole or husk, and the
         // object it holds joins the history when what it waits for does.
-        let taken = taken
-            .into_iter()
-            .filter(|(verified, _)| !memory.files().contains_key(verified.name()))
-            .map(|(verified, print)| (verified, Some(print)))
-            .collect();
+        let taken = memory.unkept(taken);
         decision.place(taken)?;
         Ok(names)
     }
@@ -669,7 +690,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// A file that does not hash to its name and reads as a husk at the
     /// store's schema loads as the object it reads as (SPEC §3).
     pub fn load(&self, digest: &Hash) -> Result<Envelope<E>, ProdromeError> {
-        decode(&self.schema, digest, &self.raw(digest)?)
+        decode(&self.schema, digest, &self.raw(digest)?, Sender::Keeper)
             .map(Stored::into_object)
             .map_err(|why| why.refusal(digest))
     }
@@ -961,12 +982,13 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
         EventStore::append(self, event)
     }
 
-    fn receive(
+    fn receive_from(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        self.copy_in_from(seeds, print_of)
+        self.copy_in_from(seeds, print_of, sender)
     }
 }
 
@@ -1024,25 +1046,57 @@ fn put_durably(path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
 }
 
 /// Bytes into a fresh temp file in `dir`, synced to disk: the first half of
-/// a durable write, and all a crash before the rename leaves behind.
+/// a durable write, and all a crash before the rename leaves behind. The
+/// two steps of [`Written`].
+fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+    Written::into(dir, bytes)?.sync()
+}
+
+/// `bytes` in place of the file `path` in `dir`, by the steps of a durable
+/// write ([`Written`]) up to the rename; the caller syncs `dir`. A stop
+/// between any two steps leaves `path` as it was or with `bytes` (SPEC law
+/// 75).
+fn replace(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
+    rename_into(&Written::into(dir, bytes)?.sync()?, path)
+}
+
+/// A temp file written and not yet synced: the first step of a durable
+/// write. Each step is a value, so a stop between any two can be made and
+/// read (SPEC law 75).
 ///
 /// The name is RANDOM and the file is created EXCLUSIVELY, never a fixed
 /// `<name>.tmp`: two writers placing the same object would otherwise write
 /// into one temp together, and one of them rename the other's half. A temp
 /// is not named like an object, so no read takes it for one.
-fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
-    loop {
-        let temp = dir.join(temp_name());
-        match File::options().write(true).create_new(true).open(&temp) {
-            Ok(mut file) => {
-                file.write_all(bytes)
-                    .and_then(|()| file.sync_all())
-                    .map_err(|e| ProdromeError::io(&temp, &e))?;
-                return Ok(temp);
+struct Written {
+    temp: PathBuf,
+    file: File,
+}
+
+impl Written {
+    /// `bytes` written into a fresh temp file in `dir`.
+    fn into(dir: &Path, bytes: &[u8]) -> Result<Written, ProdromeError> {
+        loop {
+            let temp = dir.join(temp_name());
+            match File::options().write(true).create_new(true).open(&temp) {
+                Ok(mut file) => {
+                    file.write_all(bytes)
+                        .map_err(|e| ProdromeError::io(&temp, &e))?;
+                    return Ok(Written { temp, file });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(ProdromeError::io(&temp, &error)),
             }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(ProdromeError::io(&temp, &error)),
         }
+    }
+
+    /// The temp synced to disk, the second step: its path, which the
+    /// caller renames into place.
+    fn sync(self) -> Result<PathBuf, ProdromeError> {
+        self.file
+            .sync_all()
+            .map_err(|e| ProdromeError::io(&self.temp, &e))?;
+        Ok(self.temp)
     }
 }
 
@@ -1985,6 +2039,57 @@ mod tests {
             .append(mk_completed("alpha", at(2), "bassel", "").expect("valid"))
             .expect("appends once the other writer let go");
         assert_eq!(findings(&store), Vec::<String>::new());
+        let _ = fs::remove_dir_all(store.root());
+    }
+
+    /// Law 75: a stop between any two steps of [`replace`], the steps
+    /// `husk` replaces each file by, leaves under the name the old bytes or
+    /// the new ones, and a fresh handle reads the old object until the
+    /// rename and the new print after it. The steps are the temp written,
+    /// the temp synced, and the rename; the directory sync after the last
+    /// file only makes the rename durable. Here the new bytes are another
+    /// print, which the todo schema reads as tampered, so a read tells the
+    /// two apart.
+    #[test]
+    fn a_stop_at_each_step_of_a_replacement_leaves_the_old_or_the_new_file() {
+        let store = Store::new(scratch("replace"), roster());
+        store.init("replace").expect("begins");
+        let name = store
+            .append(mk_created("alpha", at(1), "bassel", "", "").expect("valid"))
+            .expect("appends");
+        let dir = store.objects_dir();
+        let path = store.object_path(&name);
+        let old = fs::read(&path).expect("reads");
+        let new = String::from_utf8(old.clone())
+            .expect("text")
+            .replace("alpha", "omega")
+            .into_bytes();
+        for stop in 0..4 {
+            fs::write(&path, &old).expect("restores");
+            match stop {
+                0 => {}
+                1 => drop(Written::into(&dir, &new).expect("writes the temp")),
+                2 => drop(
+                    Written::into(&dir, &new)
+                        .and_then(Written::sync)
+                        .expect("syncs the temp"),
+                ),
+                _ => replace(&dir, &path, &new).expect("renames"),
+            }
+            let renamed = stop == 3;
+            assert_eq!(
+                fs::read(&path).expect("reads"),
+                if renamed { new.clone() } else { old.clone() },
+                "stop {stop}"
+            );
+            let dag = Store::new(store.root(), roster()).dag().expect("reads");
+            assert_eq!(dag.get(&name).is_some(), !renamed, "stop {stop}");
+            assert_eq!(
+                matches!(dag.unread().get(&name), Some(Unread::Tampered(_))),
+                renamed,
+                "stop {stop}"
+            );
+        }
         let _ = fs::remove_dir_all(store.root());
     }
 }

@@ -422,10 +422,7 @@ mod tests {
             .join(format!("{}.py", second.name().as_str()));
         let mut decision = writer.decide().expect("decides");
         std::fs::create_dir(&blocked).expect("blocks the second name");
-        let failed = decision.place(vec![
-            (first, Some(first_print)),
-            (second, Some(second_print)),
-        ]);
+        let failed = decision.place(vec![(first, first_print), (second, second_print)]);
         assert!(failed.is_err(), "the rename onto a directory fails");
         assert!(!root.join(FILE).exists(), "removed before the placement");
         decision.write(object(3)).expect("a later write succeeds");

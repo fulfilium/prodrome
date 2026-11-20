@@ -9,6 +9,7 @@ use super::replica::{Held, Replica};
 use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
+use crate::store::Sender;
 
 /// A STORE THAT IS NOT A DIRECTORY: objects and their prints held in memory,
 /// verified on the way in, and folded as an [`super::EventStore`] folds
@@ -104,10 +105,11 @@ impl<E: Schema> Replica<E> for MemoryStore<E> {
     /// Walked without the lock, over what was held when it began, so a
     /// `print_of` that reads this store again does not wait on it; what
     /// another receipt took meanwhile is not taken twice.
-    fn receive(
+    fn receive_from(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         let dag = self.objects().memory.dag().clone();
         let taken = memory::receive(
@@ -115,16 +117,15 @@ impl<E: Schema> Replica<E> for MemoryStore<E> {
             |name| dag.get(name).is_some(),
             seeds,
             print_of,
+            sender,
         )?;
         let mut objects = self.objects();
         let mut names = Vec::new();
         let mut fresh = Vec::new();
-        for (verified, print) in taken {
-            if !objects.memory.holds(verified.name()) {
-                names.push(verified.name().clone());
-                objects.prints.insert(verified.name().clone(), print);
-                fresh.push((verified, None));
-            }
+        for (verified, print) in objects.memory.unkept(taken) {
+            names.push(verified.name().clone());
+            objects.prints.insert(verified.name().clone(), print);
+            fresh.push((verified, None));
         }
         objects.memory.admit(&[], fresh);
         Ok(names)

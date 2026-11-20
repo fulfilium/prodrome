@@ -14,7 +14,7 @@ use crate::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope
 use crate::literal::{Datetime, ProdromeError};
 use crate::registers::{deps_for, fold, Folded, Genesis};
 use crate::schema::Schema;
-use crate::store::{HuskObject, Stored};
+use crate::store::{HuskObject, Sender, Stored};
 
 /// A store's objects as it last read them, and their fold.
 ///
@@ -107,10 +107,15 @@ impl<E: Schema> Verified<E> {
         &self.object
     }
 
-    /// `bytes` under `name`, rehashed, and parsed at the schema `schema` as
-    /// the whole or read as its husk ([`decode`]).
-    pub fn read(schema: &E::Vocabulary, name: &Hash, bytes: &[u8]) -> Result<Verified<E>, Unread> {
-        decode(schema, name, bytes).map(|stored| {
+    /// `bytes` under `name`, from `sender`, rehashed, and parsed at the
+    /// schema `schema` as the whole or read as its husk ([`decode`]).
+    pub fn read(
+        schema: &E::Vocabulary,
+        name: &Hash,
+        bytes: &[u8],
+        sender: Sender,
+    ) -> Result<Verified<E>, Unread> {
+        decode(schema, name, bytes, sender).map(|stored| {
             let form = match stored {
                 Stored::Whole(_) => Form::Whole,
                 Stored::Husk(_) => Form::Husk,
@@ -318,6 +323,20 @@ impl<E: Schema> Memory<E> {
     /// stops at what is held walks on through it to what it waits for.
     pub fn holds(&self, name: &Hash) -> bool {
         self.dag.get(name).is_some()
+    }
+
+    /// Does it keep `name`, whole or husk, in the history or waiting? A
+    /// receipt never replaces what it keeps (SPEC §3).
+    pub fn keeps(&self, name: &Hash) -> bool {
+        self.dag.holds(name)
+    }
+
+    /// `taken`, without what it keeps.
+    pub fn unkept(&self, taken: Vec<Printed<E>>) -> Vec<Printed<E>> {
+        taken
+            .into_iter()
+            .filter(|(verified, _)| !self.keeps(verified.name()))
+            .collect()
     }
 
     pub fn tips(&self) -> &BTreeSet<Hash> {
@@ -550,19 +569,22 @@ fn wanted<E>(dag: &Dag<E>) -> BTreeSet<Hash> {
 /// its genesis), ending each branch at an object `held` holds, since a
 /// replica is closed under parents, and reading every other one by
 /// `print_of` and rehashing it against its name. Parents first, so every
-/// prefix of the answer, placed, is closed under parents.
+/// prefix of the answer, placed, is closed under parents. A print that does
+/// not hash to its name is read as a husk only where `sender` is the keeper
+/// of record (SPEC §3).
 ///
 /// # Errors
 ///
 /// A name `print_of` has no print for ("missing object …, named as a
-/// parent"), and a print that does not hash to its name and is no husk, or
-/// does not parse, at the schema `schema`. Nothing is answered unless
+/// parent"), and a print that does not hash to its name and is no husk from
+/// the keeper, or does not parse, at the schema `schema`. Nothing is answered unless
 /// everything verified.
 pub fn receive<E: Schema>(
     schema: &E::Vocabulary,
     held: impl Fn(&Hash) -> bool,
     seeds: impl IntoIterator<Item = Hash>,
     print_of: impl Fn(&Hash) -> Option<Vec<u8>>,
+    sender: Sender,
 ) -> Result<Vec<Printed<E>>, ProdromeError> {
     /// A depth-first walk, emitting an object once its parents are.
     enum Visit<E> {
@@ -589,7 +611,8 @@ pub fn receive<E: Schema>(
                 name.as_str()
             )));
         };
-        let verified = Verified::read(schema, &name, &print).map_err(|why| why.refusal(&name))?;
+        let verified =
+            Verified::read(schema, &name, &print, sender).map_err(|why| why.refusal(&name))?;
         let names = parents_of(verified.object());
         pending.push(Visit::Leave(verified, print));
         pending.extend(names.into_iter().map(Visit::Enter));

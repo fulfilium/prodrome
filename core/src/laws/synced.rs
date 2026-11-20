@@ -9,7 +9,7 @@ use crate::laws::{printed, Broken};
 use crate::literal::ProdromeError;
 use crate::registers::fold;
 use crate::schema::Schema;
-use crate::store::{sync, Held, Replica};
+use crate::store::{sync, Held, Replica, Sender};
 
 /// A replica whose wire is cut: after `left` prints, it gives none.
 struct Cut<'r, E, R: ?Sized> {
@@ -41,12 +41,13 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for Cut<'_, E, R> {
         self.replica.append(event)
     }
 
-    fn receive(
+    fn receive_from(
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        self.replica.receive(seeds, print_of)
+        self.replica.receive_from(seeds, print_of, sender)
     }
 }
 

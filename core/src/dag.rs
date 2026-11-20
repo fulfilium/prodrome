@@ -25,7 +25,7 @@ use crate::registers::{fold, Genesis, Node};
 use crate::schema::Schema;
 use crate::sign::{Proof, Registrar};
 use crate::spread::spread;
-use crate::store::{Hashed, HuskObject, Stored};
+use crate::store::{Hashed, HuskObject, Sender, Stored};
 
 /// What a [`Dag`] holds, let go of: every object, every print that is not
 /// one, and the names of the objects held as husks.
@@ -80,13 +80,15 @@ impl<E> Extend<(Hash, Envelope<E>)> for Dag<E> {
     }
 }
 
-/// A stored print, rehashed against its name: a print that hashes to it is
-/// the whole, parsed at the schema `schema`; any other is the husk
-/// [`Schema::husk`] reads, or else tampered.
+/// A stored print from `sender`, rehashed against its name: a print that
+/// hashes to it is the whole, parsed at the schema `schema`; any other is
+/// the husk [`Schema::husk`] reads, where `sender` is the keeper of record,
+/// or else tampered.
 pub fn decode<E: Schema>(
     schema: &E::Vocabulary,
     name: &Hash,
     bytes: &[u8],
+    sender: Sender,
 ) -> Result<Stored<E>, Unread> {
     match Hashed::of(name, bytes) {
         Hashed::Whole(bytes) => {
@@ -95,9 +97,11 @@ pub fn decode<E: Schema>(
                 .map(Stored::Whole)
                 .map_err(Unread::Unparsed)
         }
-        Hashed::Other(other) => E::husk(&other)
-            .map(Stored::Husk)
-            .ok_or_else(|| Unread::Tampered(other.computed().clone())),
+        Hashed::Other(other) => match sender {
+            Sender::Keeper => E::husk(&other).map(Stored::Husk),
+            Sender::Stranger => None,
+        }
+        .ok_or_else(|| Unread::Tampered(other.computed().clone())),
     }
 }
 
@@ -478,7 +482,8 @@ impl<E> Dag<E> {
 
 impl<E: Schema> Dag<E> {
     /// Each print decoded under its name at the schema `schema`, a print
-    /// that is not an object kept with why.
+    /// that is not an object kept with why. The prints are a store's files,
+    /// read as the store reads its own, as their keeper of record.
     pub fn from_prints(
         schema: &E::Vocabulary,
         prints: impl IntoIterator<Item = (Hash, Result<Vec<u8>, ProdromeError>)>,
@@ -486,7 +491,7 @@ impl<E: Schema> Dag<E> {
         Dag::decoded(prints.into_iter().collect(), |(name, bytes)| {
             let read = bytes
                 .map_err(Unread::Io)
-                .and_then(|bytes| decode(schema, &name, &bytes));
+                .and_then(|bytes| decode(schema, &name, &bytes, Sender::Keeper));
             (name, read)
         })
     }
@@ -503,7 +508,7 @@ impl<E: Schema> Dag<E> {
         Dag::decoded(names, |name| {
             let read = read(&name)
                 .map_err(Unread::Io)
-                .and_then(|bytes| decode(schema, &name, &bytes));
+                .and_then(|bytes| decode(schema, &name, &bytes, Sender::Keeper));
             (name, read)
         })
     }
@@ -653,7 +658,10 @@ impl<E: Schema> Dag<E> {
                 });
             }
             if let Some(event) = object.event() {
-                if proof.keyed(&self.prodrome(name, object), event.actor()) && !proof.proves(name) {
+                if proof.keyed(&self.prodrome(name, object), event.actor())
+                    && !proof.proves(name)
+                    && !proof.vouches(name)
+                {
                     findings.push(Finding::Unsigned {
                         object: name.clone(),
                         actor: event.actor().clone(),
