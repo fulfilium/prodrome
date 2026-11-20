@@ -18,7 +18,11 @@
 //!
 //! - a read VERIFIES, hashing the STORED BYTES against the filename before
 //!   parsing — tamper-evidence on read — and never a reprint→rehash, which
-//!   would couple every old object's validity to the current printer. A
+//!   would couple every old object's validity to the current printer. At a
+//!   schema with sealed parts, bytes that do not hash to the filename may
+//!   be a HUSK, the whole with its sealed parts dropped ([`husk`], SPEC
+//!   §3), which reads as the object it prints; any other such bytes are
+//!   tampered. A
 //!   handle verifies each object once and holds it (`store::memory`); a held
 //!   object is read again only when its file no longer looks as it did, and
 //!   `verify` rehashes everything, on purpose;
@@ -28,6 +32,7 @@
 //!   crash leaves a store half-written or an object empty.
 
 mod decision;
+mod husk;
 mod memory;
 mod memory_store;
 mod overlay;
@@ -55,7 +60,8 @@ use crate::schema::Schema;
 use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
-pub use decision::Decision;
+pub use decision::{Decision, Stopped};
+pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
@@ -150,7 +156,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// over heads that are not the store's, or answer from a history the
     /// store does not hold. So a decision, and every write that begins with
     /// one, refuses while anything is unread, naming the file; `fsck` sets
-    /// aside a file failing its hash, and a file that parses under a newer
+    /// aside a file failing its hash that is no husk, and a file that parses under a newer
     /// schema is read by opening the store at it.
     ///
     /// # Errors
@@ -452,6 +458,52 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         self.decision()?.append(event)
     }
 
+    /// A RUN OF APPENDS under one lock and one look: each event decided as
+    /// [`EventStore::append`] decides it, over the changes decided before
+    /// it, and every new object placed at the end, with one directory sync
+    /// ([`Decision::append_all`]). Answers each event's name.
+    ///
+    /// # Errors
+    ///
+    /// [`Stopped`]: the decision not taken, with no names; or the first
+    /// event refused, with the names of the events before it, which are
+    /// placed.
+    pub fn append_all(&self, events: impl IntoIterator<Item = E>) -> Result<Vec<Hash>, Stopped> {
+        self.decision()
+            .map_err(|why| Stopped {
+                placed: Vec::new(),
+                why,
+            })?
+            .append_all(events)
+    }
+
+    /// DROP THE SEALED PARTS of the objects `names` names (SPEC §3): each
+    /// object the history holds whole, as a `Change` whose event holds a
+    /// sealed part, has its file replaced by its husk, under the store's
+    /// lock ([`Decision::husk`]). A name already a husk, an event with no
+    /// sealed part, any other object and a name not held are passed over.
+    /// Answers the names husked.
+    ///
+    /// Which names are dead is the caller's knowledge: it knows which keys
+    /// are gone ([`Husk::opens`]). The store drops what it is told to drop
+    /// and nothing else, and never takes a whole back once it is dropped.
+    ///
+    /// Each file is replaced as an object is placed: the husk written to a
+    /// temp file and synced, the temp renamed over the whole, and
+    /// `objects/` synced once after the last. A stop at any point leaves
+    /// each file the whole or the husk (law 75). The heads do not change.
+    ///
+    /// # Errors
+    ///
+    /// The decision not taken, or a file not written or renamed: the files
+    /// replaced before it are husks.
+    pub fn husk(&self, names: impl IntoIterator<Item = Hash>) -> Result<Vec<Hash>, ProdromeError>
+    where
+        E: Husking,
+    {
+        self.decision()?.husk(names)
+    }
+
     /// Attest the writer's prodrome: a `Snapshot` of its tips, chained to the
     /// last snapshot among them. With nothing new since that one, it is the
     /// answer and nothing is written.
@@ -491,8 +543,17 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// anything else is a second tip. Answers `digest`.
     ///
     /// [`accept`], the restricted join, with one tip chosen.
-    pub fn adopt(&self, source: &EventStore<E, Pol>, digest: &Hash) -> Result<Hash, ProdromeError> {
-        accept(source, self, [digest.clone()].into())?;
+    ///
+    /// `sender` names whose word `source` is: from the keeper of record
+    /// ([`Sender::Keeper`]) the husks `source` keeps are taken (SPEC §3);
+    /// from a stranger they are refused.
+    pub fn adopt(
+        &self,
+        source: &EventStore<E, Pol>,
+        digest: &Hash,
+        sender: Sender,
+    ) -> Result<Hash, ProdromeError> {
+        accept(source, self, [digest.clone()].into(), sender)?;
         Ok(digest.clone())
     }
 
@@ -508,16 +569,19 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// this function with a directory for a source.
     ///
     /// The same refusals, in the same words: bytes that do not hash to the name
-    /// given, an object that does not parse, and a parent neither `objects` nor
-    /// this store holds.
+    /// given and are no husk at the store's schema, an object that does not
+    /// parse, and a parent neither `objects` nor this store holds.
     pub fn adopt_objects(
         &self,
         objects: &BTreeMap<Hash, String>,
         digest: &Hash,
+        sender: Sender,
     ) -> Result<Hash, ProdromeError> {
-        self.copy_in_from([digest.clone()], |name| {
-            objects.get(name).map(|text| text.as_bytes().to_vec())
-        })?;
+        self.copy_in_from(
+            [digest.clone()],
+            |name| objects.get(name).map(|text| text.as_bytes().to_vec()),
+            sender,
+        )?;
         Ok(digest.clone())
     }
 
@@ -559,23 +623,25 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         &self,
         seeds: impl IntoIterator<Item = Hash>,
         print_of: impl Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         let mut decision = self.decision()?;
         let memory = &decision.memory;
-        let taken = memory::receive(&self.schema, |name| memory.holds(name), seeds, print_of)?;
+        let taken = memory::receive(
+            &self.schema,
+            |name| memory.holds(name),
+            seeds,
+            print_of,
+            sender,
+        )?;
         let names = taken
             .iter()
             .map(|(verified, _)| verified.name().clone())
             .collect();
-        // A waiting object is walked through, to what it waits for, and its
-        // file, already here, is not written again.
-        let taken = taken
-            .into_iter()
-            .map(|(verified, print)| {
-                let held = memory.files().contains_key(verified.name());
-                (verified, (!held).then_some(print))
-            })
-            .collect();
+        // A waiting object is walked through, to what it waits for. Its
+        // file, already here, is kept as it is, whole or husk, and the
+        // object it holds joins the history when what it waits for does.
+        let taken = memory.unkept(taken);
         decision.place(taken)?;
         Ok(names)
     }
@@ -614,14 +680,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// filename, then parse. Deliberately NOT a reparse→reprint→rehash — git
     /// hashes bytes and not semantics, so that a future printer change cannot
     /// false-alarm the whole store as tampered.
+    ///
+    /// A file that does not hash to its name and reads as a husk at the
+    /// store's schema loads as the object it reads as (SPEC §3).
     pub fn load(&self, digest: &Hash) -> Result<Envelope<E>, ProdromeError> {
-        decode(&self.schema, digest, &self.raw(digest)?).map_err(|why| why.refusal(digest))
-    }
-
-    /// The print held under `name`, unchecked: what an adoption from this
-    /// store reads, and verifies.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        fs::read(self.object_path(name)).ok()
+        decode(&self.schema, digest, &self.raw(digest)?, Sender::Keeper)
+            .map(Stored::into_object)
+            .map_err(|why| why.refusal(digest))
     }
 
     /// One object file's bytes, unchecked.
@@ -651,10 +716,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// FULL FSCK: set aside every object file that fails its hash, then
-    /// [`EventStore::verify`]. An empty result means healthy.
+    /// FULL FSCK: set aside every object file that fails its hash and does
+    /// not read as a husk (SPEC §3), then [`EventStore::verify`]. An empty
+    /// result means healthy.
     ///
-    /// A file whose bytes are not the hash of its name has no honest reading:
+    /// A husk does not hash to its name, and is the object it reads as, so
+    /// it stays. Any other file whose bytes are not the hash of its name has
+    /// no honest reading:
     /// every read leaves it out, and every write refuses to guess what it
     /// held, so one damaged file would stop every write. This moves each
     /// such file to `quarantine/` (durably, under the store's lock, never
@@ -667,7 +735,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// replica (an `adopt`, or a copy of its file) and the receipt deleted;
     /// what rested on the object rejoins the history with it.
     ///
-    /// ONLY A FILE THAT FAILS ITS HASH. One that hashes to its name is that
+    /// ONLY A FILE THAT FAILS ITS HASH AND IS NO HUSK. One that hashes to its name is that
     /// object, whatever it holds — one this reader cannot parse may be a
     /// newer writer's — and setting it aside would be hiding it: it is
     /// reported, and stays. Strays are reported, never moved or deleted.
@@ -689,7 +757,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// Every file of `objects/` failing its hash, moved to `quarantine/`
+    /// Every file of `objects/` failing its hash and reading as no husk,
+    /// moved to `quarantine/`
     /// under the lock: the directory it lands in synced with each, and
     /// `objects/` once after. The files are those a cold look holds as
     /// unread ([`EventStore::cold`]), every one rehashed.
@@ -901,8 +970,10 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
         EventStore::heads(self)
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        EventStore::print(self, name)
+    /// The file's bytes, unchecked: what an adoption from this store reads,
+    /// and verifies.
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        fs::read(self.object_path(name)).ok()
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -913,8 +984,9 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        self.copy_in_from(seeds, print_of)
+        self.copy_in_from(seeds, print_of, sender)
     }
 }
 
@@ -972,25 +1044,57 @@ fn put_durably(path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
 }
 
 /// Bytes into a fresh temp file in `dir`, synced to disk: the first half of
-/// a durable write, and all a crash before the rename leaves behind.
+/// a durable write, and all a crash before the rename leaves behind. The
+/// two steps of [`Written`].
+fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+    Written::into(dir, bytes)?.sync()
+}
+
+/// `bytes` in place of the file `path` in `dir`, by the steps of a durable
+/// write ([`Written`]) up to the rename; the caller syncs `dir`. A stop
+/// between any two steps leaves `path` as it was or with `bytes` (SPEC law
+/// 75).
+fn replace(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
+    rename_into(&Written::into(dir, bytes)?.sync()?, path)
+}
+
+/// A temp file written and not yet synced: the first step of a durable
+/// write. Each step is a value, so a stop between any two can be made and
+/// read (SPEC law 75).
 ///
 /// The name is RANDOM and the file is created EXCLUSIVELY, never a fixed
 /// `<name>.tmp`: two writers placing the same object would otherwise write
 /// into one temp together, and one of them rename the other's half. A temp
 /// is not named like an object, so no read takes it for one.
-fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
-    loop {
-        let temp = dir.join(temp_name());
-        match File::options().write(true).create_new(true).open(&temp) {
-            Ok(mut file) => {
-                file.write_all(bytes)
-                    .and_then(|()| file.sync_all())
-                    .map_err(|e| ProdromeError::io(&temp, &e))?;
-                return Ok(temp);
+struct Written {
+    temp: PathBuf,
+    file: File,
+}
+
+impl Written {
+    /// `bytes` written into a fresh temp file in `dir`.
+    fn into(dir: &Path, bytes: &[u8]) -> Result<Written, ProdromeError> {
+        loop {
+            let temp = dir.join(temp_name());
+            match File::options().write(true).create_new(true).open(&temp) {
+                Ok(mut file) => {
+                    file.write_all(bytes)
+                        .map_err(|e| ProdromeError::io(&temp, &e))?;
+                    return Ok(Written { temp, file });
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+                Err(error) => return Err(ProdromeError::io(&temp, &error)),
             }
-            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-            Err(error) => return Err(ProdromeError::io(&temp, &error)),
         }
+    }
+
+    /// The temp synced to disk, the second step: its path, which the
+    /// caller renames into place.
+    fn sync(self) -> Result<PathBuf, ProdromeError> {
+        self.file
+            .sync_all()
+            .map_err(|e| ProdromeError::io(&self.temp, &e))?;
+        Ok(self.temp)
     }
 }
 
@@ -1199,7 +1303,7 @@ mod tests {
             mk_created("alpha", at(1), "bassel", "", "").expect("valid"),
         );
         there
-            .adopt(&here, &shared)
+            .adopt(&here, &shared, Sender::Stranger)
             .expect("fast-forwards into an empty store");
         assert_eq!(tips(&there), [shared.clone()].into_iter().collect());
 
@@ -1211,7 +1315,8 @@ mod tests {
             &there,
             mk_created("beta", at(2), "bassel", "theirs", "").expect("valid"),
         );
-        here.adopt(&there, &theirs).expect("adopts");
+        here.adopt(&there, &theirs, Sender::Stranger)
+            .expect("adopts");
         assert_eq!(
             tips(&here),
             [mine.clone(), theirs.clone()].into_iter().collect()
@@ -1242,7 +1347,9 @@ mod tests {
         let here = Store::new(scratch("weave-here"), roster());
         let there = Store::new(scratch("weave-there"), roster());
         let genesis = here.init("union").expect("begins");
-        there.adopt(&here, &genesis).expect("adopts the genesis");
+        there
+            .adopt(&here, &genesis, Sender::Stranger)
+            .expect("adopts the genesis");
         let mine = here
             .append(mk_completed("alpha", at(2), "bassel", "mine").expect("valid"))
             .expect("appends");
@@ -1339,7 +1446,9 @@ mod tests {
             mk_created("beta", at(2), "bassel", "theirs", "").expect("valid"),
         );
 
-        by_dir.adopt(&there, &theirs).expect("adopts a directory");
+        by_dir
+            .adopt(&there, &theirs, Sender::Stranger)
+            .expect("adopts a directory");
         // The same objects, as the wire carries them: a name and the canonical
         // print that name is the hash of.
         let over_the_wire: BTreeMap<Hash, String> = there
@@ -1350,7 +1459,7 @@ mod tests {
             .map(|(name, object)| (name.clone(), crate::event::canonical_envelope(object)))
             .collect();
         by_bytes
-            .adopt_objects(&over_the_wire, &theirs)
+            .adopt_objects(&over_the_wire, &theirs, Sender::Stranger)
             .expect("adopts bytes");
 
         assert_eq!(tips(&by_bytes), tips(&by_dir));
@@ -1365,14 +1474,18 @@ mod tests {
         if let Some(text) = tampered.get_mut(&theirs) {
             text.push(' ');
         }
-        assert!(liar.adopt_objects(&tampered, &theirs).is_err());
+        assert!(liar
+            .adopt_objects(&tampered, &theirs, Sender::Stranger)
+            .is_err());
         let orphan: BTreeMap<Hash, String> = over_the_wire
             .iter()
             .filter(|(name, _)| **name == theirs)
             .map(|(name, text)| (name.clone(), text.clone()))
             .collect();
         let missing = Store::new(scratch("bytes-orphan"), roster());
-        assert!(missing.adopt_objects(&orphan, &theirs).is_err());
+        assert!(missing
+            .adopt_objects(&orphan, &theirs, Sender::Stranger)
+            .is_err());
         // And a refused adoption WROTE NOTHING: with derived tips an object is
         // in the store the moment its file is, so the tip whose parent never
         // arrived must not have landed on its own.
@@ -1392,14 +1505,18 @@ mod tests {
             &here,
             mk_created("alpha", at(1), "bassel", "", "").expect("valid"),
         );
-        there.adopt(&here, &first).expect("adopts");
+        there
+            .adopt(&here, &first, Sender::Stranger)
+            .expect("adopts");
         let second = seal(
             &there,
             mk_completed("alpha", at(2), "bassel", "").expect("valid"),
         );
-        here.adopt(&there, &second).expect("fast-forwards");
+        here.adopt(&there, &second, Sender::Stranger)
+            .expect("fast-forwards");
         assert_eq!(tips(&here), [second.clone()].into_iter().collect());
-        here.adopt(&there, &first).expect("a contained tip");
+        here.adopt(&there, &first, Sender::Stranger)
+            .expect("a contained tip");
         assert_eq!(tips(&here), [second].into_iter().collect());
         let _ = fs::remove_dir_all(here.root());
         let _ = fs::remove_dir_all(there.root());
@@ -1933,6 +2050,57 @@ mod tests {
             .append(mk_completed("alpha", at(2), "bassel", "").expect("valid"))
             .expect("appends once the other writer let go");
         assert_eq!(findings(&store), Vec::<String>::new());
+        let _ = fs::remove_dir_all(store.root());
+    }
+
+    /// Law 75: a stop between any two steps of [`replace`], the steps
+    /// `husk` replaces each file by, leaves under the name the old bytes or
+    /// the new ones, and a fresh handle reads the old object until the
+    /// rename and the new print after it. The steps are the temp written,
+    /// the temp synced, and the rename; the directory sync after the last
+    /// file only makes the rename durable. Here the new bytes are another
+    /// print, which the todo schema reads as tampered, so a read tells the
+    /// two apart.
+    #[test]
+    fn a_stop_at_each_step_of_a_replacement_leaves_the_old_or_the_new_file() {
+        let store = Store::new(scratch("replace"), roster());
+        store.init("replace").expect("begins");
+        let name = store
+            .append(mk_created("alpha", at(1), "bassel", "", "").expect("valid"))
+            .expect("appends");
+        let dir = store.objects_dir();
+        let path = store.object_path(&name);
+        let old = fs::read(&path).expect("reads");
+        let new = String::from_utf8(old.clone())
+            .expect("text")
+            .replace("alpha", "omega")
+            .into_bytes();
+        for stop in 0..4 {
+            fs::write(&path, &old).expect("restores");
+            match stop {
+                0 => {}
+                1 => drop(Written::into(&dir, &new).expect("writes the temp")),
+                2 => drop(
+                    Written::into(&dir, &new)
+                        .and_then(Written::sync)
+                        .expect("syncs the temp"),
+                ),
+                _ => replace(&dir, &path, &new).expect("renames"),
+            }
+            let renamed = stop == 3;
+            assert_eq!(
+                fs::read(&path).expect("reads"),
+                if renamed { new.clone() } else { old.clone() },
+                "stop {stop}"
+            );
+            let dag = Store::new(store.root(), roster()).dag().expect("reads");
+            assert_eq!(dag.get(&name).is_some(), !renamed, "stop {stop}");
+            assert_eq!(
+                matches!(dag.unread().get(&name), Some(Unread::Tampered(_))),
+                renamed,
+                "stop {stop}"
+            );
+        }
         let _ = fs::remove_dir_all(store.root());
     }
 }

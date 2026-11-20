@@ -174,7 +174,7 @@ mod tests {
     use crate::policy::Untrusted;
     use crate::reference::Todo;
     use crate::store::memory::Verified;
-    use crate::store::{sync, EventStore};
+    use crate::store::{sync, EventStore, Sender};
 
     type Event = TodoEvent<Todo>;
     type Store = EventStore<Event>;
@@ -252,7 +252,7 @@ mod tests {
             handles[0].init("heads").expect("begins");
             let elsewhere_root = scratch();
             let elsewhere = store(&elsewhere_root);
-            sync(&handles[0], &elsewhere).expect("syncs");
+            sync(&handles[0], &elsewhere, Sender::Stranger).expect("syncs");
             Script {
                 root,
                 handles,
@@ -280,7 +280,11 @@ mod tests {
                 }
                 Step::Receive { by, entity } => {
                     let _ = self.elsewhere.append(reopened(entity + 10, day));
-                    let _ = sync(&self.elsewhere, &self.handles[usize::from(by)]);
+                    let _ = sync(
+                        &self.elsewhere,
+                        &self.handles[usize::from(by)],
+                        Sender::Stranger,
+                    );
                 }
                 Step::Quarantine { by, pick } => {
                     let names: Vec<Hash> = store(&self.root)
@@ -370,7 +374,7 @@ mod tests {
             }
             let source_root = scratch();
             let source = store(&source_root);
-            sync(&writer, &source).expect("syncs");
+            sync(&writer, &source, Sender::Stranger).expect("syncs");
             let mut placed: Vec<(Hash, Vec<u8>)> = Vec::new();
             for n in 0..new {
                 let name = source
@@ -422,10 +426,7 @@ mod tests {
             .join(format!("{}.py", second.name().as_str()));
         let mut decision = writer.decide().expect("decides");
         std::fs::create_dir(&blocked).expect("blocks the second name");
-        let failed = decision.place(vec![
-            (first, Some(first_print)),
-            (second, Some(second_print)),
-        ]);
+        let failed = decision.place(vec![(first, first_print), (second, second_print)]);
         assert!(failed.is_err(), "the rename onto a directory fails");
         assert!(!root.join(FILE).exists(), "removed before the placement");
         decision.write(object(3)).expect("a later write succeeds");
@@ -446,7 +447,7 @@ mod tests {
         writer.init("heads").expect("begins");
         let source_root = scratch();
         let source = store(&source_root);
-        sync(&writer, &source).expect("syncs");
+        sync(&writer, &source, Sender::Stranger).expect("syncs");
         let mut day = 0;
         let mut copy_one_in = || {
             day += 1;

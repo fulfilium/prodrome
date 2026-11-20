@@ -9,6 +9,7 @@ use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::registers::Folded;
 use crate::schema::Schema;
+use crate::store::Sender;
 
 /// What a replica holds, of one look: its objects, their fold and their
 /// tips.
@@ -60,9 +61,19 @@ pub trait Replica<E: Schema> {
         Ok(self.held()?.dag.heads())
     }
 
-    /// The print it holds under `name`, the bytes that name is the hash of,
-    /// unchecked: whoever receives it verifies it.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>>;
+    /// The print it keeps under `name`, unchecked: the bytes that name is
+    /// the hash of, or a husk of them (SPEC §3). Whoever receives it
+    /// verifies it: it rehashes the bytes, and reads bytes that are not the
+    /// whole as a husk or refuses them.
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>>;
+
+    /// The print it holds under `name` whose hash is `name`: what
+    /// [`Replica::kept`] answers, and nothing for a husk, which holds no
+    /// such bytes.
+    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+        self.kept(name)
+            .filter(|bytes| Hash::of_bytes(bytes) == *name)
+    }
 
     /// Write `event` as a `Change` over its entity's heads in this
     /// replica, or nothing where it holds a twin (SPEC §3): the decision is
@@ -76,8 +87,11 @@ pub trait Replica<E: Schema> {
 
     /// Take in what `seeds` rest on that it lacks, each object read by
     /// `print_of` and VERIFIED on receipt (it hashes to its name and
-    /// parses), nothing taken unless all of it verified, and held parents
-    /// first. Answers what it took, parents first.
+    /// parses, or, where `sender` is its keeper of record, it reads as a
+    /// husk at the replica's schema), nothing taken unless all of it
+    /// verified, and held parents first. A name it keeps, whole or husk, in
+    /// its history or waiting outside it, is not replaced. Answers what it
+    /// took, parents first.
     ///
     /// # Errors
     ///
@@ -86,6 +100,7 @@ pub trait Replica<E: Schema> {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError>;
 }
 
@@ -108,8 +123,8 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
         (**self).heads()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        (**self).print(name)
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        (**self).kept(name)
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -120,8 +135,9 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        (**self).receive(seeds, print_of)
+        (**self).receive(seeds, print_of, sender)
     }
 }
 
@@ -137,7 +153,13 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 /// is closed under parents over what `to` holds, `to` reads as it did plus
 /// exactly `chosen`; elsewhere it takes what they rest on too, since a
 /// replica is closed under parents. No object is renamed or rewritten: what
-/// arrives is the bytes `from` holds under each name.
+/// arrives is the bytes `from` keeps under each name ([`Replica::kept`]), a
+/// whole or a husk, and a name `to` already holds, whole or husk, is not
+/// asked for.
+///
+/// `sender` names whose word `from` is to `to`: where `from` is `to`'s
+/// keeper of record ([`Sender::Keeper`]), `to` takes the husks `from`
+/// keeps; from a stranger it refuses them (SPEC §3).
 ///
 /// # Errors
 ///
@@ -147,8 +169,9 @@ pub fn accept<E: Schema>(
     from: &(impl Replica<E> + ?Sized),
     to: &(impl Replica<E> + ?Sized),
     chosen: BTreeSet<Hash>,
+    sender: Sender,
 ) -> Result<Vec<Hash>, ProdromeError> {
-    to.receive(chosen, &|name| from.print(name))
+    to.receive(chosen, &|name| from.kept(name), sender)
 }
 
 /// `to ∪ from`: adopt into `to` every object of `from` that `to` lacks,
@@ -159,7 +182,12 @@ pub fn accept<E: Schema>(
 /// idempotent (an object adopted twice is one object), order-free (union
 /// commutes), and safe to cut short and repeat, since what one sync placed
 /// is a down-set of `from` and the next adopts the rest. Between any two
-/// replicas at one schema, whatever each is.
+/// replicas at one schema whose prints `to` reads: every whole, and every
+/// husk where `from` is `to`'s keeper of record. A sync from a stranger
+/// that keeps a husk takes nothing, objects that do not rest on the husk
+/// included, because a receipt takes nothing unless everything verified:
+/// so a sync cut short by a refusal leaves `to` as it was, and the refusal
+/// names the husk.
 ///
 /// # Errors
 ///
@@ -168,6 +196,7 @@ pub fn accept<E: Schema>(
 pub fn sync<E: Schema>(
     from: &(impl Replica<E> + ?Sized),
     to: &(impl Replica<E> + ?Sized),
+    sender: Sender,
 ) -> Result<Vec<Hash>, ProdromeError> {
-    accept(from, to, from.tips()?)
+    accept(from, to, from.tips()?, sender)
 }

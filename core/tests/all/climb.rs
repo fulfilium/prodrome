@@ -25,6 +25,7 @@ use prodrome::literal::{Datetime, ProdromeError, Value};
 use prodrome::policy::{Everything, Policy, Standing, Untrusted};
 use prodrome::registers::{fold, Folded, Stamp};
 use prodrome::schema::headed::{Body, Event as HeadedEvent};
+use prodrome::store::Sender;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -257,7 +258,11 @@ fn begun() -> MemoryStore<Proposal> {
     let print = canonical_envelope(&genesis).into_bytes();
     let store = MemoryStore::default();
     store
-        .receive([seal_hash(&genesis)].into(), &|_| Some(print.clone()))
+        .receive(
+            [seal_hash(&genesis)].into(),
+            &|_| Some(print.clone()),
+            Sender::Stranger,
+        )
         .expect("begins");
     store
 }
@@ -293,14 +298,14 @@ proptest! {
     #[test]
     fn an_honest_reading_is_the_frontier_reading(acts in acts()) {
         let replicas = [begun(), MemoryStore::default()];
-        sync(&replicas[0], &replicas[1]).expect("syncs");
+        sync(&replicas[0], &replicas[1], Sender::Stranger).expect("syncs");
         for (side, act) in acts {
             match act {
                 Some(event) => {
                     let _ = replicas[side].append(event);
                 }
                 None => {
-                    sync(&replicas[1 - side], &replicas[side]).expect("syncs");
+                    sync(&replicas[1 - side], &replicas[side], Sender::Stranger).expect("syncs");
                 }
             }
         }
@@ -399,7 +404,11 @@ fn a_write_below_its_reading_is_taken_and_does_not_lower_it() {
     let name = seal_hash(&change);
     assert_eq!(
         store
-            .receive([name.clone()].into(), &|_| Some(print.clone()))
+            .receive(
+                [name.clone()].into(),
+                &|_| Some(print.clone()),
+                Sender::Stranger
+            )
             .expect("the receipt takes a valid object"),
         vec![name.clone()]
     );

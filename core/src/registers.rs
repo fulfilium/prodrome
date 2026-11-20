@@ -196,6 +196,22 @@ impl<E: Schema> Folded<E> {
         self.index.contains_key(name) || self.attestations.contains(name)
     }
 
+    /// The stamp of `name` reads `event` in place of its event: the husk of
+    /// the object it was (SPEC §3), whose key is the same, so it stays in
+    /// its entity's stream where it was. A name with no stamp is passed
+    /// over.
+    pub(crate) fn rewrite(&mut self, name: &Hash, event: &E) {
+        for prodrome in self.prodromes.values_mut() {
+            if let Some(stamp) = prodrome
+                .get_mut(event.key())
+                .and_then(|stream| stream.iter_mut().find(|stamp| stamp.name == *name))
+            {
+                stamp.event = Arc::new(event.clone());
+                return;
+            }
+        }
+    }
+
     /// Does every object folded rest only on objects of its own scope and
     /// on its genesis? Then each scope's order is decided within it, and
     /// [`Folded::insert`] can place an object without the rest: every

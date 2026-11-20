@@ -25,7 +25,7 @@ use crate::registers::{deps_for, extend, fold, heads, Folded};
 use crate::schema::Schema;
 use crate::sign::{mk_key_revoked, Checks, KeyAdded, Proof, Registrar, Signed};
 use crate::snapshot::{attest, mk_snapshot, Attestation};
-use crate::store::{accept, Held, Replica};
+use crate::store::{accept, Held, Replica, Sender};
 
 /// How many readings the cache keeps: few, so that it evicts.
 const KEPT: usize = 6;
@@ -253,10 +253,14 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
         let replica = &self.replicas[to.index()];
         let wire = &self.wire;
         let taken = replica
-            .receive(seeds.clone(), &|name| wire.get(name).cloned())
+            .receive(
+                seeds.clone(),
+                &|name| wire.get(name).cloned(),
+                Sender::Stranger,
+            )
             .map_err(failed(35, "a receipt of the script's own objects"))?;
         let again = replica
-            .receive(seeds, &|name| wire.get(name).cloned())
+            .receive(seeds, &|name| wire.get(name).cloned(), Sender::Stranger)
             .map_err(failed(35, "a second receipt"))?;
         self.emit(to, Layer::Replica, &taken, &again)
     }
@@ -264,8 +268,10 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
     /// `to` receives `chosen` from `from`, twice.
     fn accept(&mut self, from: Who, to: Who, chosen: BTreeSet<Hash>) -> Result<(), Broken> {
         let (source, target) = (&self.replicas[from.index()], &self.replicas[to.index()]);
-        let taken = accept(source, target, chosen.clone()).map_err(failed(35, "a sync"))?;
-        let again = accept(source, target, chosen).map_err(failed(35, "a second sync"))?;
+        let taken = accept(source, target, chosen.clone(), Sender::Stranger)
+            .map_err(failed(35, "a sync"))?;
+        let again = accept(source, target, chosen, Sender::Stranger)
+            .map_err(failed(35, "a second sync"))?;
         self.emit(to, Layer::Replica, &taken, &again)
     }
 
@@ -370,7 +376,7 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
                 format!("an append answered {name} and wrote {fresh:?}"),
             ));
         }
-        if let Some(print) = replica.print(&name) {
+        if let Some(print) = replica.kept(&name) {
             self.wire.insert(name.clone(), print);
         }
         self.emit(by, Layer::Replica, &fresh, &[])?;
@@ -545,13 +551,17 @@ impl<E: Schema, P: Policy<E> + Clone> Machine<E, P> {
                 .map(|name| (*name).clone()),
         );
         let wire = &self.wire;
-        let offered = replica.receive(seeds, &|name| {
-            if *name == bad {
-                Some(print.clone())
-            } else {
-                wire.get(name).cloned()
-            }
-        });
+        let offered = replica.receive(
+            seeds,
+            &|name| {
+                if *name == bad {
+                    Some(print.clone())
+                } else {
+                    wire.get(name).cloned()
+                }
+            },
+            Sender::Stranger,
+        );
         match offered {
             Ok(taken) => Err(Broken::of(
                 35,

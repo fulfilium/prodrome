@@ -22,6 +22,7 @@ use prodrome::event::{Hash, TodoEvent};
 use prodrome::laws;
 use prodrome::reference::Todo;
 use prodrome::registers::Folded;
+use prodrome::store::Sender;
 use prodrome::store::{accept, sync, Held, MemoryStore, Overlay, Replica};
 use proptest::prelude::*;
 
@@ -53,7 +54,7 @@ fn reading(replica: &(impl Replica<Event> + ?Sized)) -> Reading {
 /// A store in memory holding what `from` holds.
 fn in_memory(from: &impl Replica<Event>) -> Memory {
     let memory = Memory::default();
-    sync(from, &memory).expect("syncs");
+    sync(from, &memory, Sender::Stranger).expect("syncs");
     memory
 }
 
@@ -138,8 +139,8 @@ proptest! {
                 Step::Arrive(pick) => {
                     let seed: BTreeSet<Hash> = [pick.get(&theirs).clone()].into();
                     let print = |name: &Hash| there.print(name);
-                    let to_disk = disk.receive(seed.clone(), &print).expect("receives");
-                    let to_memory = memory.receive(seed, &print).expect("receives");
+                    let to_disk = disk.receive(seed.clone(), &print, Sender::Stranger).expect("receives");
+                    let to_memory = memory.receive(seed, &print, Sender::Stranger).expect("receives");
                     prop_assert_eq!(to_memory, to_disk);
                 }
             }
@@ -209,13 +210,13 @@ proptest! {
                 }
                 Layered::Arrive(pick) => {
                     let seed: BTreeSet<Hash> = [pick.get(&theirs).clone()].into();
-                    overlay.receive(seed.clone(), &print).expect("receives");
-                    union.receive(seed, &print).expect("receives");
+                    overlay.receive(seed.clone(), &print, Sender::Stranger).expect("receives");
+                    union.receive(seed, &print, Sender::Stranger).expect("receives");
                 }
                 Layered::Beneath(pick) => {
                     let seed: BTreeSet<Hash> = [pick.get(&theirs).clone()].into();
                     for store in [&disk, &union, &beneath] {
-                        store.receive(seed.clone(), &print).expect("receives");
+                        store.receive(seed.clone(), &print, Sender::Stranger).expect("receives");
                     }
                 }
             }
@@ -272,7 +273,7 @@ proptest! {
             );
         }
         let expected = in_memory(&disk);
-        accept(&overlay, &expected, picked).expect("accepts the picks and what they rest on");
+        accept(&overlay, &expected, picked, Sender::Stranger).expect("accepts the picks and what they rest on");
         prop_assert_eq!(reading(&base), reading(&expected));
         prop_assert_eq!(
             reading(&base).objects,
@@ -286,7 +287,7 @@ proptest! {
             own.iter().filter(|name| !chosen.contains(*name)).cloned().collect::<BTreeSet<Hash>>()
         );
         let whole = in_memory(&disk);
-        accept(&overlay, &whole, overlay.tips().expect("derives")).expect("accepts");
+        accept(&overlay, &whole, overlay.tips().expect("derives"), Sender::Stranger).expect("accepts");
         prop_assert_eq!(reading(&base), reading(&whole));
     }
 }

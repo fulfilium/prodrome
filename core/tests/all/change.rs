@@ -21,6 +21,7 @@ use prodrome::policy::{Everything, Untrusted};
 use prodrome::reference::Todo;
 use prodrome::registers::fold;
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use prodrome::view;
 use proptest::prelude::*;
 
@@ -56,7 +57,7 @@ impl Scratch {
         let digest = seal_hash(&genesis);
         let print = canonical_envelope(&genesis);
         store
-            .adopt_objects(&[(digest.clone(), print)].into(), &digest)
+            .adopt_objects(&[(digest.clone(), print)].into(), &digest, Sender::Stranger)
             .expect("begins");
         store
     }

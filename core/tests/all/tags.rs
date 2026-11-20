@@ -16,6 +16,7 @@ use prodrome::genesis::mk_genesis;
 use prodrome::literal::Datetime;
 use prodrome::registers::{fold, Prodrome, Stamp};
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use prodrome::tags::alias::{self, Alias, AliasEvent, AliasVocabulary};
 use prodrome::tags::membership::{self, MembershipEvent, MembershipVocabulary};
@@ -103,7 +104,11 @@ pub(crate) fn begun<E: Schema<Vocabulary: Default>>() -> MemoryStore<E> {
     let genesis = genesis::<E>();
     let print = canonical_envelope(&genesis).into_bytes();
     store
-        .receive([seal_hash(&genesis)].into(), &|_| Some(print.clone()))
+        .receive(
+            [seal_hash(&genesis)].into(),
+            &|_| Some(print.clone()),
+            Sender::Stranger,
+        )
         .expect("begins");
     store
 }
@@ -178,8 +183,8 @@ impl Device {
     }
 
     fn take(&self, other: &Device) {
-        sync(&other.memberships, &self.memberships).expect("synced");
-        sync(&other.aliases, &self.aliases).expect("synced");
+        sync(&other.memberships, &self.memberships, Sender::Stranger).expect("synced");
+        sync(&other.aliases, &self.aliases, Sender::Stranger).expect("synced");
     }
 
     /// Whether the pair of note `n` and the label `name`, as written, reads

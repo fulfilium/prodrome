@@ -18,6 +18,7 @@ use prodrome::laws::script::{
 use prodrome::literal::Datetime;
 use prodrome::policy::Everything;
 use prodrome::reference::Todo;
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use prodrome::tags::alias::{self, AliasVocabulary};
 use prodrome::tags::membership::{self, MembershipVocabulary};
@@ -144,7 +145,7 @@ fn hour(n: i64) -> Datetime {
 /// one prodrome does.
 fn begun(of: &MemoryStore<Event>) -> MemoryStore<Event> {
     let store = MemoryStore::default();
-    sync(of, &store).expect("syncs");
+    sync(of, &store, Sender::Stranger).expect("syncs");
     store
 }
 
@@ -154,7 +155,11 @@ fn first() -> MemoryStore<Event> {
     let print = canonical_envelope(&genesis).into_bytes();
     let store = MemoryStore::default();
     store
-        .receive([seal_hash(&genesis)].into(), &|_| Some(print.clone()))
+        .receive(
+            [seal_hash(&genesis)].into(),
+            &|_| Some(print.clone()),
+            Sender::Stranger,
+        )
         .expect("begins");
     store
 }
@@ -231,14 +236,14 @@ fn a_late_change_moves_a_reading_at_an_instant_and_not_one_at_a_down_set() {
     let (ben, cai) = (begun(&ada), begun(&ada));
     ada.append(created).expect("appends");
     cai.append(cancelled).expect("appends");
-    sync(&ada, &ben).expect("syncs");
+    sync(&ada, &ben, Sender::Stranger).expect("syncs");
     assert_eq!(
         outcomes(&ben, "alpha", hour(2)),
         [None].into(),
         "open at hour 2"
     );
     ada.append(done).expect("appends");
-    sync(&ada, &ben).expect("syncs");
+    sync(&ada, &ben, Sender::Stranger).expect("syncs");
     assert_eq!(
         outcomes(&ben, "alpha", hour(2)),
         [None].into(),
@@ -249,7 +254,7 @@ fn a_late_change_moves_a_reading_at_an_instant_and_not_one_at_a_down_set() {
         completed(hour(3)),
         "and is seen at hour 3"
     );
-    sync(&cai, &ben).expect("syncs");
+    sync(&cai, &ben, Sender::Stranger).expect("syncs");
     assert_eq!(
         outcomes(&ben, "alpha", hour(2)),
         [Some(Outcome::Cancelled(instant_of(hour(1))))].into(),
@@ -324,7 +329,7 @@ fn an_add_a_remove_and_an_add_in_one_tick() {
         first_add,
         "the same heads, the same object"
     );
-    sync(&ada, &ben).expect("syncs");
+    sync(&ada, &ben, Sender::Stranger).expect("syncs");
     assert_eq!(
         outcomes(&ben, "alpha", hour(1)),
         [None].into(),
@@ -336,7 +341,7 @@ fn an_add_a_remove_and_an_add_in_one_tick() {
         first_add,
         "other heads, a twin"
     );
-    sync(&ada, &cai).expect("syncs");
+    sync(&ada, &cai, Sender::Stranger).expect("syncs");
     assert_eq!(
         outcomes(&cai, "alpha", hour(1)),
         [None, Some(Outcome::Completed(instant_of(hour(1))))].into(),

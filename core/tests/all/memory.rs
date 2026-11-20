@@ -32,6 +32,7 @@ use prodrome::policy::Untrusted;
 use prodrome::reference::Todo;
 use prodrome::registers::{fold, Folded, Genesis, Node};
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use proptest::prelude::*;
 
 use common::{a_log, seal, two_writers};
@@ -83,7 +84,7 @@ pub(crate) fn replicas(
     }
     let there = scratch.store("there");
     for tip in here.tips().expect("the tips derive") {
-        there.adopt(&here, &tip).expect("adopts");
+        there.adopt(&here, &tip, Sender::Stranger).expect("adopts");
     }
     for event in mine {
         here.append(event.clone()).expect("appends");
@@ -98,7 +99,7 @@ pub(crate) fn replicas(
 fn changes(scratch: &Scratch, logs: &(Vec<Event>, Vec<Event>, Vec<Event>)) -> Store {
     let (here, there) = replicas(scratch, logs);
     for tip in there.tips().expect("the tips derive") {
-        here.adopt(&there, &tip).expect("adopts");
+        here.adopt(&there, &tip, Sender::Stranger).expect("adopts");
     }
     here
 }
@@ -115,7 +116,7 @@ fn sealed(
     }
     let there = scratch.store("there");
     for tip in here.tips().expect("the tips derive") {
-        there.adopt(&here, &tip).expect("adopts");
+        there.adopt(&here, &tip, Sender::Stranger).expect("adopts");
     }
     for event in mine {
         seal(&here, event.clone());
@@ -124,7 +125,7 @@ fn sealed(
         seal(&there, event.clone());
     }
     for tip in there.tips().expect("the tips derive") {
-        here.adopt(&there, &tip).expect("adopts");
+        here.adopt(&there, &tip, Sender::Stranger).expect("adopts");
     }
     here
 }
@@ -411,7 +412,7 @@ proptest! {
             copy_store(base.root(), here.root());
             read(&here).expect("reads");
             let theirs: Vec<Hash> = there.dag().expect("reads").objects().keys().cloned().collect();
-            here.adopt(&there, partial.get(&theirs)).expect("a partial sync");
+            here.adopt(&there, partial.get(&theirs), Sender::Stranger).expect("a partial sync");
             let mut tips: Vec<(u32, Hash)> = there
                 .tips()
                 .expect("derives")
@@ -422,7 +423,7 @@ proptest! {
             tips.sort();
             for _ in 0..2 {
                 for (_, tip) in &tips {
-                    here.adopt(&there, tip).expect("adopts");
+                    here.adopt(&there, tip, Sender::Stranger).expect("adopts");
                 }
             }
             let union = scratch.store(&format!("union-{n}"));
@@ -499,7 +500,7 @@ fn an_append_answers_the_first_twin() {
         here.init("twins").expect("begins");
         let there = scratch.store("there");
         for tip in here.tips().expect("derives") {
-            there.adopt(&here, &tip).expect("adopts");
+            there.adopt(&here, &tip, Sender::Stranger).expect("adopts");
         }
         let twin = prodrome::event::mk_completed("alpha", at(2), "bassel", "").expect("valid");
         here.append(prodrome::event::mk_reopened("alpha", at(1), "bassel", "").expect("valid"))
@@ -508,7 +509,7 @@ fn an_append_answers_the_first_twin() {
         there.append(twin.clone()).expect("appends");
         read(&here).expect("reads");
         for tip in there.tips().expect("derives") {
-            here.adopt(&there, &tip).expect("adopts");
+            here.adopt(&there, &tip, Sender::Stranger).expect("adopts");
         }
         let print = prodrome::event::canonical(&twin);
         let first = here

@@ -21,7 +21,7 @@ use prodrome::reference::Todo;
 use prodrome::registers::Stamp;
 use prodrome::schema::headed::{Body, Event};
 use prodrome::schema::Schema;
-use prodrome::store::{Held, MemoryStore, Replica};
+use prodrome::store::{Held, MemoryStore, Replica, Sender};
 use proptest::prelude::*;
 
 use crate::common::draw::{a_draw, history, Draw};
@@ -260,8 +260,8 @@ impl<E: Schema> Replica<E> for Forgetful<E> {
         self.0.tips()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        self.0.print(name)
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        self.0.kept(name)
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -272,9 +272,10 @@ impl<E: Schema> Replica<E> for Forgetful<E> {
         &self,
         mut seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         seeds.pop_last();
-        self.0.receive(seeds, print_of)
+        self.0.receive(seeds, print_of, sender)
     }
 }
 

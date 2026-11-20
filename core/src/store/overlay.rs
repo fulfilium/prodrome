@@ -10,6 +10,7 @@ use crate::dag::Dag;
 use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
+use crate::store::Sender;
 
 /// A REPLICA OVER ANOTHER: what it appends or receives is held in memory
 /// (its OWN objects) and never reaches `base` until [`Overlay::flush`],
@@ -96,8 +97,12 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
     ///
     /// [`accept`]'s, a chosen name this overlay does not hold among them;
     /// the base takes nothing then.
+    ///
+    /// The overlay is its base's own layer, so the base takes its husks
+    /// as its keeper's ([`Sender::Keeper`]): each one the overlay took
+    /// from a keeper of its own.
     pub fn accept(&self, chosen: BTreeSet<Hash>) -> Result<Vec<Hash>, ProdromeError> {
-        accept(self, &self.base, chosen)
+        accept(self, &self.base, chosen, Sender::Keeper)
     }
 
     fn lock(&self) -> MutexGuard<'_, Layer<E>> {
@@ -119,7 +124,7 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
             let mut own = Vec::new();
             for (name, print) in layer.own.iter().filter(|(name, _)| !union.holds(name)) {
                 own.push((
-                    Verified::read(self.base.schema(), name, print)
+                    Verified::read(self.base.schema(), name, print, Sender::Keeper)
                         .map_err(|why| why.refusal(name))?,
                     None,
                 ));
@@ -152,11 +157,22 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
         Ok(self.layer()?.union.tips().clone())
     }
 
-    /// Its own print, or the base's. Never waits on the base: a flush reads
-    /// it while the base holds its lock.
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
-        let own = self.lock().own.get(name).cloned();
-        own.or_else(|| self.base.print(name))
+    /// The print the union reads under `name`. Where the base keeps a
+    /// print under the name that reads as an object, whole or husk, it is
+    /// the base's: a husk of the overlay's own whole hides the whole, and a
+    /// dropped part is never answered again (SPEC §3). Elsewhere (the base
+    /// lacks the name, or its print there is no object) it is the
+    /// overlay's own. The base's print is read as it is now, whatever the
+    /// overlay read before, and is read as the base reads its own prints.
+    /// Never waits on the base's lock: a flush reads it while the base
+    /// holds its lock.
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
+        self.base
+            .kept(name)
+            .filter(|print| {
+                Verified::<E>::read(self.base.schema(), name, print, Sender::Keeper).is_ok()
+            })
+            .or_else(|| self.lock().own.get(name).cloned())
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -175,6 +191,7 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         let dag = self.layer()?.union.dag().clone();
         let taken = memory::receive(
@@ -182,16 +199,15 @@ impl<E: Schema, B: Replica<E>> Replica<E> for Overlay<E, B> {
             |name| dag.get(name).is_some(),
             seeds,
             print_of,
+            sender,
         )?;
         let mut layer = self.lock();
         let mut names = Vec::new();
         let mut fresh = Vec::new();
-        for (verified, print) in taken {
-            if !layer.union.holds(verified.name()) {
-                names.push(verified.name().clone());
-                layer.own.insert(verified.name().clone(), print);
-                fresh.push((verified, None));
-            }
+        for (verified, print) in layer.union.unkept(taken) {
+            names.push(verified.name().clone());
+            layer.own.insert(verified.name().clone(), print);
+            fresh.push((verified, None));
         }
         layer.union.admit(&[], fresh);
         Ok(names)

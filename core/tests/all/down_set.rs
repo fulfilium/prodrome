@@ -28,6 +28,7 @@ use prodrome::event::{parents_of, Hash, TodoEvent};
 use prodrome::reference::Todo;
 use prodrome::registers::fold;
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use proptest::prelude::*;
 use sha2::{Digest, Sha256};
 
@@ -40,7 +41,7 @@ type Store = EventStore<Event, prodrome::policy::Untrusted>;
 fn changes(scratch: &Scratch, logs: &(Vec<Event>, Vec<Event>, Vec<Event>)) -> Store {
     let (here, there) = replicas(scratch, logs);
     for tip in there.tips().expect("the tips derive") {
-        here.adopt(&there, &tip).expect("adopts");
+        here.adopt(&there, &tip, Sender::Stranger).expect("adopts");
     }
     here
 }
@@ -357,7 +358,7 @@ fn quarantine_reads_without_it(
     // The repair is a sync from a replica that has the object: the walk
     // passes through what waited for it, and the whole history is back.
     for tip in intact.tips().expect("derives") {
-        store.adopt(intact, &tip).expect("adopts");
+        store.adopt(intact, &tip, Sender::Stranger).expect("adopts");
     }
     prop_assert_eq!(&*store.dag().expect("reads"), &*whole);
     prop_assert_eq!(

@@ -281,7 +281,11 @@ impl Secret {
         PublicKey(hex(self.0.verifying_key().as_bytes()))
     }
 
-    /// This key's signature of the object named `object`.
+    /// This key's signature of the object named `object`. A signature
+    /// covers a name and so proves the bytes that hash to it: the caller
+    /// has hashed those bytes to `object` itself. A signer of an object it
+    /// holds signs through [`Secret::sign_whole`], which refuses a name it
+    /// holds no such bytes for.
     #[must_use]
     pub fn sign(&self, object: &Hash) -> Signed {
         Signed {
@@ -289,6 +293,32 @@ impl Secret {
             key: self.public(),
             signature: Signature(hex(&self.0.sign(&message(object)).to_bytes())),
         }
+    }
+}
+
+impl Secret {
+    /// This key's signature of the object `object`, which `dag` holds
+    /// whole in its history: a print whose bytes the holder hashed to the
+    /// name (SPEC §5, law 80). A husk's clear fields are not bound to its
+    /// name, so whoever handed the holder the husk may have written another
+    /// whole under the name, and a signature of the name would prove that
+    /// whole on every replica that holds it.
+    ///
+    /// # Errors
+    ///
+    /// `object` held as a husk, or not in the history.
+    pub fn sign_whole<E>(&self, dag: &Dag<E>, object: &Hash) -> Result<Signed, ProdromeError> {
+        if dag.husks().contains(object) {
+            return Err(ProdromeError::invalid(format!(
+                "object {object} is held as a husk: its whole is not here to sign"
+            )));
+        }
+        if dag.get(object).is_none() {
+            return Err(ProdromeError::invalid(format!(
+                "object {object} is not held"
+            )));
+        }
+        Ok(self.sign(object))
     }
 }
 
@@ -314,6 +344,20 @@ pub enum Registrar {
     Roots(BTreeSet<PublicKey>),
 }
 
+/// What a [`Proof`] says of one object (SPEC §5).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Proved {
+    /// A signature by a key that speaks for the object's actor covers its
+    /// name, and the object is the bytes that hash to the name.
+    Proven,
+    /// Such a signature covers the name of a husk (SPEC §3): the husk
+    /// stands on its maker's word, and on the signature its maker verified
+    /// over the whole.
+    Vouched,
+    /// No such signature covers it.
+    Unsigned,
+}
+
 /// THE READING OF A HISTORY'S SIGNATURES AND KEYS: which objects carrying
 /// an event a key registered to that event's actor has signed, and which
 /// actors have a registered key, each in its prodrome.
@@ -330,12 +374,23 @@ pub enum Registrar {
 /// A key revoked stays revoked: a later `KeyAdded` of it is the object it
 /// always was, one object, and adds nothing.
 ///
+/// A signature covers a name, and it proves the bytes that hash to the
+/// name. A HUSK (SPEC §3) is not those bytes, so no signature proves it.
+/// Where a signature would prove the whole, it VOUCHES for the husk: the
+/// husk stands on the word of its maker, the holder that dropped the parts
+/// from a whole it had verified, or the keeper of record a replica took it
+/// from. A replica takes a husk from no other party, so no object of a
+/// receipt from a party whose word is not taken is proven or vouched for
+/// without its bytes hashing to its name (law 77).
+///
 /// A FUNCTION OF THE OBJECT SET (law 42): every clause above is a question
 /// about which objects exist and what each rests on, none about the order
 /// they arrived in.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
+    // Two sets of names and no third: an object in neither is unsigned.
     proven: BTreeSet<Hash>,
+    vouched: BTreeSet<Hash>,
     keyed: BTreeSet<(Genesis, Actor)>,
 }
 
@@ -395,7 +450,7 @@ impl Proof {
                 _ => {}
             }
         }
-        let proven = dag
+        let (vouched, proven): (BTreeSet<Hash>, BTreeSet<Hash>) = dag
             .objects()
             .iter()
             .filter(|(name, object)| {
@@ -414,18 +469,37 @@ impl Proof {
                 })
             })
             .map(|(name, _)| name.clone())
-            .collect();
+            .partition(|name| dag.husks().contains(name));
         let keyed = keys
             .into_iter()
             .map(|(genesis, actor, _)| (genesis, actor.clone()))
             .collect();
-        Proof { proven, keyed }
+        Proof {
+            proven,
+            vouched,
+            keyed,
+        }
     }
 
-    /// Is the object `object` signed by a key that speaks for its actor?
+    /// What the proof says of `object`: proven, vouched for as a husk, or
+    /// unsigned.
+    #[must_use]
+    pub fn standing(&self, object: &Hash) -> Proved {
+        if self.proven.contains(object) {
+            Proved::Proven
+        } else if self.vouched.contains(object) {
+            Proved::Vouched
+        } else {
+            Proved::Unsigned
+        }
+    }
+
+    /// Is the object `object` signed by a key that speaks for its actor,
+    /// over the bytes its name is the hash of? Never for a husk. A reading
+    /// of [`Proof::standing`], kept for the readers that ask only this.
     #[must_use]
     pub fn proves(&self, object: &Hash) -> bool {
-        self.proven.contains(object)
+        self.standing(object) == Proved::Proven
     }
 
     /// Has `actor` a registered key in the prodrome `genesis`, revoked or

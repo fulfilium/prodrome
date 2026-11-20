@@ -23,6 +23,7 @@ use prodrome::literal::Datetime;
 use prodrome::reference::Todo;
 use prodrome::sign::{mk_key_revoked, KeyAdded, Secret};
 use prodrome::snapshot::mk_snapshot;
+use prodrome::store::Sender;
 use prodrome::store::{Held, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -44,15 +45,19 @@ fn begun() -> (MemoryStore<Event>, Hash) {
         let print = canonical_envelope(&genesis).into_bytes();
         let store = MemoryStore::default().in_genesis(name.clone());
         store
-            .receive([name.clone()].into(), &|held| {
-                (*held == name).then(|| print.clone())
-            })
+            .receive(
+                [name.clone()].into(),
+                &|held| (*held == name).then(|| print.clone()),
+                Sender::Stranger,
+            )
             .expect("receives its genesis");
         let probe = MemoryStore::default().in_genesis(name.clone());
         probe
-            .receive([name.clone()].into(), &|held| {
-                (*held == name).then(|| print.clone())
-            })
+            .receive(
+                [name.clone()].into(),
+                &|held| (*held == name).then(|| print.clone()),
+                Sender::Stranger,
+            )
             .expect("receives its genesis");
         if probe.append(created("first")).expect("appends") < name {
             return (store, name);
@@ -317,11 +322,11 @@ proptest! {
         let names: Vec<Hash> = objects.keys().cloned().collect();
         for index in &order {
             store
-                .receive([index.get(&names).clone()].into(), &|name| prints.get(name).cloned())
+                .receive([index.get(&names).clone()].into(), &|name| prints.get(name).cloned(), Sender::Stranger)
                 .expect("receives");
         }
         store
-            .receive(names.iter().cloned().collect(), &|name| prints.get(name).cloned())
+            .receive(names.iter().cloned().collect(), &|name| prints.get(name).cloned(), Sender::Stranger)
             .expect("receives");
         prop_assert_eq!(store.held().expect("reads").tips, heads);
     }
@@ -340,7 +345,7 @@ proptest! {
             .map(|(name, object)| (name.clone(), canonical_envelope(object).into_bytes()))
             .collect();
         let taken = store
-            .receive(dag.tips(), &|name| prints.get(name).cloned())
+            .receive(dag.tips(), &|name| prints.get(name).cloned(), Sender::Stranger)
             .expect("receives");
         extends(&taken, &objects)?;
     }

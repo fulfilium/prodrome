@@ -10,6 +10,45 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The file store reads, keeps and makes husks (SPEC §3, laws 71 to
+  75, 77, 78 and 80).** A husk is a `Change` whose event has each sealed part
+  replaced by the name of its key, kept under the name of the whole
+  change. A schema that has sealed parts implements `store::Husking` and
+  answers the new defaulted method `Schema::husk` with
+  `HuskObject::of_other`. At such a schema, a print that does not hash to
+  its name, from its keeper of record, reads as the husk that it holds or
+  as tampered; at every other schema such a print is tampered, as before.
+  `EventStore::husk(names)` replaces each named whole that holds a sealed
+  part with its husk, under the store's lock, and never takes a whole
+  back. `Dag::husks` names the husks that a DAG holds. `dag::decode` now
+  takes a `store::Sender` and answers `store::Stored`, the whole or the
+  husk. A husk is exactly one print: any other print that parses to the
+  same object is tampered (law 78). The stored format gains the husk; no
+  stored constructor changes, and `conformance/husk.py` holds the new
+  vectors.
+- **`store::Sender`, whose word a receipt takes for a husk.** A replica
+  reads a print that does not hash to its name as a husk only from its
+  keeper of record (`Sender::Keeper`); from a stranger
+  (`Sender::Stranger`) such a print is tampered. The party that writes a
+  store's directory speaks as its keeper (SPEC §3). The doors that take
+  it are listed under "Changed".
+- **`Secret::sign_whole`, which signs only an object held whole (law 80).**
+  It refuses a name the history holds as a husk, or does not hold: a
+  signature of a husk's name would prove a whole the signer never hashed.
+  The wasm export `sign` signs through it.
+- **`Proof::standing`, and `sign::Proved`.** A signature proves only the
+  bytes that hash to its name. For a husk held under that name it vouches
+  instead (§5, law 77): `standing` answers `Proven`, `Vouched` or
+  `Unsigned`. `Proven` binds a husk that the proof vouches for, and
+  `verify` does not report one as unsigned.
+- **A run of appends (law 76).** `EventStore::append_all` and
+  `Decision::append_all` decide a sequence of events over one look and
+  place every new object at the end, with one directory sync, and stop at
+  the first refusal with `Stopped`, which names the events placed before
+  it. An append is a run of one, and so are the writes of `init`,
+  `snapshot` and `merge` and the placement of a receipt. A placement that
+  fails leaves the store's memory as a cold read of its files (law 79).
+  10,000 appends as one run cost one look in place of 10,000.
 - **`codec::assert_pinned`, a pin of a schema's stored names.** A test
   gives the constructors as text, one `Name(field, …)` on each line, and
   the function fails unless the declared constructors spell that text. The
@@ -143,6 +182,34 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **Every door that takes prints from another party takes a `Sender`
+  (SPEC §3).** A host whose schema has no husks passes
+  `Sender::Stranger`, and reads as before:
+  - `Replica::receive(seeds, print_of)` is now
+    `receive(seeds, print_of, sender)`; an implementation of `Replica`
+    takes the argument too.
+  - `accept(from, to, chosen)` is now `accept(from, to, chosen, sender)`.
+  - `sync(from, to)` is now `sync(from, to, sender)`.
+  - `EventStore::adopt(source, digest)` is now
+    `adopt(source, digest, sender)`.
+  - `EventStore::adopt_objects(objects, digest)` is now
+    `adopt_objects(objects, digest, sender)`.
+  - `Dag::from_prints(schema, prints)` is now
+    `from_prints(schema, prints, sender)`.
+  - `dag::decode(schema, name, bytes)` is now
+    `decode(schema, name, bytes, sender)`, and answers `store::Stored`
+    (`Whole` or `Husk`) in place of the `Envelope`; `Stored::into_object`
+    gives the object.
+  - The wasm exports' `Replica::of`, `Replica::at` and
+    `Replica::declared` take the sender as their last argument. A class's
+    JS constructor reads as a stranger's, and `fromKeeper` reads as the
+    keeper's. A `verify` row gains `husk`.
+- **`Replica::kept` replaces `Replica::print` as the required method.**
+  `kept(name)` answers the print a replica keeps under a name, the whole
+  or its husk, and `accept` sends it. `print` is now a provided method
+  that answers only bytes whose hash is the name. A host that implements
+  `Replica` renames its `print` to `kept`; with no husks the two answer
+  the same.
 - **`Fields` refuses in the words of a derived read (SPEC law 69).**
   `Fields::of`, `Fields::among` and `Fields::get` are built on
   `codec::call`, `codec::call_of` and `codec::read`, the reads that a

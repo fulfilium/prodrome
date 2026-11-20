@@ -19,6 +19,7 @@ use prodrome::event::{canonical_envelope, parents_of, seal_hash, Envelope, Hash,
 use prodrome::genesis::mk_genesis;
 use prodrome::reference::Todo;
 use prodrome::store::frontier::{Frontiers, Reached, Since, Token, KEPT};
+use prodrome::store::Sender;
 use prodrome::store::{MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -38,9 +39,11 @@ fn begun() -> MemoryStore<Event> {
     );
     let store = MemoryStore::default();
     store
-        .receive([name.clone()].into(), &|asked| {
-            (*asked == name).then(|| print.clone())
-        })
+        .receive(
+            [name.clone()].into(),
+            &|asked| (*asked == name).then(|| print.clone()),
+            Sender::Stranger,
+        )
         .expect("a genesis is an object");
     store
 }

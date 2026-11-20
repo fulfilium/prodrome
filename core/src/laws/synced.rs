@@ -9,7 +9,7 @@ use crate::laws::{printed, Broken};
 use crate::literal::ProdromeError;
 use crate::registers::fold;
 use crate::schema::Schema;
-use crate::store::{sync, Held, Replica};
+use crate::store::{sync, Held, Replica, Sender};
 
 /// A replica whose wire is cut: after `left` prints, it gives none.
 struct Cut<'r, E, R: ?Sized> {
@@ -31,10 +31,10 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for Cut<'_, E, R> {
         self.replica.tips()
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         let left = self.left.load(Ordering::Relaxed);
         self.left.store(left.saturating_sub(1), Ordering::Relaxed);
-        (left > 0).then(|| self.replica.print(name)).flatten()
+        (left > 0).then(|| self.replica.kept(name)).flatten()
     }
 
     fn append(&self, event: E) -> Result<Hash, ProdromeError> {
@@ -45,8 +45,9 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for Cut<'_, E, R> {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
-        self.replica.receive(seeds, print_of)
+        self.replica.receive(seeds, print_of, sender)
     }
 }
 
@@ -65,20 +66,23 @@ fn observed<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<Replicate
 }
 
 /// Law 1 at every object `replica` holds: it reads back by its name as its
-/// print, which parses, prints back and hashes to the name.
+/// print, and the print of a whole parses, prints back and hashes to the
+/// name. A husk's print is not the hash of its name (SPEC §3).
 fn read_back<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<(), Broken> {
     let held = replica.held().map_err(unread)?;
     let mut prints = Vec::new();
     for (name, object) in held.dag.objects() {
         let print = replica
-            .print(name)
+            .kept(name)
             .ok_or_else(|| Broken::of(1, format!("{name} is held and does not read back")))?;
         let print = String::from_utf8(print)
             .map_err(|_| Broken::of(1, format!("{name} reads back as no text")))?;
         if print != canonical_envelope(object) {
             return Err(Broken::of(1, format!("{name} reads back as {print}")));
         }
-        prints.push((name.clone(), print));
+        if !held.dag.husks().contains(name) {
+            prints.push((name.clone(), print));
+        }
     }
     printed::<E>(replica.schema(), &prints)
 }
@@ -142,14 +146,14 @@ where
     };
 
     let copy = empty();
-    sync(here, &copy).map_err(unread)?;
+    sync(here, &copy, Sender::Stranger).map_err(unread)?;
     let before = observed(&copy)?;
     let wire = Cut {
         replica: there,
         left: AtomicUsize::new(cut),
         schema: PhantomData,
     };
-    if sync(&wire, &copy).is_err() {
+    if sync(&wire, &copy, Sender::Stranger).is_err() {
         if let Some(difference) = observed(&copy)?.differs(&before) {
             return Err(Broken::of(
                 35,
@@ -168,23 +172,23 @@ where
         .collect();
     if !theirs.is_empty() {
         let seed = theirs[partial % theirs.len()].clone();
-        copy.receive([seed].into(), &|name| there.print(name))
+        copy.receive([seed].into(), &|name| there.kept(name), Sender::Stranger)
             .map_err(unread)?;
     }
-    sync(there, &copy).map_err(unread)?;
+    sync(there, &copy, Sender::Stranger).map_err(unread)?;
     reads_as_union(&copy, "a down-set, then the whole")?;
-    let again = sync(there, &copy).map_err(unread)?;
+    let again = sync(there, &copy, Sender::Stranger).map_err(unread)?;
     if !again.is_empty() {
         return Err(Broken::of(35, format!("a second sync took {again:?}")));
     }
     reads_as_union(&copy, "after a second sync")?;
 
     let one = empty();
-    sync(here, &one).map_err(unread)?;
-    sync(there, &one).map_err(unread)?;
+    sync(here, &one, Sender::Stranger).map_err(unread)?;
+    sync(there, &one, Sender::Stranger).map_err(unread)?;
     reads_as_union(&one, "here, then there, into a third")?;
     let other = empty();
-    sync(there, &other).map_err(unread)?;
-    sync(here, &other).map_err(unread)?;
+    sync(there, &other, Sender::Stranger).map_err(unread)?;
+    sync(here, &other, Sender::Stranger).map_err(unread)?;
     reads_as_union(&other, "there, then here, into a third")
 }

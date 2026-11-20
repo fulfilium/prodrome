@@ -34,7 +34,7 @@ use std::collections::BTreeSet;
 use crate::dag::Dag;
 use crate::event::{Actor, Hash};
 use crate::schema::Schema;
-use crate::sign::{Proof, PublicKey, Registrar};
+use crate::sign::{Proof, Proved, PublicKey, Registrar};
 
 /// What a [`Policy`] says about one event: the two readings, as a sum.
 ///
@@ -262,20 +262,29 @@ impl<P> Proven<P> {
     pub fn proof(&self) -> &Proof {
         &self.proof
     }
+
+    /// How the proof makes `object` stand: a proven object and a husk the
+    /// proof vouches for bind, and an unsigned one claims.
+    fn proved(&self, object: &Hash) -> Standing {
+        match self.proof.standing(object) {
+            Proved::Proven | Proved::Vouched => Standing::Binds,
+            Proved::Unsigned => Standing::Claims,
+        }
+    }
 }
 
+/// A husk (SPEC §3) binds where the proof VOUCHES for it, as an object
+/// binds where the proof proves it: the host took the husk from its own
+/// store or from its keeper of record, whose word it takes, and the maker
+/// verified the signature over the whole. So husking a store changes no
+/// reading under this policy (law 71).
 impl<E: Schema, P: Policy<E> + Clone> Policy<E> for Proven<P> {
     fn standing(&self, object: &Hash, event: &E) -> Standing {
-        let proven = if self.proof.proves(object) {
-            Standing::Binds
-        } else {
-            Standing::Claims
-        };
-        proven.and(self.policy.standing(object, event))
+        self.proved(object).and(self.policy.standing(object, event))
     }
 
     fn confirms(&self, object: &Hash, event: &E) -> bool {
-        self.proof.proves(object) && self.policy.confirms(object, event)
+        self.proved(object) == Standing::Binds && self.policy.confirms(object, event)
     }
 
     fn at(&self, history: &Dag<E>) -> Option<Self> {

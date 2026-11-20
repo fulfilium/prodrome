@@ -13,6 +13,7 @@ use prodrome::policy::Everything;
 use prodrome::registers::heads;
 use prodrome::schema::headed::Event;
 use prodrome::schema::Schema;
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use proptest::prelude::*;
 
@@ -70,11 +71,15 @@ fn the_append_refuses_what_verify_finds<E: Schema<Vocabulary: Default>>(
         let after = store.held().expect("memory reads");
         prop_assert_eq!(after.dag.objects().len(), held.dag.objects().len());
         let copy = MemoryStore::default();
-        sync(&store, &copy).expect("syncs");
+        sync(&store, &copy, Sender::Stranger).expect("syncs");
         let change = Envelope::Change(mk_change(root.clone(), deps, event).expect("a change"));
         let (name, print) = (seal_hash(&change), canonical_envelope(&change).into_bytes());
-        copy.receive([name.clone()].into(), &|_| Some(print.clone()))
-            .expect("a receipt takes a valid object");
+        copy.receive(
+            [name.clone()].into(),
+            &|_| Some(print.clone()),
+            Sender::Stranger,
+        )
+        .expect("a receipt takes a valid object");
         let found = copy.held().expect("memory reads").dag.verify(&Everything);
         prop_assert!(
             matches!(found.as_slice(), [Finding::Below { write, .. }] if *write == name),

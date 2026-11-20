@@ -23,6 +23,7 @@ use prodrome::fold;
 use prodrome::fpl::{self, instant_of, link, link_in, Closed, Env, LinkError, Member, Stores};
 use prodrome::nest::{History, Leaf, Level, Nest, Path, Segment, Set};
 use prodrome::policy::Everything;
+use prodrome::store::Sender;
 use prodrome::store::{sync, MemoryStore, Replica};
 use prodrome::todo::TodoVocabulary;
 use prodrome::view;
@@ -253,8 +254,8 @@ fn holding(logs: &[Vec<Event>], held: &[Option<usize>]) -> MemoryStore<Event> {
 /// The union of two replicas, neither touched.
 fn joined(a: &MemoryStore<Event>, b: &MemoryStore<Event>) -> MemoryStore<Event> {
     let out = MemoryStore::default();
-    sync(a, &out).expect("syncs");
-    sync(b, &out).expect("syncs");
+    sync(a, &out, Sender::Stranger).expect("syncs");
+    sync(b, &out, Sender::Stranger).expect("syncs");
     out
 }
 

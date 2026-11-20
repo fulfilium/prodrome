@@ -104,9 +104,10 @@ fn a_review_store_verifies() {
 /// A refusal is a value the export throws, never a panic.
 #[test]
 fn a_set_that_is_not_objects_is_refused() {
-    assert!(crate::Replica::<Review>::of("{}").is_err());
+    assert!(crate::Replica::<Review>::of("{}", crate::Sender::Stranger).is_err());
     let todo = r#"[{"hash": "00", "text": "Created()"}]"#;
-    let replica = crate::Replica::<Review>::of(todo).expect("the shape is right");
+    let replica =
+        crate::Replica::<Review>::of(todo, crate::Sender::Stranger).expect("the shape is right");
     assert!(
         replica.read().is_err(),
         "a name that is no name reads nothing"
@@ -194,7 +195,7 @@ fn a_review_store_reads_its_phases() {
 #[test]
 fn a_page_seals_into_its_replica() {
     use prodrome::event::canonical;
-    use prodrome::store::{MemoryStore, Replica as _};
+    use prodrome::store::{MemoryStore, Replica as _, Sender};
 
     let (mut replica, names) = replica();
     let (objects, _) = store();
@@ -204,9 +205,11 @@ fn a_page_seals_into_its_replica() {
         .map(|object| (seal_hash(object), canonical_envelope(object).into_bytes()))
         .collect();
     store
-        .receive(prints.keys().cloned().collect(), &|name| {
-            prints.get(name).cloned()
-        })
+        .receive(
+            prints.keys().cloned().collect(),
+            &|name| prints.get(name).cloned(),
+            Sender::Stranger,
+        )
         .expect("receives");
 
     let mut sealed = Vec::new();

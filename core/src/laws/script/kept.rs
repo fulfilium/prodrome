@@ -10,7 +10,7 @@ use crate::event::Hash;
 use crate::literal::ProdromeError;
 use crate::policy::Everything;
 use crate::schema::Schema;
-use crate::store::{EventStore, Held, MemoryStore, Overlay, Replica};
+use crate::store::{EventStore, Held, MemoryStore, Overlay, Replica, Sender};
 
 /// An actor's replica.
 #[derive(Debug)]
@@ -121,11 +121,11 @@ impl<E: Schema> Replica<E> for Kept<E> {
         }
     }
 
-    fn print(&self, name: &Hash) -> Option<Vec<u8>> {
+    fn kept(&self, name: &Hash) -> Option<Vec<u8>> {
         match self {
-            Kept::Memory(store) => store.print(name),
-            Kept::Overlay(overlay) => overlay.print(name),
-            Kept::Disk(store) => store.print(name),
+            Kept::Memory(store) => store.kept(name),
+            Kept::Overlay(overlay) => overlay.kept(name),
+            Kept::Disk(store) => store.kept(name),
         }
     }
 
@@ -141,11 +141,12 @@ impl<E: Schema> Replica<E> for Kept<E> {
         &self,
         seeds: BTreeSet<Hash>,
         print_of: &dyn Fn(&Hash) -> Option<Vec<u8>>,
+        sender: Sender,
     ) -> Result<Vec<Hash>, ProdromeError> {
         match self {
-            Kept::Memory(store) => store.receive(seeds, print_of),
-            Kept::Overlay(overlay) => overlay.receive(seeds, print_of),
-            Kept::Disk(store) => store.receive(seeds, print_of),
+            Kept::Memory(store) => store.receive(seeds, print_of, sender),
+            Kept::Overlay(overlay) => overlay.receive(seeds, print_of, sender),
+            Kept::Disk(store) => store.receive(seeds, print_of, sender),
         }
     }
 }

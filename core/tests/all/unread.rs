@@ -29,6 +29,7 @@ use prodrome::policy::Everything;
 use prodrome::registers::{fold, Node};
 use prodrome::schema::Schema;
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use proptest::prelude::*;
 use sha2::{Digest, Sha256};
 
@@ -119,6 +120,7 @@ fn reads_as_its_replica(
         prints
             .iter()
             .map(|(name, bytes)| (name.clone(), Ok(bytes.clone()))),
+        Sender::Stranger,
     )
     .interior();
     let nodes = replica.nodes().expect("a history reads");
@@ -191,6 +193,7 @@ fn reads_as_its_replica(
             after
                 .iter()
                 .map(|(name, bytes)| (name.clone(), Ok(bytes.clone()))),
+            Sender::Stranger,
         )
         .interior();
         prop_assert!(replica.get(&name).is_some(), "the write is in the history");

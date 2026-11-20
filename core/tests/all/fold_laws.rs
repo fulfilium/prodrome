@@ -42,6 +42,7 @@ use prodrome::policy::{Everything, Policy, Untrusted};
 use prodrome::reference::{mk_authored, mk_subtodo, Todo};
 use prodrome::registers::{extend, fold, since, Folded, Node};
 use prodrome::store::EventStore;
+use prodrome::store::Sender;
 use prodrome::term::Term;
 use prodrome::view;
 use proptest::prelude::*;
@@ -634,7 +635,7 @@ fn diverged(shared: &[Event], mine: &[Event], theirs: &[Event]) -> (Replicas, St
     }
     let there = Store::new(root.join("there"), roster());
     for tip in here.tips().expect("the tips derive") {
-        there.adopt(&here, &tip).expect("adopts");
+        there.adopt(&here, &tip, Sender::Stranger).expect("adopts");
     }
     for event in mine {
         seal(&here, event.clone());
@@ -643,7 +644,7 @@ fn diverged(shared: &[Event], mine: &[Event], theirs: &[Event]) -> (Replicas, St
         seal(&there, event.clone());
     }
     for tip in there.tips().expect("the tips derive") {
-        here.adopt(&there, &tip).expect("adopts");
+        here.adopt(&there, &tip, Sender::Stranger).expect("adopts");
     }
     (guard, here)
 }
@@ -1146,7 +1147,7 @@ proptest! {
         let adopted = Store::new(guard.0.join("adopted"), roster());
         copy_files(&here, adopted.root());
         for tip in there.tips().expect("the tips derive") {
-            adopted.adopt(&there, &tip).expect("adopts");
+            adopted.adopt(&there, &tip, Sender::Stranger).expect("adopts");
         }
 
         prop_assert_eq!(unioned.tips().expect("derives"), adopted.tips().expect("derives"));

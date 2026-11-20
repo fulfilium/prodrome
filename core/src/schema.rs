@@ -25,6 +25,9 @@ use crate::fold::Product;
 use crate::fpl::{Env, FplError};
 use crate::literal::{Datetime, ProdromeError, Value, Vocabulary};
 use crate::policy::Policy;
+#[cfg(doc)]
+use crate::store::Husking;
+use crate::store::{HuskObject, Other};
 use crate::term::Term;
 
 /// A store's events and what they mean.
@@ -98,6 +101,17 @@ pub trait Schema: Clone + PartialEq + Debug + Send + Sync + 'static {
     /// whoever wrote it (§5).
     fn asks(&self) -> bool {
         true
+    }
+
+    /// The husk that `print` holds: a stored print that does not hash to
+    /// its name (SPEC §3). The default reads no husk, so for a schema
+    /// without sealed parts such a print is tampered, and a store pays for
+    /// this method only after a file fails its hash. A schema that has
+    /// husks implements [`Husking`] and answers
+    /// `HuskObject::of_other(print).ok()`; only a [`Husking`] schema can
+    /// make a [`HuskObject`].
+    fn husk(_print: &Other<'_>) -> Option<HuskObject<Self>> {
+        None
     }
 }
 
