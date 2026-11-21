@@ -68,6 +68,8 @@ enum Write {
     Quarantine(Index),
     /// `record_heads`.
     RecordHeads,
+    /// `fsck`, with no damage: a hold that lists, in every store.
+    Fsck,
 }
 
 /// A door: a change of what the store keeps, by no handle of the store.
@@ -105,6 +107,7 @@ fn a_step() -> impl Strategy<Value = Step> {
         1 => write(any::<Index>().prop_map(Write::Receive).boxed()),
         1 => write(any::<Index>().prop_map(Write::Quarantine).boxed()),
         1 => write(Just(Write::RecordHeads).boxed()),
+        1 => write(Just(Write::Fsck).boxed()),
         4 => any::<Index>().prop_map(|pick| Step::Door(Door::Arrive(pick))),
         2 => any::<Index>().prop_map(|pick| Step::Door(Door::TakeAway(pick))),
         1 => Just(Step::Door(Door::DropRecord)),
@@ -124,6 +127,7 @@ fn a_step_without_doors() -> impl Strategy<Value = Step> {
         1 => write(prop::collection::vec(any::<Index>(), 1..4).prop_map(Write::Run).boxed()),
         1 => write(any::<Index>().prop_map(Write::Receive).boxed()),
         1 => write(Just(Write::RecordHeads).boxed()),
+        1 => write(Just(Write::Fsck).boxed()),
         3 => a_handle().prop_map(Step::Read),
     ]
 }
@@ -287,6 +291,9 @@ impl<'s> Script<'s> {
             }
             Write::RecordHeads => {
                 let _ = by.record_heads();
+            }
+            Write::Fsck => {
+                let _ = by.fsck();
             }
         }
         Ok(())

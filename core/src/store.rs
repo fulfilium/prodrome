@@ -153,7 +153,15 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// This handle, opened with `doors`: [`Doors::Shared`] unless the
     /// program says that nothing but this library writes `objects/`.
     #[must_use]
+    ///
+    /// A change of doors forgets the mark that the memory keeps, so the
+    /// next read lists `objects/`: a handle that read while other programs
+    /// could change the store has no mark that a decision of a store opened
+    /// as alone may trust.
     pub fn with_doors(self, doors: Doors) -> EventStore<E, Pol> {
+        if doors != self.doors {
+            self.memory().mark = None;
+        }
         EventStore { doors, ..self }
     }
 
@@ -292,10 +300,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         memory.level(gone, read, &seen);
     }
 
-    /// THE TEMPS OF A STOPPED WRITE, REMOVED BY THE NEXT HOLD. Every temp
-    /// that the store writes (an object staged, a husk, `.gitattributes`)
-    /// is written under the lock, so a temp that a holder finds was left by
-    /// a write that stopped: a killed process, or a placement that failed.
+    /// THE TEMPS OF A STOPPED WRITE, REMOVED BY THE NEXT HOLD THAT LISTS.
+    /// Every temp that the store writes (an object staged, a husk,
+    /// `.gitattributes`, `.gitignore`) is written under the lock, so a temp
+    /// that a holder finds was left by a write that stopped: a killed
+    /// process, or a write that failed. Each leaves no mark of the last
+    /// hold, so the next hold lists, also in a store opened as alone, and
+    /// removes them.
     /// The holder removes each one in `objects/` (`garbage`, from its
     /// listing) and in the root, with no sync: a removal that a power loss
     /// undoes is done again by the next hold. An entry that is no temp (a
@@ -1088,10 +1099,13 @@ impl<E: Schema, Pol> EventStore<E, Pol> {
     /// the memory is level with `objects/`. A mark that cannot be written
     /// is absent, which every reader reads as "list".
     fn end_hold(&self, memory: &mut Levelled<E>, level: Level) {
-        let mark = writes::Mark::fresh(random);
-        memory.mark = match (writes::write(&self.root, mark), level) {
-            (Ok(()), Level::Level) => Some(mark),
-            (Ok(()) | Err(_), Level::Behind) | (Err(_), Level::Level) => None,
+        memory.mark = match (writes::Mark::fresh(), level) {
+            (Some(mark), Level::Level) => writes::write(&self.root, mark).ok().map(|()| mark),
+            (Some(mark), Level::Behind) => {
+                let _ = writes::write(&self.root, mark);
+                None
+            }
+            (None, Level::Level | Level::Behind) => None,
         };
     }
 }
@@ -2129,84 +2143,164 @@ mod tests {
         }
     }
 
+    /// How a store opened as alone ends the lag of a door's object: a
+    /// hold by a handle that lists.
+    #[derive(Debug, Clone, Copy)]
+    enum Heal {
+        /// A write by a fresh handle.
+        FreshWrite,
+        /// `record_heads()` by the handle that lagged.
+        RecordHeads,
+        /// `fsck` by the handle that lagged.
+        Fsck,
+    }
+
     /// Law 85: an object that arrives by a door that a store opened as its
     /// program's alone said it does not have is not read as history by a
     /// handle that has read the store, also under that handle's own holds,
     /// and `verify` reports the record of heads as stale
     /// (`Finding::StaleHeads`) all the while. A fresh handle lists, so it
-    /// reads the object, and nothing is lost. Once a handle that has read
-    /// the object holds the lock, every handle reads it.
+    /// reads the object, and nothing is lost. Once a handle that lists holds
+    /// the lock (a fresh handle's write, `record_heads()` or `fsck`), every
+    /// handle reads it, under the bytes that the door brought.
     #[test]
     fn an_object_by_a_door_a_store_said_it_lacks_is_found_and_never_lost() {
-        let root = scratch("alone");
-        let alone = |root: &Path| Store::new(root, roster()).with_doors(Doors::Alone);
-        let warm = alone(&root);
-        warm.init("alone").expect("begins");
-        let first = warm
-            .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
-            .expect("appends");
-        let other = Store::new(scratch("alone-other"), roster());
-        other
-            .adopt(&warm, &first, Sender::Stranger)
-            .expect("adopts");
-        let door = other
-            .append(mk_created("beta", at(2), "ada", "", "").expect("valid"))
-            .expect("appends");
-        fs::copy(other.object_path(&door), warm.object_path(&door)).expect("copies");
-        let stale = |store: &Store| {
-            store
-                .verify()
-                .iter()
-                .any(|finding| matches!(finding, Finding::StaleHeads { .. }))
-        };
-        assert!(warm.dag().expect("reads").get(&door).is_none());
-        let next = warm
-            .append(mk_created("gamma", at(3), "ada", "", "").expect("valid"))
-            .expect("appends");
-        let read = warm.dag().expect("reads");
-        assert!(read.get(&next).is_some(), "its own write");
-        assert!(read.get(&door).is_none(), "not under its own hold");
-        assert!(stale(&warm), "verify reports the record as stale");
-        let fresh = alone(&root);
-        assert!(
-            fresh.dag().expect("reads").get(&door).is_some(),
-            "a fresh handle lists"
-        );
-        assert!(stale(&fresh));
-        fresh
-            .append(mk_created("delta", at(4), "ada", "", "").expect("valid"))
-            .expect("appends");
-        assert!(
-            warm.dag().expect("reads").get(&door).is_some(),
-            "after its hold"
-        );
-        assert!(!stale(&warm));
-        let _ = fs::remove_dir_all(&root);
-        let _ = fs::remove_dir_all(other.root());
+        for heal in [Heal::FreshWrite, Heal::RecordHeads, Heal::Fsck] {
+            let root = scratch(&format!("alone-{heal:?}"));
+            let alone = |root: &Path| Store::new(root, roster()).with_doors(Doors::Alone);
+            let warm = alone(&root);
+            warm.init("alone").expect("begins");
+            let first = warm
+                .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
+                .expect("appends");
+            let other = Store::new(scratch(&format!("alone-other-{heal:?}")), roster());
+            other
+                .adopt(&warm, &first, Sender::Stranger)
+                .expect("adopts");
+            let door = other
+                .append(mk_created("beta", at(2), "ada", "", "").expect("valid"))
+                .expect("appends");
+            let bytes = fs::read(other.object_path(&door)).expect("reads");
+            fs::write(warm.object_path(&door), &bytes).expect("copies");
+            let stale = |store: &Store| {
+                store
+                    .verify()
+                    .iter()
+                    .any(|finding| matches!(finding, Finding::StaleHeads { .. }))
+            };
+            assert!(warm.dag().expect("reads").get(&door).is_none());
+            let next = warm
+                .append(mk_created("gamma", at(3), "ada", "", "").expect("valid"))
+                .expect("appends");
+            let read = warm.dag().expect("reads");
+            assert!(read.get(&next).is_some(), "its own write");
+            assert!(read.get(&door).is_none(), "not under its own hold");
+            assert!(stale(&warm), "verify reports the record as stale");
+            let fresh = alone(&root);
+            assert!(
+                fresh.dag().expect("reads").get(&door).is_some(),
+                "a fresh handle lists"
+            );
+            assert!(stale(&fresh));
+            match heal {
+                Heal::FreshWrite => drop(
+                    fresh
+                        .append(mk_created("delta", at(4), "ada", "", "").expect("valid"))
+                        .expect("appends"),
+                ),
+                Heal::RecordHeads => drop(warm.record_heads().expect("records")),
+                Heal::Fsck => drop(warm.fsck()),
+            }
+            assert!(
+                warm.dag().expect("reads").get(&door).is_some(),
+                "after {heal:?}"
+            );
+            assert!(!stale(&warm), "after {heal:?}");
+            assert_eq!(fs::read(warm.object_path(&door)).expect("reads"), bytes);
+            assert_eq!(warm.kept(&door), Some(bytes));
+            let _ = fs::remove_dir_all(&root);
+            let _ = fs::remove_dir_all(other.root());
+        }
     }
 
-    /// Law 82 in a store opened as its program's alone: a batch killed
-    /// after it staged a temp leaves no mark, so the next decision lists,
-    /// and it removes the temp.
+    /// Law 82 in a store opened as its program's alone: a hold killed
+    /// after it renamed one print and staged another leaves no mark, so the
+    /// next decision lists: it reads the renamed print and removes the
+    /// temp.
     #[test]
     fn a_store_alone_removes_a_killed_batch_s_temps() {
         let store = Store::new(scratch("alone-sweep"), roster()).with_doors(Doors::Alone);
         store.init("alone").expect("begins");
+        let genesis = tips(&store).into_iter().next().expect("a genesis");
+        let other = Store::new(scratch("alone-sweep-other"), roster());
+        other
+            .adopt(&store, &genesis, Sender::Stranger)
+            .expect("adopts");
+        let renamed = other
+            .append(mk_created("beta", at(2), "ada", "", "").expect("valid"))
+            .expect("appends");
+        // A killed hold: it removed the mark, renamed one print, and left a
+        // temp of the next.
+        writes::remove(store.root()).expect("a killed hold leaves no mark");
+        fs::copy(other.object_path(&renamed), store.object_path(&renamed)).expect("renames");
         let temp = store.objects_dir().join("00000000000000ab.tmp");
         fs::write(&temp, b"a print cut sh").expect("stages");
-        writes::remove(store.root()).expect("a killed hold leaves no mark");
-        store
+        let written = store
             .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
             .expect("appends");
         assert!(!temp.exists(), "the decision removed the temp");
+        let read = store.dag().expect("reads");
+        assert!(
+            read.get(&renamed).is_some(),
+            "the decision read what the killed hold renamed"
+        );
+        assert!(read.get(&written).is_some());
+        let _ = fs::remove_dir_all(other.root());
         assert_eq!(findings(&store), Vec::<String>::new());
         let _ = fs::remove_dir_all(store.root());
+    }
+
+    /// Law 84: a change of doors forgets the mark that a handle keeps. A
+    /// handle opened as shared reads, a door brings an object, and the same
+    /// handle opened as alone reads the object at its next read, and its
+    /// next decision is made over it.
+    #[test]
+    fn a_change_of_doors_forgets_the_mark() {
+        let root = scratch("doors-change");
+        let shared = Store::new(&root, roster());
+        shared.init("doors").expect("begins");
+        let genesis = tips(&shared).into_iter().next().expect("a genesis");
+        let other = Store::new(scratch("doors-change-other"), roster());
+        other
+            .adopt(&shared, &genesis, Sender::Stranger)
+            .expect("adopts");
+        let door = other
+            .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
+            .expect("appends");
+        fs::copy(other.object_path(&door), shared.object_path(&door)).expect("copies");
+        assert!(
+            shared.dag().expect("reads").get(&door).is_none(),
+            "a door, read at the next hold"
+        );
+        let alone = shared.with_doors(Doors::Alone);
+        assert!(
+            alone.dag().expect("reads").get(&door).is_some(),
+            "the mark is forgotten"
+        );
+        let next = alone
+            .append(mk_completed("alpha", at(2), "ada", "").expect("valid"))
+            .expect("appends");
+        assert_eq!(change(&alone, &next).deps, vec![door]);
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(other.root());
     }
 
     /// Law 86: the doors change no stored byte. The same writes, to a store
     /// opened as shared and to one opened as its program's alone, leave the
     /// same objects and the same record of heads, and a store written one
     /// way reads the same when it is opened the other way.
+    /// The mark of the last hold is left out, since it is random in both
+    /// stores; `.gitignore` and `.gitattributes` are constants of the store.
     #[test]
     fn the_doors_change_no_stored_byte() {
         let written: Vec<(Store, BTreeMap<Hash, Vec<u8>>, String)> = [Doors::Shared, Doors::Alone]

@@ -166,10 +166,10 @@ fn a_failed_placement_reads_as_cold(clean: &dyn StoreOfRecord<Letter>) {
     let mut kept = store.prints();
     kept.remove(&later);
     assert_eq!(kept, clean.prints());
-    assert!(store
-        .verify()
-        .iter()
-        .all(|finding| store.left_by_a_stop(finding)));
+    // The hold whose rename failed kept no mark, so the decision of the
+    // run above listed and removed the temp that the failure left, in a
+    // store opened either way.
+    assert_eq!(store.verify(), Vec::<Finding>::new());
 }
 
 /// Law 79 and the second clause of law 61, over every store of record.

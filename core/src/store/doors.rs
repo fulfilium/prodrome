@@ -15,9 +15,17 @@ pub enum Doors {
     /// Nothing but this library, under this store's lock, writes
     /// `objects/`. A decision trusts the mark of the last hold, as a read
     /// does, and lists only where the mark is not the one its handle keeps.
-    /// An object that arrives by a door all the same is not read as history
-    /// by a handle that has read the store until a handle that lists holds
-    /// the lock, and `verify` reports the record of heads as stale (SPEC
-    /// law 85).
+    ///
+    /// The promise is made for every process that opens the directory, not
+    /// only for this one. A `git merge`, a copy of files, a person, or a
+    /// binary of a version before the mark of the last hold is a door, and
+    /// breaks it. Where it is broken, an object that arrives by the door is
+    /// not read as history by a handle that has read the store, also under
+    /// that handle's own holds: a decision answers from a history that
+    /// lacks the object, and the store's own hold writes a record of heads
+    /// that lacks it. That lasts until a handle that lists holds the lock:
+    /// a fresh handle's write, `record_heads()` or `fsck`. Meanwhile
+    /// `verify` reports the record of heads as stale, and a fresh handle
+    /// reads the object, so nothing is lost (SPEC law 85).
     Alone,
 }

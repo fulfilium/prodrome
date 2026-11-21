@@ -202,9 +202,6 @@ pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// is no door, whatever doors the store has.
     fn seed(&self, prints: &BTreeMap<Hash, Vec<u8>>);
 
-    /// Does `finding` name only what a write that stopped left?
-    fn left_by_a_stop(&self, finding: &Finding) -> bool;
-
     /// A fault: every placement under `name` fails until [`Self::clear`].
     fn obstruct(&self, name: &Hash);
 
@@ -373,10 +370,6 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
         for (name, bytes) in prints {
             WithDoors::arrive(self, name, bytes);
         }
-    }
-
-    fn left_by_a_stop(&self, finding: &Finding) -> bool {
-        matches!(finding, Finding::Garbage(file) if file.ends_with(".tmp"))
     }
 
     /// A directory under the print's file name, onto which no rename lands.

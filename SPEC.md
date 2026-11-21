@@ -192,9 +192,11 @@ since this grammar has tuples and no mapping.
   file system) it syncs each temp as it writes it. A staging or a sync
   that fails removes the temps it made. A stop of a batch can leave a temp
   for each object that was not yet renamed. Every temp is written under
-  the lock, so the next hold of the lock (a write, `decide`,
-  `record_heads()` or `fsck`) removes each temp it finds in `objects/` and
-  in the root, with no sync, and leaves every other entry; an entry named
+  the lock, and a hold that was killed, or in which a write failed, keeps
+  no mark of the last hold, so the next hold of the lock (a write,
+  `decide`, `record_heads()` or `fsck`) lists `objects/`, also in a store
+  opened as alone, and removes each temp it finds in `objects/` and in
+  the root, with no sync, and leaves every other entry; an entry named
   like a temp that cannot be removed stays, and `verify` reports it (law
   82). A directory the store makes (the root, `objects/`,
   `quarantine/`) is synced into its parent before anything is written into
@@ -397,10 +399,11 @@ since this grammar has tuples and no mapping.
     checkout of the directory, or an older binary that writes no record.
     After such a door, the record can be older than the objects, and a
     handle that has read the store reads the history that it read (see
-    "The mark of the last hold" below). The one remedy is a hold of the
-    lock: a host calls `record_heads()`, which lists `objects/`, derives
-    and records the heads, and writes a fresh mark, so that every handle
-    lists at its next read. Until then, readers of `heads()` see the last
+    "The mark of the last hold" below). The one remedy is a hold that
+    lists `objects/`: a host calls `record_heads()`, which lists in every
+    store, derives and records the heads, and writes a fresh mark, so that
+    every handle lists at its next read. (In a store opened as shared,
+    every hold lists; in a store opened as alone, a decision does not.) Until then, readers of `heads()` see the last
     recorded history, and `verify` reports the record as stale. Such a
     door also speaks as the store's keeper for every husk it brings (§3,
     "A husk"): a host that does not take its word asks `Dag::husks` and
@@ -429,9 +432,13 @@ since this grammar has tuples and no mapping.
   `folded()`) reads the file, and lists `objects/` only when it holds no
   mark or another mark than the one the handle keeps. So a read sees every
   write of the store at once, and a change by a door that the store does
-  not own at the first read after the next hold of the lock by any handle.
-  A fresh handle, a hold, `verify`, and `heads()` where it does not serve
-  the record always list.
+  not own at the first read after the next hold of the lock that lists. A
+  fresh handle, `verify`, `record_heads()`, `fsck`, `heads()` where it does
+  not serve the record, and every hold of a store opened as shared always
+  list; a decision of a store opened as alone lists only where its mark is
+  not the file's ("The doors a store has" below). A hold in which a write
+  failed keeps no mark, and every mark is drawn from the system's random
+  source, so two processes forked from one parent draw different marks.
   - Every process that writes a store runs a version that writes the
     mark: an older binary holds the lock and writes no mark, so its writes
     are a door to the handles of a newer one. A store never rewrites a
@@ -2257,7 +2264,8 @@ doors, run over every store of record.
     `store_laws/stops.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
 62. **Another door's objects read as the older heads.** Objects that a
     program adds to `objects/` without the store read as the older heads
-    until a hold of the lock, a `record_heads()` or a deletion of the
+    until a hold of the lock that lists (every hold of a store opened as
+    shared; `record_heads()` or `fsck` in any store), or a deletion of the
     record, and as the derived heads after each.
     `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`,
     `store_laws/script.rs::another_door_s_objects_read_as_the_older_heads`.
@@ -2559,10 +2567,10 @@ Laws 82 and 83 are §3's durable batch, over every store of record and at
 each step of a placement.
 
 82. **The next hold removes what a stopped write left.** After a write
-    stops between staging its bytes and renaming them, `verify` reports
-    each temp it left, and the next hold of the lock (a decision,
-    `record_heads()` or `fsck`) removes every such temp, changes no print
-    and leaves a stray. A staging or a sync that fails removes the temps it
+    stops between staging its bytes and renaming them, killed or failed,
+    `verify` reports each temp it left, and the next hold of the lock (a
+    decision, `record_heads()` or `fsck`), in a store opened either way,
+    removes every such temp, changes no print and leaves a stray. A staging or a sync that fails removes the temps it
     made and places nothing; a failed sync of the directory leaves every
     print renamed. At each of these faults, laws 61 and 79 hold inside the
     hold.
@@ -2580,21 +2588,24 @@ opened as shared and as its program's alone.
 
 84. **A store that is its program's alone keeps every law with no door.**
     After every step of a script of writes and reads with no door (appends,
-    runs of appends under one hold, receipts, `record_heads`), by three
-    handles of a store opened as shared or as alone, laws 45, 60 and 65
-    hold.
+    runs of appends under one hold, receipts, `record_heads`, `fsck`), by
+    three handles of a store opened as shared or as alone, laws 45, 60 and
+    65 hold. A change of a handle's doors forgets the mark that it keeps,
+    so its next read lists.
     `store_laws/script.rs::every_step_of_a_script_without_doors_keeps_the_laws`.
 85. **A door that a store said it lacks is found and loses nothing.** In a
     store opened as alone, an object that arrives by a door is not read as
     history by a handle that has read the store, also under its own holds;
     `verify` reports `Finding::StaleHeads` until a handle that has read
     the object holds the lock; a fresh handle reads the object; and after
-    such a hold, every handle reads it.
+    such a hold (a fresh handle's write, `record_heads()` or `fsck`),
+    every handle reads it, and the object's bytes are the door's.
     `store.rs::tests::an_object_by_a_door_a_store_said_it_lacks_is_found_and_never_lost`.
 86. **The doors change no stored byte.** The same writes to a store opened
     as shared and to one opened as alone leave the same objects and the
     same record of heads, and a store reads the same when it is opened the
-    other way.
+    other way. The mark of the last hold differs, since it is random in
+    both; `.gitignore` and `.gitattributes` are the store's constants.
     `store.rs::tests::the_doors_change_no_stored_byte`.
 
 ## 10. Non-goals
