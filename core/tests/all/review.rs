@@ -183,7 +183,10 @@ proptest! {
         }
         let both: Vec<Phase> = a.iter().chain(&b).copied().collect();
         let joined: HashSet<Phase> = maximal(&both, |phase| phase).into_iter().collect();
-        prop_assert_eq!(phases(&here.0, "pr-1"), joined);
+        // A new handle reads the copied files at once; `here`, which has
+        // read the store, reads them at the next hold of the lock.
+        let reopened = Store::new(here.0.root(), Everything);
+        prop_assert_eq!(phases(&reopened, "pr-1"), joined.clone());
         let lagging = here
             .0
             .verify()
@@ -192,6 +195,7 @@ proptest! {
         prop_assert!(lagging);
         here.0.record_heads().expect("records");
         prop_assert!(here.0.verify().is_empty());
+        prop_assert_eq!(phases(&here.0, "pr-1"), joined);
         let recorded = here.0.heads().expect("reads the record");
         prop_assert_eq!(
             recorded.tips(),

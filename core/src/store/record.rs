@@ -26,7 +26,7 @@ use crate::literal::ProdromeError;
 pub(super) const FILE: &str = ".heads";
 
 /// What the store writes as its own `.gitignore`, where there is none.
-const GITIGNORE: &str = "/.heads\n";
+const GITIGNORE: &str = "/.heads\n/.writes\n";
 
 /// What a holder of the store's lock did to the record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,7 +336,7 @@ mod tests {
         );
         assert_eq!(
             std::fs::read_to_string(root.join(".gitignore")).expect("written"),
-            "/.heads\n"
+            "/.heads\n/.writes\n"
         );
         let _ = std::fs::remove_dir_all(&root);
     }

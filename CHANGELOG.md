@@ -10,6 +10,20 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The mark of the last hold lets a warm handle read without a listing
+  (SPEC §3, "The mark of the last hold"; laws 40, 45 and 81).** Every hold
+  of a store's lock writes a fresh random mark into `root/.writes`. A
+  handle that has read the store reads that file, and lists `objects/`
+  only when the mark is not the one it keeps. A read on such a handle of a
+  store of 50,000 objects takes 0.08 ms in place of 130 ms. A change by a
+  door that the store does not own is read at the next hold of the lock;
+  after such a door, a host calls `record_heads()`. Every process that
+  writes a store moves to this version together: an older binary holds the
+  lock and writes no mark, so its writes are a door to a newer one. A new
+  store's `.gitignore` also holds the line `/.writes`; the host of an older
+  store adds that line, and `verify` reports a `.heads` or `.writes` that
+  the `.gitignore` does not name (`Finding::Unignored`). No stored object
+  changes.
 - **The file store reads, keeps and makes husks (SPEC §3, laws 71 to
   75, 77, 78 and 80).** A husk is a `Change` whose event has each sealed part
   replaced by the name of its key, kept under the name of the whole

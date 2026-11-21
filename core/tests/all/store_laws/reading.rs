@@ -483,6 +483,9 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
     let last = damaged.len() - 2;
     damaged[last] ^= 1;
     store.overwrite(&name, &damaged);
+    // The overwrite is a door: the handle reads it at the next hold of the
+    // lock, here the write that refuses.
+    assert!(store.append(event[0].clone()).is_err(), "a write refuses");
     let left_out = read(store);
     assert!(
         left_out.0.get(&name).is_none(),
@@ -493,8 +496,8 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
         [Excluded { name: out, why: Some(Unread::Tampered(_)), .. }] if *out == name
     ));
     assert_eq!(left_out, read(&*store.open()));
-    assert!(store.append(event[0].clone()).is_err(), "a write refuses");
     store.overwrite(&name, &bytes);
+    // A refused hold leaves no mark, so the handle lists again.
     assert_eq!(read(store), before);
 }
 
