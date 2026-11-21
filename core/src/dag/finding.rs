@@ -21,6 +21,10 @@ pub enum Finding {
     Leftover(&'static str),
     /// A file in `quarantine/`.
     Quarantined(String),
+    /// A file of the store that is local to one machine (`.heads`,
+    /// `.writes`), which the index of the git repository that holds the
+    /// store lists.
+    Tracked(&'static str),
     /// A parent no readable object is: absent, or unread for `why`.
     Broken {
         at: Hash,
@@ -137,6 +141,11 @@ impl fmt::Display for Finding {
             Finding::Leftover(file) => write!(
                 f,
                 "{file} is left from before tips were derived (SPEC §3): nothing reads it, delete it"
+            ),
+            Finding::Tracked(file) => write!(
+                f,
+                "{file} is local to one machine, and git tracks it (SPEC §3): untrack it with \
+                 `git rm --cached`, and add /{file} to the store's .gitignore"
             ),
             Finding::Quarantined(file) => write!(
                 f,

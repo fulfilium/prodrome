@@ -376,7 +376,10 @@ proptest! {
         for name in &moved {
             fs::rename(file(&own, name), file(&base, name)).expect("moves");
         }
-        prop_assert_eq!(names(&base), held.union(&moved).cloned().collect::<BTreeSet<_>>());
+        // A new handle reads the moved files at once; `base`, which has
+        // read the store, reads them at the next hold of the lock.
+        let reopened = Store::new(base.root(), roster());
+        prop_assert_eq!(names(&reopened), held.union(&moved).cloned().collect::<BTreeSet<_>>());
         let lagging = base
             .verify()
             .iter()

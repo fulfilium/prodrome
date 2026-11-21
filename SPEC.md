@@ -370,9 +370,10 @@ since this grammar has tuples and no mapping.
     process or by a power loss, leaves a served record that is not the
     derived heads (law 61).
   - Before the store first writes the record into a root that holds no
-    `.gitignore`, it writes one, durably, with the line `/.heads`, and it
-    never rewrites a `.gitignore` that is there. A host that keeps its own
-    `.gitignore` adds `/.heads` to it. Two clones never share a record.
+    `.gitignore`, it writes one, durably, with the lines `/.heads` and
+    `/.writes`, and it never rewrites a `.gitignore` that is there. A host
+    that keeps its own `.gitignore` adds both lines to it. Two clones never
+    share a record.
   - A program that changes `objects/` without the store uses a door that
     the store does not own: a union or a copy of object files, a same-name
     move of files from a staging store, a version-control merge or
@@ -391,6 +392,30 @@ since this grammar has tuples and no mapping.
     the lock records. A host that never calls `heads()` needs to do nothing
     for correctness, but its `verify` reports the stale record after such a
     door until a write, a `decide`, a `record_heads()` or a deletion.
+- **The count of holds.** A store on disk also keeps `root/.writes`, a file
+  local to one machine that holds a random tag of 16 hex digits, one space,
+  and the number of holds of the store's lock, in decimal, with no newline.
+  Every hold of the lock (each write, `decide`, `record_heads()` and
+  `fsck`) removes the file when it takes the lock, with no sync, and writes
+  the next count when it lets the lock go; a hold that refuses before its
+  end leaves no file. A file that is absent, cut short or not exactly that
+  print holds no count. A handle keeps the count that it read before its
+  last listing of `objects/`, or that its own hold wrote. A read of the
+  history (`held()`, `tips()`, `dag()`, `folded()`) reads the file, and
+  lists `objects/` only when it holds no count or another count than the
+  one the handle keeps. So a read sees every write of the store at once,
+  and a change by a door that the store does not own at the first read
+  after the next hold of the lock by any handle. A fresh handle, a hold,
+  `verify`, and `heads()` where it does not serve the record always list.
+  - A store never rewrites a `.gitignore` that is there, so the host of a
+    store written before the count of holds adds the line `/.writes` to
+    the store's `.gitignore`. A hold writes `.writes` into such a store
+    all the same. `verify` reads the index of the git repository that holds
+    the store's root (versions 2, 3 and 4 of its format, with SHA-1 or
+    SHA-256 object ids, from a work tree or a linked one) and reports each
+    of `.heads` and `.writes` that the index lists (`Finding::Tracked`),
+    because a tracked record carries one machine's state into every clone.
+    A store in no repository, or in one with no index, reports neither.
 - **`init(label)`** writes a prodrome's `Genesis`, once.
 - **Appending writes a `Change`**, never a `Woven`, into the writer's
   genesis; a store of several geneses is written through a handle that
@@ -461,7 +486,8 @@ since this grammar has tuples and no mapping.
   when neither is an ancestor of the other.
 - **`verify`** changes nothing and reports an object not hashing to its
   name, a missing parent, a cycle, a malformed `Woven`, a leftover `HEAD` or
-  `refs/`, a record of heads that parses and is not the derived heads, every entry of `objects/` that is not named `<name>.py` for a
+  `refs/`, a record of heads that parses and is not the derived heads, a
+  `.heads` or `.writes` that git tracks (law 81), every entry of `objects/` that is not named `<name>.py` for a
   well-formed name (a temp an interrupted write left, or a stray) and every
   temp in the root as garbage, each by name — the reads pass over such an
   entry, and only `verify` speaks of it — a receipt for
@@ -1684,9 +1710,10 @@ two writers' changes and over legacy chains, with any objects removed.
 40. **A store reads the largest down-set it holds.** The interior of a set
     of objects is exactly the objects no removed object is beneath; it is
     never more than the set, idempotent, monotone, meet-preserving and the
-    whole of a history. A store holding any subset of a history, read cold
-    or by a handle that held more, reads its objects, its fold and its tips
-    as a store given only that subset's interior. And quarantine is that
+    whole of a history. A store holding any subset of a history, read cold,
+    or by a handle that held more and that a hold of the lock passed since
+    the subset was laid out, reads its objects, its fold and its tips as a
+    store given only that subset's interior. And quarantine is that
     reading: an object damaged on disk is set aside by `fsck`, named in its
     report and kept byte for byte, and the store reads the history without
     it and everything resting on it.
@@ -1870,8 +1897,9 @@ the declared proposal schema read at it or at a newer schema, with any
 files damaged in place, removed, or joined by prints that are no object.
 
 45. **The store of record reads totally, as a replica does.** A store on
-    disk holding a set of files, read by a fresh handle or by one that
-    held other files first, holds exactly what a replica handed the same
+    disk holding a set of files, read by a fresh handle, or by one that
+    held other files first and that a hold of the lock passed since a door
+    changed the files, holds exactly what a replica handed the same
     prints by their keeper of record holds (a store reads its own files as
     their keeper; from a stranger, a husk among them is unread, §3): the same history (the interior of the prints), the same
     objects waiting outside it and the same unread prints, so the same
@@ -2470,6 +2498,20 @@ faults and without.
     `sign` refuses a husk's name, and signs a whole the replica holds.
     `husk.rs::no_signature_over_a_name_whose_whole_is_not_held`,
     `wasm/exports/src/husk.rs::a_replica_reads_a_keepers_husk_and_never_signs_it`.
+
+Law 81 is §3's report of a record that git tracks, over generated indexes
+of git's three formats.
+
+81. **A local record that git tracks is reported.** The paths that an
+    index of version 2, 3 or 4 lists, with object ids of SHA-1 or SHA-256,
+    are read back exactly, in order, and an index cut short or of another
+    format does not parse. `verify` reports `.heads` and `.writes` exactly
+    when the index of the repository that holds the store lists them, also
+    from a linked work tree, and the store's own `.gitignore` is not
+    reported.
+    `store/tracked.rs::tests::an_index_lists_exactly_its_paths`,
+    `store/tracked.rs::tests::a_cut_or_foreign_index_does_not_parse`,
+    `store/tracked.rs::tests::verify_names_a_local_file_that_git_tracks`.
 
 ## 10. Non-goals
 

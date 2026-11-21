@@ -93,6 +93,8 @@ pub struct Decision<'s, E: Schema, Pol> {
     pub(super) memory: MutexGuard<'s, Memory<E>>,
     /// What this hold did to the record of heads.
     pub(super) record: Record,
+    /// The count of holds that the hold read when it began.
+    pub(super) prior: Option<super::writes::Count>,
     pub(super) _locked: Option<File>,
 }
 
@@ -103,6 +105,7 @@ pub struct Decision<'s, E: Schema, Pol> {
 impl<E: Schema, Pol> Drop for Decision<'_, E, Pol> {
     fn drop(&mut self) {
         let _ = self.record.finish(&self.store.root, &self.memory.heads());
+        self.store.end_hold(self.prior);
     }
 }
 
