@@ -1009,7 +1009,7 @@ Each is a property test over generated histories, in the core's `tests/`:
     disk, read cold or warm, holds exactly what a replica handed its files
     holds, its writes refusing exactly while a print is unread. BUILT: SPEC
     laws 44 and 45, `core/tests/all/down_set.rs`,
-    `wasm/exports/src/unread.rs`, `core/tests/all/unread.rs`.
+    `wasm/exports/src/unread.rs`, `core/tests/all/store_laws/reading.rs`.
 
 15. **A digest.** Over generated sets of lines and summaries: the tree is a
     function of the set; a view tiles the log, never costs more than its

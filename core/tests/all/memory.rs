@@ -6,26 +6,22 @@
 //! that puts parents first is `fold` of the union, so the state a store holds
 //! is a function of its objects and not of the order they reached it.
 //!
-//! Then the store, driven the way hosts drive one: its own appends, another
-//! writer's on the same directory, a third replica's files arriving one at a
-//! time in no causal order (a child before its parent), an object deleted,
-//! and reads in between. After every step the handle that lived through it
-//! reads exactly what a fresh handle reads of the same directory (the
-//! objects, the fold, each register's reading and the heads), and every
-//! append it made wrote byte for byte what a fresh handle's append would
-//! have. And law 7's pieces where the memory meets them: an adoption through
-//! a handle that has read is idempotent and order-free, an interrupted one
-//! completes on the next, and what it reads after is the reading of the
-//! union of the two directories.
+//! Then the store: law 7's pieces where the memory meets them. An adoption
+//! through a handle that has read is idempotent and order-free, an
+//! interrupted one completes on the next, and what it reads after is the
+//! reading of the union of the two directories. A handle that lives through
+//! a script of writes and other doors reads as a fresh one: that is law 45,
+//! in `store_laws/script.rs`.
 
 use crate::common;
+use crate::store_laws::{copy_prints, StoreOfRecord};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use prodrome::dag::{Excluded, Unread};
+use prodrome::dag::Excluded;
 use prodrome::event::{Actor, Hash, TodoEvent, TodoId};
 use prodrome::fold::{self as folds, Kind, Product};
 use prodrome::policy::Untrusted;
@@ -255,142 +251,8 @@ fn read(store: &Store) -> Result<Read, String> {
     })
 }
 
-/// `root`'s object files, copied into `to`.
-pub(crate) fn copy_store(root: &Path, to: &Path) {
-    let objects = to.join("objects");
-    fs::create_dir_all(&objects).expect("creates objects/");
-    if let Ok(entries) = fs::read_dir(root.join("objects")) {
-        for entry in entries {
-            let path = entry.expect("an entry").path();
-            fs::copy(&path, objects.join(path.file_name().expect("a name"))).expect("copies");
-        }
-    }
-}
-
-/// One thing that happens to a store.
-#[derive(Debug, Clone)]
-enum Step {
-    /// An append by the handle under test, by another long-lived handle on
-    /// the same directory, or by a fresh one.
-    Append(u8, prop::sample::Index),
-    /// One file of the third replica's that the store lacks, put in its
-    /// directory as a copy or a `git merge` would.
-    Arrive(prop::sample::Index),
-    /// An object file deleted, as a host deletes a rejected proposal.
-    Delete(prop::sample::Index),
-    /// A read by the handle under test.
-    Read,
-}
-
-fn a_step() -> impl Strategy<Value = Step> {
-    prop_oneof![
-        4 => (0u8..3, any::<prop::sample::Index>()).prop_map(|(by, event)| Step::Append(by, event)),
-        3 => any::<prop::sample::Index>().prop_map(Step::Arrive),
-        1 => any::<prop::sample::Index>().prop_map(Step::Delete),
-        2 => Just(Step::Read),
-    ]
-}
-
-/// The names in `root/objects/`, in name order.
-fn names_in(root: &Path) -> Vec<Hash> {
-    let mut names: Vec<Hash> = fs::read_dir(root.join("objects"))
-        .map(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| {
-                    let file = entry.file_name().to_string_lossy().into_owned();
-                    file.strip_suffix(".py")
-                        .and_then(|name| Hash::new(name).ok())
-                })
-                .collect()
-        })
-        .unwrap_or_default();
-    names.sort();
-    names
-}
-
 proptest! {
     #![proptest_config(crate::common::cases::cases(32))]
-
-    /// INCREMENTAL EQUALS COLD. Whatever happens to a store, in whatever
-    /// order, the handle that saw it happen reads exactly what a fresh
-    /// handle reads (objects, fold, readings, heads, or the same refusal),
-    /// and each of its appends wrote the object a fresh handle's append to
-    /// the same directory writes, byte for byte.
-    #[test]
-    fn a_store_read_incrementally_reads_as_cold(
-        pool in a_log(),
-        theirs in a_log(),
-        steps in prop::collection::vec(a_step(), 1..40),
-    ) {
-        prop_assume!(!pool.is_empty());
-        let scratch = Scratch::new("cold");
-        let warm = scratch.store("store");
-        warm.init("memory").expect("begins");
-        let other = scratch.store("store");
-        // The third replica shares the genesis and writes on its own, so its
-        // files are concurrent writes, conflicts and twins of the store's.
-        let third = scratch.store("third");
-        copy_store(warm.root(), third.root());
-        for event in pool.iter().chain(&theirs).step_by(2) {
-            third.append(event.clone()).expect("appends");
-        }
-        let genesis = warm.tips().expect("derives").into_iter().next().expect("the genesis");
-        for (n, step) in steps.iter().enumerate() {
-            match step {
-                Step::Append(by, event) => {
-                    let event = event.get(&pool).clone();
-                    let twin = scratch.0.join(format!("twin-{n}"));
-                    copy_store(warm.root(), &twin);
-                    let cold = Store::new(&twin, roster()).append(event.clone());
-                    let written = match by {
-                        0 => warm.append(event),
-                        1 => other.append(event),
-                        _ => scratch.store("store").append(event),
-                    };
-                    prop_assert_eq!(
-                        written.as_ref().map_err(ToString::to_string),
-                        cold.as_ref().map_err(ToString::to_string)
-                    );
-                    if let Ok(name) = written {
-                        let file = |root: &Path| {
-                            fs::read(root.join("objects").join(format!("{}.py", name.as_str())))
-                                .expect("written")
-                        };
-                        prop_assert_eq!(file(warm.root()), file(&twin));
-                    }
-                }
-                Step::Arrive(pick) => {
-                    let held: BTreeSet<Hash> = names_in(warm.root()).into_iter().collect();
-                    let lacking: Vec<Hash> = names_in(third.root())
-                        .into_iter()
-                        .filter(|name| !held.contains(name))
-                        .collect();
-                    if !lacking.is_empty() {
-                        let name = pick.get(&lacking);
-                        let file = format!("objects/{}.py", name.as_str());
-                        fs::copy(third.root().join(&file), warm.root().join(&file))
-                            .expect("copies");
-                    }
-                }
-                Step::Delete(pick) => {
-                    let held: Vec<Hash> = names_in(warm.root())
-                        .into_iter()
-                        .filter(|name| *name != genesis)
-                        .collect();
-                    if !held.is_empty() {
-                        let name = pick.get(&held);
-                        fs::remove_file(warm.root().join(format!("objects/{}.py", name.as_str())))
-                            .expect("deletes");
-                    }
-                }
-                Step::Read => {
-                    read(&warm).ok();
-                }
-            }
-            prop_assert_eq!(read(&warm), read(&scratch.store("store")), "after {:?}", step);
-        }
-    }
 
     /// LAW 7 WHERE THE MEMORY MEETS IT. A handle that has read adopts
     /// another replica's tips, first a non-tip (an interrupted sync), then
@@ -409,7 +271,7 @@ proptest! {
         let mut reads = Vec::new();
         for (n, order) in [keys.clone(), keys.iter().rev().copied().collect()].iter().enumerate() {
             let here = scratch.store(&format!("into-{n}"));
-            copy_store(base.root(), here.root());
+            copy_prints(&base, &here);
             read(&here).expect("reads");
             let theirs: Vec<Hash> = there.dag().expect("reads").objects().keys().cloned().collect();
             here.adopt(&there, partial.get(&theirs), Sender::Stranger).expect("a partial sync");
@@ -427,8 +289,8 @@ proptest! {
                 }
             }
             let union = scratch.store(&format!("union-{n}"));
-            copy_store(base.root(), union.root());
-            copy_store(there.root(), union.root());
+            copy_prints(&base, &union);
+            copy_prints(&there, &union);
             let warm = read(&here);
             prop_assert_eq!(&warm, &read(&scratch.store(&format!("into-{n}"))));
             prop_assert_eq!(&warm, &read(&union));
@@ -436,53 +298,6 @@ proptest! {
         }
         prop_assert_eq!(&reads[0], &reads[1]);
     }
-}
-
-/// A FILE CHANGED UNDER A HELD NAME IS READ AGAIN. A handle that has read
-/// every object leaves one out once its file no longer holds its bytes, and
-/// says so, as a fresh handle does, and refuses a write; it reads as before
-/// once the bytes are back; a file rewritten with the same bytes is read
-/// again and changes nothing.
-#[test]
-fn a_file_changed_under_a_held_name_is_read_again() {
-    let scratch = Scratch::new("changed");
-    let store = scratch.store("store");
-    store.init("changed").expect("begins");
-    let event = common::realise(
-        &[(
-            common::Draft {
-                todo: "alpha",
-                actor: "bassel",
-                roll: 1,
-                spec: None,
-                items: 0,
-                text: 7,
-            },
-            0,
-        )],
-        0,
-    );
-    let name = store.append(event[0].clone()).expect("appends");
-    let before = read(&store).expect("reads");
-    let path = store.root().join(format!("objects/{}.py", name.as_str()));
-    let bytes = fs::read(&path).expect("reads");
-    let mut damaged = bytes.clone();
-    let last = damaged.len() - 2;
-    damaged[last] ^= 1;
-    fs::write(&path, &damaged).expect("damages");
-    let left_out = read(&store).expect("reads");
-    assert!(
-        !left_out.objects.contains(&name),
-        "the held handle reads the file again"
-    );
-    assert!(matches!(
-        &left_out.excluded[..],
-        [Excluded { name: out, why: Some(Unread::Tampered(_)), .. }] if *out == name
-    ));
-    assert_eq!(Ok(left_out), read(&scratch.store("store")));
-    assert!(store.append(event[0].clone()).is_err(), "a write refuses");
-    fs::write(&path, &bytes).expect("restores");
-    assert_eq!(read(&store), Ok(before));
 }
 
 /// THE TWIN AN APPEND ANSWERS IS THE FIRST IN THE LINEARISATION. Two
@@ -524,10 +339,10 @@ fn an_append_answers_the_first_twin() {
             .expect("a twin")
             .name()
             .clone();
-        let objects = names_in(here.root());
+        let objects = here.prints();
         assert_eq!(here.append(twin.clone()).expect("appends"), first);
         assert_eq!(scratch.store("here").append(twin).expect("appends"), first);
-        assert_eq!(names_in(here.root()), objects, "a twin writes nothing");
+        assert_eq!(here.prints(), objects, "a twin writes nothing");
     }
 }
 
@@ -608,14 +423,16 @@ proptest! {
             seal(&there, event.clone());
         }
         read(&here).expect("reads");
-        for name in names_in(there.root()).into_iter().rev() {
-            let file = format!("objects/{}.py", name.as_str());
-            fs::copy(there.root().join(&file), here.root().join(&file)).expect("copies");
+        let kept = here.prints();
+        for (name, bytes) in there.prints().into_iter().rev() {
+            if !kept.contains_key(&name) {
+                here.arrive(&name, &bytes);
+            }
             read(&here).expect("reads");
         }
-        let twin = scratch.0.join("twin");
-        copy_store(here.root(), &twin);
-        let cold = Store::new(&twin, roster()).append(event[0].clone()).map_err(|e| e.to_string());
+        let twin = scratch.store("twin");
+        copy_prints(&here, &twin);
+        let cold = twin.append(event[0].clone()).map_err(|e| e.to_string());
         prop_assert_eq!(here.append(event[0].clone()).map_err(|e| e.to_string()), cold);
         prop_assert_eq!(read(&here), read(&scratch.store("here")));
     }

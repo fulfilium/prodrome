@@ -1690,9 +1690,9 @@ two writers' changes and over legacy chains, with any objects removed.
     reading: an object damaged on disk is set aside by `fsck`, named in its
     report and kept byte for byte, and the store reads the history without
     it and everything resting on it.
-    `down_set.rs::the_interior_is_the_largest_down_set`,
-    `down_set.rs::a_store_reads_its_largest_down_set`,
-    `down_set.rs::quarantine_is_the_down_set_without_what_rests_on_it`.
+    `down_set.rs::the_interior_is_the_largest_down_set`, and over every
+    store of record, `store_laws/reading.rs::a_store_reads_its_largest_down_set`,
+    `store_laws/reading.rs::quarantine_is_the_down_set_without_what_rests_on_it`.
 
 Laws 36 and 37 are §3's deps and §6.6's supersession, on two writers whose
 replicas in memory sync in between and whose events are dated anywhere.
@@ -1877,9 +1877,11 @@ files damaged in place, removed, or joined by prints that are no object.
     objects waiting outside it and the same unread prints, so the same
     fold, heads, events and ancestry, and the same `excluded`. A write
     refuses exactly when a print is unread, naming the first.
-    `core/tests/all/unread.rs::a_store_reads_as_a_replica_holding_its_files`,
-    `down_set.rs::quarantine_is_the_down_set_without_what_rests_on_it`,
-    `memory.rs::a_file_changed_under_a_held_name_is_read_again`.
+    Over every store of record:
+    `core/tests/all/store_laws/reading.rs::a_store_reads_as_a_replica_holding_its_prints`,
+    `store_laws/reading.rs::quarantine_is_the_down_set_without_what_rests_on_it`,
+    `store_laws/reading.rs::a_print_changed_under_a_held_name_is_read_again`,
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`.
 
 Law 46 is a digest (design §6.5), over generated sets of lines, each
 resting on up to two before it and given in any order and any number of
@@ -2161,14 +2163,15 @@ description.
     `dag.rs::tests::a_kept_fact_is_the_fresh_one`.
 
 Laws 60 to 63 are the record of a store's heads (§3), over generated
-scripts of writes by two handles of one store on disk.
+scripts of writes by three handles of one store of record and of other
+doors, run over every store of record.
 
 60. **Recorded equals derived.** After any sequence of `init`, `append`,
-    several appends under one decision, a receive and `quarantine`, by two
+    several appends under one decision, a receive and `quarantine`, by
     handles that take turns under the lock, the record on disk parses and
     equals the store's tips and the count of the objects of its history, so
     `heads()` serves it.
-    `record.rs::tests::the_recorded_heads_are_the_derived_ones`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`.
 61. **A served record is the derived one.** Stop a write of the store at
     any instant, by a killed process (every step done so far is visible)
     or by a power loss (a prefix of the durable steps persists, and the
@@ -2176,17 +2179,19 @@ scripts of writes by two handles of one store on disk.
     `heads()` serves equals the derived heads. A placement that fails after
     the removal leaves no record, also when a later write of the same hold
     succeeds.
-    `record.rs::tests::a_served_record_is_the_derived_one`,
-    `record.rs::tests::a_failed_placement_leaves_no_record`.
+    `store_laws/stops.rs::a_served_record_is_the_derived_one`,
+    `store_laws/stops.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
 62. **Another door's objects read as the older heads.** Objects that a
     program adds to `objects/` without the store read as the older heads
     until a hold of the lock, a `record_heads()` or a deletion of the
     record, and as the derived heads after each.
-    `record.rs::tests::another_door_s_objects_read_as_the_older_heads`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`,
+    `store_laws/script.rs::another_door_s_objects_read_as_the_older_heads`.
 63. **A record that names an absent head is not served.** After another
     door removes a head's file, `heads()` answers the derived heads, and
     `verify` reports the record and the derived heads.
-    `record.rs::tests::a_record_naming_an_absent_head_is_not_served`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`,
+    `store_laws/script.rs::a_record_naming_an_absent_head_is_not_served`.
     The bytes of the record are its canonical print, and no proper prefix,
     conflicted text, unknown field or other print of a value reads:
     `record.rs::tests::the_record_is_its_canonical_print_and_nothing_else_reads`.
@@ -2210,7 +2215,7 @@ posts of any names, and a store that grows between two pieces.
     and so are the heads of a DAG read fresh from exactly the objects of
     that history. The scripts include `quarantine` of any object, so the
     history can leave objects out.
-    `record.rs::tests::a_dag_s_heads_are_what_its_store_records`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`.
 
 Law 66 is §3's rule for "a dep another dep of the same change rests on",
 read as positions in the linear order, over generated DAGs held in memory
@@ -2375,7 +2380,8 @@ faults and without.
     husk's print. Every other file is byte-identical. The heads, the
     record of heads, the linear order and every object's parents do not
     change, and `verify` is clean. A second `husk` of the same names
-    changes nothing. `husk.rs::a_husk_changes_only_the_named_files`.
+    changes nothing.
+    `store_laws/husks.rs::a_husk_changes_only_the_named_prints`.
 
 73. **A dropped part is never taken back.** After `husk`, no sequence of
     operations of any replica (a store on disk, a store in memory, an
@@ -2393,7 +2399,7 @@ faults and without.
     overlay between. A replica in a page that holds a keeper's husk reads
     it and appends over it, since it reads its own history as its keeper's,
     and never signs its name (law 80).
-    `husk.rs::a_dropped_part_is_never_taken_back`,
+    `store_laws/husks.rs::a_dropped_part_is_never_taken_back`,
     `husk.rs::an_overlay_answers_its_own_whole_over_a_damaged_base`,
     `husk.rs::an_overlay_answers_the_base_s_husk_without_a_read_between`,
     `wasm/exports/src/husk.rs::a_replica_reads_a_keepers_husk_and_never_signs_it`.
@@ -2404,7 +2410,7 @@ faults and without.
     `verify` is clean on both stores. A pull from the same store as from a
     stranger, and a replica at a schema without husks, refuse a husk as
     tampered and take nothing.
-    `husk.rs::a_replica_of_a_husked_store_reads_as_it`,
+    `store_laws/husks.rs::a_replica_of_a_husked_store_reads_as_it`,
     `husk.rs::a_schema_without_husks_reads_a_husk_as_tampered`, and the
     vectors of `conformance/husk.py`
     (`husk.rs::the_husk_vectors_read_as_frozen`).
@@ -2420,7 +2426,8 @@ faults and without.
     neither. `husk` replaces the file by a rename and never writes it in
     place.
     `store.rs::a_stop_at_each_step_of_a_replacement_leaves_the_old_or_the_new_file`,
-    `husk.rs::a_stop_at_each_step_leaves_the_whole_or_the_husk`.
+    `store_laws/stops.rs::a_stop_at_each_step_leaves_the_whole_or_the_husk`,
+    `husk.rs::a_husk_replaces_its_file_by_a_rename`.
 
 76. **A run of appends writes what appends one by one write.** For every
     history, `append_all` of its events answers the names that one
@@ -2430,7 +2437,7 @@ faults and without.
     one append after another places them, and places none after it. A
     write of an object the store holds outside its history, with the same
     bytes, writes nothing; with other bytes it is refused as a collision.
-    `husk.rs::a_run_writes_what_appends_one_by_one_write`,
+    `store_laws/husks.rs::a_run_writes_what_appends_one_by_one_write`,
     `husk.rs::writing_a_waiting_object_again_writes_nothing`.
 
 77. **A signature proves no husk.** For any sequence of receipts from a
@@ -2442,7 +2449,7 @@ faults and without.
     record the same husks are taken: the proof's standing of each is
     `Vouched`, and the policy that requires signatures binds each, on the
     keeper's word.
-    `husk.rs::a_signature_proves_no_husk`.
+    `store_laws/husks.rs::a_signature_proves_no_husk`.
 
 78. **A husk is exactly one print.** For any husk's print, the print with a
     comment before it, with a space after any comma, or with two of its
@@ -2454,7 +2461,7 @@ faults and without.
     of the files: an object that was not placed is not held, and the same
     append again writes it. Once the cause is gone, the run completes as in
     a store where it never failed.
-    `husk.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
+    `store_laws/stops.rs::a_failed_placement_leaves_the_memory_as_a_cold_read`.
 
 80. **No signature is made over a name whose whole the signer does not
     hold.** For any history and any set of its objects husked,
