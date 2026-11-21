@@ -27,7 +27,9 @@ use prodrome::store::{sync, Sender};
 use proptest::prelude::*;
 use proptest::sample::Index;
 
-use super::kind::{derived, stores_of_record, Scratch, StoreOfRecord};
+use super::kind::{
+    derived, stores_of_record, stores_with_doors, Scratch, StoreOfRecord, WithDoors,
+};
 use common::a_log;
 
 type Event = TodoEvent<Todo>;
@@ -110,6 +112,22 @@ fn a_step() -> impl Strategy<Value = Step> {
     ]
 }
 
+/// A step of a store that is its program's alone: a write or a read, and
+/// no door and no quarantine (whose damage is a door), with the weights of
+/// [`a_step`].
+fn a_step_without_doors() -> impl Strategy<Value = Step> {
+    let write = |write: BoxedStrategy<Write>| {
+        (a_handle(), write).prop_map(|(by, write)| Step::Write(by, write))
+    };
+    prop_oneof![
+        4 => write(any::<Index>().prop_map(Write::Append).boxed()),
+        1 => write(prop::collection::vec(any::<Index>(), 1..4).prop_map(Write::Run).boxed()),
+        1 => write(any::<Index>().prop_map(Write::Receive).boxed()),
+        1 => write(Just(Write::RecordHeads).boxed()),
+        3 => a_handle().prop_map(Step::Read),
+    ]
+}
+
 /// What a handle reads: its history, its fold, its tips and what it leaves
 /// out, or its refusal.
 #[derive(Debug, Clone, PartialEq)]
@@ -135,6 +153,9 @@ fn reading(store: &dyn StoreOfRecord<Event>) -> Result<Reading, String> {
 /// arrive by a door, which a script of [`Step`]s writes to.
 struct Script<'s> {
     first: &'s dyn StoreOfRecord<Event>,
+    /// The doors of the store, where it has them: a script of a store that
+    /// is its program's alone has no step that opens a door.
+    doors: Option<&'s dyn WithDoors<Event>>,
     second: Box<dyn StoreOfRecord<Event>>,
     elsewhere: Box<dyn StoreOfRecord<Event>>,
     third: Box<dyn StoreOfRecord<Event>>,
@@ -166,6 +187,7 @@ impl<'s> Script<'s> {
     /// the store's writes, conflicts with them and twins of them.
     fn new(
         store: &'s dyn StoreOfRecord<Event>,
+        doors: Option<&'s dyn WithDoors<Event>>,
         pool: Vec<Event>,
         theirs: Vec<Event>,
     ) -> Script<'s> {
@@ -180,6 +202,7 @@ impl<'s> Script<'s> {
         let first = Some((0, reading(store)));
         Script {
             first: store,
+            doors,
             second: store.open(),
             elsewhere,
             third,
@@ -201,7 +224,7 @@ impl<'s> Script<'s> {
                 Handle::Second => self.write(&*self.second, write)?,
                 Handle::Fresh => self.write(&*self.first.open(), write)?,
             },
-            Step::Door(door) => self.open(door),
+            Step::Door(door) => self.open(door)?,
             Step::Read(by) => {
                 let _ = match by {
                     Handle::First => self.first.held(),
@@ -258,7 +281,7 @@ impl<'s> Script<'s> {
             Write::Quarantine(pick) => {
                 let names: Vec<Hash> = history(self.first);
                 if !names.is_empty() {
-                    self.first.overwrite(pick.get(&names), b"damaged");
+                    self.doors()?.overwrite(pick.get(&names), b"damaged");
                 }
                 let _ = by.fsck();
             }
@@ -269,8 +292,16 @@ impl<'s> Script<'s> {
         Ok(())
     }
 
+    /// The store's doors: a step that opens one is in no script of a store
+    /// that has none.
+    fn doors(&self) -> Result<&'s dyn WithDoors<Event>, TestCaseError> {
+        self.doors
+            .ok_or_else(|| TestCaseError::fail("a door in a script of a store that has none"))
+    }
+
     /// `door`, opened past every handle.
-    fn open(&self, door: &Door) {
+    fn open(&self, door: &Door) -> Result<(), TestCaseError> {
+        let doors = self.doors()?;
         match door {
             Door::Arrive(pick) => {
                 let kept = self.first.prints();
@@ -282,7 +313,7 @@ impl<'s> Script<'s> {
                     .collect();
                 if !lacking.is_empty() {
                     let (name, bytes) = pick.get(&lacking);
-                    self.first.arrive(name, bytes);
+                    doors.arrive(name, bytes);
                 }
             }
             Door::TakeAway(pick) => {
@@ -293,11 +324,12 @@ impl<'s> Script<'s> {
                     .filter(|name| *name != self.genesis)
                     .collect();
                 if !kept.is_empty() {
-                    self.first.take_away(pick.get(&kept));
+                    doors.take_away(pick.get(&kept));
                 }
             }
-            Door::DropRecord => self.first.set_record(None),
+            Door::DropRecord => doors.set_record(None),
         }
+        Ok(())
     }
 
     /// The laws after `step`, where `recorded` is the record that the step
@@ -402,7 +434,7 @@ fn history(store: &dyn StoreOfRecord<Event>) -> Vec<Hash> {
 proptest! {
     #![proptest_config(crate::common::cases::cases(48))]
 
-    /// Laws 45, 60, 62, 63 and 65, over every store of record: after every
+    /// Laws 45, 60, 62, 63 and 65, over every store with doors: after every
     /// step of a script of writes by three handles (appends, runs of
     /// appends under one hold, receipts, quarantines, `record_heads`), of
     /// doors (a print of a third replica arrives, a print is taken away, the
@@ -421,8 +453,29 @@ proptest! {
     ) {
         prop_assume!(!pool.is_empty());
         let scratch = Scratch::new();
+        for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
+            let mut script = Script::new(store.store(), Some(&*store), pool.clone(), theirs.clone());
+            for step in &steps {
+                script.run(step)?;
+            }
+        }
+    }
+
+    /// Law 84, over every store of record, each opened as shared and as its
+    /// program's alone: with the doors removed, every step of the script
+    /// keeps laws 45, 60 and 65. So a store that is its program's alone, whose
+    /// decisions trust the mark of the last hold, writes and reads as a store
+    /// whose decisions list.
+    #[test]
+    fn every_step_of_a_script_without_doors_keeps_the_laws(
+        pool in a_log(),
+        theirs in a_log(),
+        steps in prop::collection::vec(a_step_without_doors(), 1..40),
+    ) {
+        prop_assume!(!pool.is_empty());
+        let scratch = Scratch::new();
         for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-            let mut script = Script::new(&*store, pool.clone(), theirs.clone());
+            let mut script = Script::new(&*store, None, pool.clone(), theirs.clone());
             for step in &steps {
                 script.run(step)?;
             }
@@ -473,8 +526,8 @@ fn apart(count: usize) -> Vec<Event> {
 #[test]
 fn another_door_s_objects_read_as_the_older_heads() -> Result<(), TestCaseError> {
     let scratch = Scratch::new();
-    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-        let mut script = Script::new(&*store, apart(6), Vec::new());
+    for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
+        let mut script = Script::new(store.store(), Some(&*store), apart(6), Vec::new());
         let ends = [
             Step::Write(Handle::First, Write::Run(Vec::new())),
             Step::Write(Handle::Second, Write::RecordHeads),
@@ -508,8 +561,8 @@ fn another_door_s_objects_read_as_the_older_heads() -> Result<(), TestCaseError>
 #[test]
 fn a_record_naming_an_absent_head_is_not_served() -> Result<(), TestCaseError> {
     let scratch = Scratch::new();
-    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-        let mut script = Script::new(&*store, apart(1), Vec::new());
+    for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
+        let mut script = Script::new(store.store(), Some(&*store), apart(1), Vec::new());
         script.run(&Step::Write(Handle::First, Write::Append(any_index())))?;
         let recorded = store.record().expect("recorded");
         let tip = recorded.tips().iter().next().expect("a tip").clone();

@@ -23,7 +23,7 @@ use prodrome::store::{accept, Sender};
 use proptest::prelude::*;
 use sha2::{Digest, Sha256};
 
-use super::kind::{begin, copy_prints, stores_of_record, Scratch, StoreOfRecord};
+use super::kind::{begin, copy_prints, stores_with_doors, Scratch, StoreOfRecord, WithDoors};
 use crate::common::draw::{a_draw, history, Draw};
 use crate::common::{a_log, two_writers};
 use crate::declared::proposal::{a_proposal, Id, Proposal, Says, DECLARED};
@@ -35,7 +35,7 @@ type Event = TodoEvent<Todo>;
 /// `store` brought to keep exactly `prints`, through the doors: each name
 /// it keeps and `prints` lacks taken away, each name whose bytes differ
 /// replaced, and each new name placed.
-fn lay_out<E: Schema>(store: &dyn StoreOfRecord<E>, prints: &BTreeMap<Hash, Vec<u8>>) {
+fn lay_out<E: Schema>(store: &dyn WithDoors<E>, prints: &BTreeMap<Hash, Vec<u8>>) {
     let kept = store.prints();
     for name in kept.keys().filter(|name| !prints.contains_key(*name)) {
         store.take_away(name);
@@ -53,22 +53,22 @@ fn lay_out<E: Schema>(store: &dyn StoreOfRecord<E>, prints: &BTreeMap<Hash, Vec<
 /// a fresh handle and by one that read every print first, read as a store
 /// given only the interior.
 fn reads_its_interior(
-    store: &dyn StoreOfRecord<Event>,
+    store: &dyn WithDoors<Event>,
     whole: &Dag<Event>,
     prints: &BTreeMap<Hash, Vec<u8>>,
     removed: &BTreeSet<Hash>,
 ) -> Result<(), TestCaseError> {
     let interior = without(whole, removed).interior();
-    let warm = store.sibling();
+    let warm = store.sibling_with_doors();
     lay_out(&*warm, prints);
     let _ = warm.held().expect("the whole store reads");
-    let gappy = store.sibling();
+    let gappy = store.sibling_with_doors();
     lay_out(&*gappy, prints);
     for name in removed {
         warm.take_away(name);
         gappy.take_away(name);
     }
-    let only = store.sibling();
+    let only = store.sibling_with_doors();
     for name in interior.objects().keys() {
         only.arrive(name, &prints[name]);
     }
@@ -105,7 +105,7 @@ proptest! {
             let whole = history.dag().expect("reads");
             let prints = history.prints();
             let removed = chosen(&whole, mask);
-            for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+            for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
                 reads_its_interior(&*store, &whole, &prints, &removed)?;
             }
         }
@@ -115,7 +115,7 @@ proptest! {
 /// The quarantine law at one history, one store, and one object of the
 /// history.
 fn quarantine_reads_without_it(
-    store: &dyn StoreOfRecord<Event>,
+    store: &dyn WithDoors<Event>,
     intact: &dyn StoreOfRecord<Event>,
     pick: prop::sample::Index,
 ) -> Result<(), TestCaseError> {
@@ -169,7 +169,7 @@ fn quarantine_reads_without_it(
     prop_assert_eq!(aside.get(&receipt), Some(&bytes));
     let folded = fold(&expected.nodes().expect("a down-set reads"));
     let fresh = store.open();
-    for at in [store, &*fresh] {
+    for at in [store.store(), &*fresh] {
         let held = at.held().expect("reads");
         prop_assert_eq!(held.dag.objects(), expected.objects());
         let lacked: Vec<Excluded> = (!waiting.is_empty())
@@ -244,7 +244,7 @@ proptest! {
         let built = crate::memory::Scratch::new("quarantine");
         let scratch = Scratch::new();
         for history in [changes(&built, &logs), legacy(&built, &log)] {
-            for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+            for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
                 quarantine_reads_without_it(&*store, &history, pick)?;
             }
         }
@@ -313,7 +313,7 @@ fn prints(draw: &Draw<Proposal>) -> BTreeMap<Hash, Vec<u8>> {
 /// replica holds a print that is no object, with that print's refusal.
 fn reads_as_its_replica(
     schema: &Declaration,
-    warm: &dyn StoreOfRecord<Declared>,
+    warm: &dyn WithDoors<Declared>,
     prints: &BTreeMap<Hash, Vec<u8>>,
 ) -> Result<(), TestCaseError> {
     let replica = Dag::<Declared>::from_prints(
@@ -328,7 +328,7 @@ fn reads_as_its_replica(
     let folded = fold(&nodes);
     let events: Vec<Declared> = nodes.into_iter().filter_map(Node::into_event).collect();
     let fresh = warm.open();
-    for store in [warm, &*fresh] {
+    for store in [warm.store(), &*fresh] {
         let held = store.held().expect("a read is total");
         prop_assert_eq!(
             &*held.dag,
@@ -390,7 +390,7 @@ fn reads_as_its_replica(
         )
         .interior();
         prop_assert!(replica.get(&name).is_some(), "the write is in the history");
-        for store in [warm, &*fresh] {
+        for store in [warm.store(), &*fresh] {
             let held = store.held().expect("reads");
             prop_assert_eq!(&*held.dag, &replica, "and they still agree");
             prop_assert_eq!(held.tips, replica.tips());
@@ -444,7 +444,7 @@ proptest! {
             prints.insert(name_of(&bytes), bytes);
         }
         let scratch = Scratch::new();
-        for warm in stores_of_record::<Declared>(&scratch, schema) {
+        for warm in stores_with_doors::<Declared>(&scratch, schema) {
             lay_out(&*warm, &intact);
             let _ = warm.held().expect("reads the intact prints");
             lay_out(&*warm, &prints);
@@ -456,7 +456,7 @@ proptest! {
 /// Law 45 at one store: a handle that has read every object leaves one out
 /// once its print no longer holds its bytes, and says so, as a fresh handle
 /// does, and refuses a write; it reads as before once the bytes are back.
-fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
+fn a_changed_print_is_read_again(store: &dyn WithDoors<Event>) {
     begin(store, "changed");
     let event = crate::common::realise(
         &[(
@@ -505,7 +505,7 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
 #[test]
 fn a_print_changed_under_a_held_name_is_read_again() {
     let scratch = Scratch::new();
-    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+    for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
         a_changed_print_is_read_again(&*store);
     }
 }

@@ -10,6 +10,15 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A store says when it is opened whether other programs may change it
+  (SPEC §3, "The doors a store has"; laws 84 to 86).** `Doors::Shared`, the
+  default, keeps the rule that a decision lists `objects/`. A store opened
+  with `Doors::Alone` lets a decision trust the mark of the last hold, so
+  an append on a handle that has read the store takes 5.8 ms in place of
+  121 ms, and a post of 256 objects 30 ms in place of 150 ms, on a
+  generated store of 50,000 objects. An object that arrives
+  by a door such a store said it lacks is reported by `verify` and read by
+  a fresh handle. No stored byte changes.
 - **The mark of the last hold lets a warm handle read without a listing
   (SPEC §3, "The mark of the last hold"; laws 40, 45 and 81).** Every hold
   of a store's lock writes a fresh random mark into `root/.writes`. A

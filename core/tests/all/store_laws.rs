@@ -35,4 +35,4 @@ mod reading;
 mod script;
 mod stops;
 
-pub(crate) use kind::{begin, copy_prints, directory, Scratch, StoreOfRecord};
+pub(crate) use kind::{begin, copy_prints, directory, Scratch, StoreOfRecord, WithDoors};

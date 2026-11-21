@@ -10,7 +10,7 @@
 //! reads them: each sealed part read as the name of its key.
 
 use crate::common;
-use crate::store_laws::{copy_prints, directory, Scratch, StoreOfRecord};
+use crate::store_laws::{copy_prints, directory, Scratch, StoreOfRecord, WithDoors};
 
 use std::collections::{BTreeMap, BTreeSet};
 

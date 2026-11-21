@@ -442,6 +442,25 @@ since this grammar has tuples and no mapping.
     (`Finding::Unignored`, law 81). A tracked mark carries no harm, since a
     mark put back is a door that the next hold ends, but it is local to one
     machine and does not belong in a repository.
+- **The doors a store has.** The program that opens a store on disk says
+  who may change its `objects/` (`EventStore::with_doors`, `Doors`). It
+  decides one thing, what a decision (`decide` and every write) reads:
+  - `Doors::Shared`, the default: other programs may change `objects/` (a
+    `git merge`, a copy of files, a second binary of another version), so
+    a decision lists `objects/` and reads every door.
+  - `Doors::Alone`: nothing but this library, under this store's lock,
+    writes `objects/`. A decision reads as a read does: the mark of the
+    last hold, and a listing only where the mark is not the one its handle
+    keeps. For such a store, every law of a store of record holds over any
+    script with no door (law 84).
+  - A door that a store opened as alone said it lacks is found and loses
+    nothing (law 85). An object that arrives by it is not read as history
+    by a handle that has read the store, also under that handle's own
+    holds, until a handle that lists (a fresh handle, or `record_heads()`)
+    holds the lock. Until then, `verify` reports the record of heads as
+    stale (`Finding::StaleHeads`), and a fresh handle reads the object.
+  - The choice changes no stored byte, so a store moves between the two by
+    being opened the other way (law 86).
 - **`init(label)`** writes a prodrome's `Genesis`, once.
 - **Appending writes a `Change`**, never a `Woven`, into the writer's
   genesis; a store of several geneses is written through a handle that
@@ -2548,11 +2567,35 @@ each step of a placement.
     print renamed. At each of these faults, laws 61 and 79 hold inside the
     hold.
     `store_laws/stops.rs::a_hold_removes_what_a_stopped_write_left`,
-    `store.rs::tests::a_fault_at_each_step_of_a_placement_keeps_laws_61_and_79`.
+    `store.rs::tests::a_fault_at_each_step_of_a_placement_keeps_laws_61_and_79`,
+    and in a store opened as its program's alone,
+    `store.rs::tests::a_store_alone_removes_a_killed_batch_s_temps`.
 83. **One sync stands for each file only where it reports a lost write.**
     One `syncfs` is taken only under Linux 5.8 or later; under an earlier
     kernel, or a release that does not parse, each file is synced.
     `store/syncfs.rs::tests::one_sync_only_where_syncfs_reports_a_lost_write`.
+
+Laws 84 to 86 are §3's doors of a store, over every store of record, each
+opened as shared and as its program's alone.
+
+84. **A store that is its program's alone keeps every law with no door.**
+    After every step of a script of writes and reads with no door (appends,
+    runs of appends under one hold, receipts, `record_heads`), by three
+    handles of a store opened as shared or as alone, laws 45, 60 and 65
+    hold.
+    `store_laws/script.rs::every_step_of_a_script_without_doors_keeps_the_laws`.
+85. **A door that a store said it lacks is found and loses nothing.** In a
+    store opened as alone, an object that arrives by a door is not read as
+    history by a handle that has read the store, also under its own holds;
+    `verify` reports `Finding::StaleHeads` until a handle that has read
+    the object holds the lock; a fresh handle reads the object; and after
+    such a hold, every handle reads it.
+    `store.rs::tests::an_object_by_a_door_a_store_said_it_lacks_is_found_and_never_lost`.
+86. **The doors change no stored byte.** The same writes to a store opened
+    as shared and to one opened as alone leave the same objects and the
+    same record of heads, and a store reads the same when it is opened the
+    other way.
+    `store.rs::tests::the_doors_change_no_stored_byte`.
 
 ## 10. Non-goals
 

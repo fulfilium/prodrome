@@ -32,6 +32,7 @@
 //!   crash leaves a store half-written or an object empty.
 
 mod decision;
+mod doors;
 mod fault;
 mod husk;
 mod levelled;
@@ -66,6 +67,7 @@ use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
 pub use decision::{Decision, Stopped};
+pub use doors::Doors;
 pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use levelled::{Level, Levelled};
 use memory::{Memory, Seen, Verified};
@@ -106,6 +108,9 @@ pub struct EventStore<E: Schema, Pol = Untrusted> {
     memory: Arc<Mutex<Levelled<E>>>,
     /// The prodrome this handle writes into, for a store that holds several.
     genesis: Option<Hash>,
+    /// Who may change `objects/`, as the program that opened the store
+    /// says: what a decision reads.
+    doors: Doors,
 }
 
 /// `objects/`, read once: the entries named as objects, and every other
@@ -135,7 +140,21 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             schema,
             memory: Arc::new(Mutex::new(Levelled::empty())),
             genesis: None,
+            doors: Doors::Shared,
         }
+    }
+
+    /// Who may change `objects/`, as this handle was opened.
+    #[must_use]
+    pub fn doors(&self) -> Doors {
+        self.doors
+    }
+
+    /// This handle, opened with `doors`: [`Doors::Shared`] unless the
+    /// program says that nothing but this library writes `objects/`.
+    #[must_use]
+    pub fn with_doors(self, doors: Doors) -> EventStore<E, Pol> {
+        EventStore { doors, ..self }
     }
 
     /// The memory, whoever held it last. A panic while it was held may have
@@ -180,10 +199,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     fn decision(&self) -> Result<Decision<'_, E, Pol>, ProdromeError> {
         let locked = self.lock()?;
         let mut memory = self.memory();
+        self.decided(&mut memory)?;
         self.begin_hold()?;
-        let listing = self.listing()?;
-        self.sweep(&listing.garbage);
-        self.level(&mut memory, listing.objects);
         memory.dag().whole()?;
         Ok(Decision {
             store: self,
@@ -192,6 +209,30 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             level: Level::Level,
             _locked: locked,
         })
+    }
+
+    /// WHAT A DECISION READS, BY THE DOORS THE STORE HAS. Where other
+    /// programs may change `objects/`, a decision lists it, so it reads
+    /// every door. Where nothing but this library writes it, a decision
+    /// reads as a read does: the mark of the last hold, and a listing only
+    /// where the mark is not the one this handle keeps. A decision that
+    /// lists removes the temps of a stopped write ([`EventStore::sweep`]):
+    /// a killed hold leaves no mark, so the next decision lists. Called
+    /// under the lock, before the hold removes the mark.
+    fn decided(&self, memory: &mut Levelled<E>) -> Result<(), ProdromeError> {
+        match self.doors {
+            Doors::Alone
+                if writes::read(&self.root).is_some_and(|mark| memory.mark == Some(mark)) =>
+            {
+                Ok(())
+            }
+            Doors::Shared | Doors::Alone => {
+                let listing = self.listing()?;
+                self.sweep(&listing.garbage);
+                self.level(memory, listing.objects);
+                Ok(())
+            }
+        }
     }
 
     /// Bring `memory` level with `objects/` for a read: where the mark of
@@ -2084,6 +2125,133 @@ mod tests {
             );
             assert_eq!(store.append_all(events).expect("appends").len(), 3);
             assert_eq!(findings(&store), Vec::<String>::new(), "{step:?}");
+            let _ = fs::remove_dir_all(store.root());
+        }
+    }
+
+    /// Law 85: an object that arrives by a door that a store opened as its
+    /// program's alone said it does not have is not read as history by a
+    /// handle that has read the store, also under that handle's own holds,
+    /// and `verify` reports the record of heads as stale
+    /// (`Finding::StaleHeads`) all the while. A fresh handle lists, so it
+    /// reads the object, and nothing is lost. Once a handle that has read
+    /// the object holds the lock, every handle reads it.
+    #[test]
+    fn an_object_by_a_door_a_store_said_it_lacks_is_found_and_never_lost() {
+        let root = scratch("alone");
+        let alone = |root: &Path| Store::new(root, roster()).with_doors(Doors::Alone);
+        let warm = alone(&root);
+        warm.init("alone").expect("begins");
+        let first = warm
+            .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
+            .expect("appends");
+        let other = Store::new(scratch("alone-other"), roster());
+        other
+            .adopt(&warm, &first, Sender::Stranger)
+            .expect("adopts");
+        let door = other
+            .append(mk_created("beta", at(2), "ada", "", "").expect("valid"))
+            .expect("appends");
+        fs::copy(other.object_path(&door), warm.object_path(&door)).expect("copies");
+        let stale = |store: &Store| {
+            store
+                .verify()
+                .iter()
+                .any(|finding| matches!(finding, Finding::StaleHeads { .. }))
+        };
+        assert!(warm.dag().expect("reads").get(&door).is_none());
+        let next = warm
+            .append(mk_created("gamma", at(3), "ada", "", "").expect("valid"))
+            .expect("appends");
+        let read = warm.dag().expect("reads");
+        assert!(read.get(&next).is_some(), "its own write");
+        assert!(read.get(&door).is_none(), "not under its own hold");
+        assert!(stale(&warm), "verify reports the record as stale");
+        let fresh = alone(&root);
+        assert!(
+            fresh.dag().expect("reads").get(&door).is_some(),
+            "a fresh handle lists"
+        );
+        assert!(stale(&fresh));
+        fresh
+            .append(mk_created("delta", at(4), "ada", "", "").expect("valid"))
+            .expect("appends");
+        assert!(
+            warm.dag().expect("reads").get(&door).is_some(),
+            "after its hold"
+        );
+        assert!(!stale(&warm));
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_dir_all(other.root());
+    }
+
+    /// Law 82 in a store opened as its program's alone: a batch killed
+    /// after it staged a temp leaves no mark, so the next decision lists,
+    /// and it removes the temp.
+    #[test]
+    fn a_store_alone_removes_a_killed_batch_s_temps() {
+        let store = Store::new(scratch("alone-sweep"), roster()).with_doors(Doors::Alone);
+        store.init("alone").expect("begins");
+        let temp = store.objects_dir().join("00000000000000ab.tmp");
+        fs::write(&temp, b"a print cut sh").expect("stages");
+        writes::remove(store.root()).expect("a killed hold leaves no mark");
+        store
+            .append(mk_created("alpha", at(1), "ada", "", "").expect("valid"))
+            .expect("appends");
+        assert!(!temp.exists(), "the decision removed the temp");
+        assert_eq!(findings(&store), Vec::<String>::new());
+        let _ = fs::remove_dir_all(store.root());
+    }
+
+    /// Law 86: the doors change no stored byte. The same writes, to a store
+    /// opened as shared and to one opened as its program's alone, leave the
+    /// same objects and the same record of heads, and a store written one
+    /// way reads the same when it is opened the other way.
+    #[test]
+    fn the_doors_change_no_stored_byte() {
+        let written: Vec<(Store, BTreeMap<Hash, Vec<u8>>, String)> = [Doors::Shared, Doors::Alone]
+            .into_iter()
+            .map(|doors| {
+                let store =
+                    Store::new(scratch(&format!("doors-{doors:?}")), roster()).with_doors(doors);
+                let genesis: Envelope<TodoEvent<Todo>> =
+                    Envelope::Genesis(mk_genesis("doors", &"0".repeat(32)).expect("a genesis"));
+                put(&store, genesis).expect("begins");
+                for day in 1..6 {
+                    store
+                        .append(
+                            mk_reopened(&format!("t{}", day % 3), at(day), "ada", "")
+                                .expect("valid"),
+                        )
+                        .expect("appends");
+                }
+                store
+                    .append_all(
+                        (6..9).map(|day| mk_completed("t1", at(day), "ada", "").expect("valid")),
+                    )
+                    .expect("appends");
+                let objects = fs::read_dir(store.objects_dir())
+                    .expect("lists")
+                    .filter_map(Result::ok)
+                    .filter_map(|entry| {
+                        let file = entry.file_name().to_string_lossy().into_owned();
+                        let name = Hash::new(file.strip_suffix(".py")?).ok()?;
+                        Some((name, fs::read(entry.path()).ok()?))
+                    })
+                    .collect();
+                let record = fs::read_to_string(store.root().join(".heads")).expect("recorded");
+                (store, objects, record)
+            })
+            .collect();
+        assert_eq!(written[0].1, written[1].1, "the same objects");
+        assert_eq!(written[0].2, written[1].2, "the same record");
+        for (store, _, _) in &written {
+            let shared = Store::new(store.root(), roster()).dag().expect("reads");
+            let alone = Store::new(store.root(), roster())
+                .with_doors(Doors::Alone)
+                .dag()
+                .expect("reads");
+            assert_eq!(*shared, *alone);
             let _ = fs::remove_dir_all(store.root());
         }
     }

@@ -19,7 +19,10 @@ use prodrome::reference::Todo;
 use prodrome::store::{sync, HuskObject, Sender, Stopped};
 use proptest::prelude::*;
 
-use super::kind::{begin, copy_prints, derived, stores_of_record, Scratch, StoreOfRecord};
+use super::kind::{
+    begin, copy_prints, derived, stores_of_record, stores_with_doors, Scratch, StoreOfRecord,
+    WithDoors,
+};
 use crate::husk::letter::Letter;
 use crate::husk::{boxed, events, Draft};
 
@@ -37,7 +40,7 @@ fn reopened(entity: usize, day: usize) -> Event {
 /// takes its name), and the record written, which a power loss can lose or
 /// cut at any byte.
 fn a_stop_serves_the_derived_heads(
-    writer: &dyn StoreOfRecord<Event>,
+    writer: &dyn WithDoors<Event>,
     before: usize,
     new: usize,
     order: Order,
@@ -113,7 +116,7 @@ proptest! {
         order in prop_oneof![Just(Order::EachThenItsRename), Just(Order::AllStagedFirst)],
     ) {
         let scratch = Scratch::new();
-        for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+        for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
             a_stop_serves_the_derived_heads(&*store, before, new, order)?;
         }
     }
@@ -206,7 +209,7 @@ enum Reads {
 /// husk, never as neither. The steps are the husk staged (in full, or cut
 /// short), and the husk under the name; a stop before the second step is
 /// the whole, and leaves what [`StoreOfRecord::interrupt`] leaves.
-fn a_stop_leaves_the_whole_or_the_husk(store: &dyn StoreOfRecord<Letter>) {
+fn a_stop_leaves_the_whole_or_the_husk(store: &dyn WithDoors<Letter>) {
     begin(store, "letters");
     let drafts = [Draft::Wrote {
         letter: 0,
@@ -254,7 +257,7 @@ fn a_stop_leaves_the_whole_or_the_husk(store: &dyn StoreOfRecord<Letter>) {
         },
     ) in states.into_iter().enumerate()
     {
-        let stopped = store.sibling();
+        let stopped = store.sibling_with_doors();
         copy_prints(store, &*stopped);
         stopped.overwrite(&name, file);
         let expected: Vec<Finding> = staged
@@ -284,7 +287,7 @@ fn a_stop_leaves_the_whole_or_the_husk(store: &dyn StoreOfRecord<Letter>) {
 #[test]
 fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
     let scratch = Scratch::new();
-    for store in stores_of_record::<Letter>(&scratch, &Default::default()) {
+    for store in stores_with_doors::<Letter>(&scratch, &Default::default()) {
         a_stop_leaves_the_whole_or_the_husk(&*store);
     }
 }
@@ -292,7 +295,7 @@ fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
 /// Law 82 at one store: what a stopped write left is reported by `verify`
 /// until the next hold of the lock, and the hold removes it and changes no
 /// print.
-fn a_hold_removes_what_a_stop_left(store: &dyn StoreOfRecord<Event>) {
+fn a_hold_removes_what_a_stop_left(store: &dyn WithDoors<Event>) {
     begin(store, "sweep");
     store.append(reopened(1, 1)).expect("appends");
     let stray = store.stray();
@@ -328,7 +331,7 @@ fn a_hold_removes_what_a_stop_left(store: &dyn StoreOfRecord<Event>) {
 #[test]
 fn a_hold_removes_what_a_stopped_write_left() {
     let scratch = Scratch::new();
-    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+    for store in stores_with_doors::<Event>(&scratch, &Default::default()) {
         a_hold_removes_what_a_stop_left(&*store);
     }
 }
