@@ -2163,10 +2163,11 @@ description.
     `dag.rs::tests::a_kept_fact_is_the_fresh_one`.
 
 Laws 60 to 63 are the record of a store's heads (§3), over generated
-scripts of writes by two handles of one store on disk.
+scripts of writes by three handles of one store of record and of other
+doors, run over every store of record.
 
 60. **Recorded equals derived.** After any sequence of `init`, `append`,
-    several appends under one decision, a receive and `quarantine`, by two
+    several appends under one decision, a receive and `quarantine`, by
     handles that take turns under the lock, the record on disk parses and
     equals the store's tips and the count of the objects of its history, so
     `heads()` serves it.
@@ -2184,11 +2185,13 @@ scripts of writes by two handles of one store on disk.
     program adds to `objects/` without the store read as the older heads
     until a hold of the lock, a `record_heads()` or a deletion of the
     record, and as the derived heads after each.
-    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`,
+    `store_laws/script.rs::another_door_s_objects_read_as_the_older_heads`.
 63. **A record that names an absent head is not served.** After another
     door removes a head's file, `heads()` answers the derived heads, and
     `verify` reports the record and the derived heads.
-    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`.
+    `store_laws/script.rs::every_step_of_a_script_keeps_the_laws_of_a_store_of_record`,
+    `store_laws/script.rs::a_record_naming_an_absent_head_is_not_served`.
     The bytes of the record are its canonical print, and no proper prefix,
     conflicted text, unknown field or other print of a value reads:
     `record.rs::tests::the_record_is_its_canonical_print_and_nothing_else_reads`.

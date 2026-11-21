@@ -426,7 +426,7 @@ proptest! {
         let kept = here.prints();
         for (name, bytes) in there.prints().into_iter().rev() {
             if !kept.contains_key(&name) {
-                here.place(&name, &bytes);
+                here.arrive(&name, &bytes);
             }
             read(&here).expect("reads");
         }

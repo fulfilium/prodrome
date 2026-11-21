@@ -7,11 +7,13 @@
 //! A step is a write of the store (an append, a run of appends under one
 //! hold, a receipt, a quarantine, a `record_heads`) by one of three handles
 //! of one store, or a door (a print arrives, a print is taken away, the
-//! record is removed), or a read. Each write of the store holds the lock,
-//! so after it the record of heads is the derived heads. A door leaves the
-//! record as it was, so after it the store serves the older record, or the
-//! derived heads where the record names a tip that the store no longer
-//! keeps.
+//! record is removed), or a read by one handle. After a step the script
+//! reads only the handle that made it, so a long-lived handle makes its
+//! next write or read from a memory that is several writes and doors
+//! behind. Each write of the store holds the lock, so after it the record
+//! of heads is the derived heads. A door leaves the record as it was, so
+//! after it the store serves the older record, or the derived heads where
+//! the record names a tip that the store no longer keeps.
 
 use crate::common;
 
@@ -69,12 +71,14 @@ enum Write {
 /// A door: a change of what the store keeps, by no handle of the store.
 #[derive(Debug, Clone)]
 enum Door {
-    /// One print that the store elsewhere keeps and the store lacks, put in
-    /// the store, as a copy of files or a `git merge` does.
+    /// One print that a third replica keeps and the store lacks, put in
+    /// the store, as a copy of files or a `git merge` does. The third
+    /// replica is never synced, so its prints arrive one at a time and in
+    /// any order, a child before its parent.
     Arrive(Index),
     /// One print taken away, as a host deletes a rejected proposal. The
     /// genesis stays.
-    SetAside(Index),
+    TakeAway(Index),
     /// The record of heads removed.
     DropRecord,
 }
@@ -86,23 +90,23 @@ enum Step {
     Read(Handle),
 }
 
+/// A step, with the weights of the scripts that this one replaces: an
+/// append, an arrival, a removal and a read in the ratio 4 : 4 : 2 : 3, and
+/// each other write and door as often as one in eighteen steps.
 fn a_step() -> impl Strategy<Value = Step> {
-    let write = prop_oneof![
-        4 => any::<Index>().prop_map(Write::Append),
-        2 => prop::collection::vec(any::<Index>(), 1..4).prop_map(Write::Run),
-        2 => any::<Index>().prop_map(Write::Receive),
-        1 => any::<Index>().prop_map(Write::Quarantine),
-        1 => Just(Write::RecordHeads),
-    ];
-    let door = prop_oneof![
-        3 => any::<Index>().prop_map(Door::Arrive),
-        1 => any::<Index>().prop_map(Door::SetAside),
-        1 => Just(Door::DropRecord),
-    ];
+    let write = |write: BoxedStrategy<Write>| {
+        (a_handle(), write).prop_map(|(by, write)| Step::Write(by, write))
+    };
     prop_oneof![
-        5 => (a_handle(), write).prop_map(|(by, write)| Step::Write(by, write)),
-        2 => door.prop_map(Step::Door),
-        1 => a_handle().prop_map(Step::Read),
+        4 => write(any::<Index>().prop_map(Write::Append).boxed()),
+        1 => write(prop::collection::vec(any::<Index>(), 1..4).prop_map(Write::Run).boxed()),
+        1 => write(any::<Index>().prop_map(Write::Receive).boxed()),
+        1 => write(any::<Index>().prop_map(Write::Quarantine).boxed()),
+        1 => write(Just(Write::RecordHeads).boxed()),
+        4 => any::<Index>().prop_map(|pick| Step::Door(Door::Arrive(pick))),
+        2 => any::<Index>().prop_map(|pick| Step::Door(Door::TakeAway(pick))),
+        1 => Just(Step::Door(Door::DropRecord)),
+        3 => a_handle().prop_map(Step::Read),
     ]
 }
 
@@ -126,22 +130,24 @@ fn reading(store: &dyn StoreOfRecord<Event>) -> Result<Reading, String> {
     })
 }
 
-/// One store, its two long-lived handles, and a store elsewhere of the same
-/// prodrome, which a script of [`Step`]s writes to.
+/// One store, its two long-lived handles, a store elsewhere of the same
+/// prodrome that the store receives from, and a third replica whose prints
+/// arrive by a door, which a script of [`Step`]s writes to.
 struct Script<'s> {
     first: &'s dyn StoreOfRecord<Event>,
     second: Box<dyn StoreOfRecord<Event>>,
     elsewhere: Box<dyn StoreOfRecord<Event>>,
+    third: Box<dyn StoreOfRecord<Event>>,
     genesis: Hash,
     pool: Vec<Event>,
     theirs: Vec<Event>,
 }
 
 impl<'s> Script<'s> {
-    /// The store begun, and the store elsewhere, which shares the genesis
-    /// and holds every second event of both pools, so that what arrives
-    /// from it is concurrent with the store's writes, conflicts with them
-    /// and twins of them.
+    /// The store begun; the store elsewhere, which shares the genesis; and
+    /// the third replica, which shares the genesis and holds every second
+    /// event of both pools, so that what arrives from it is concurrent with
+    /// the store's writes, conflicts with them and twins of them.
     fn new(
         store: &'s dyn StoreOfRecord<Event>,
         pool: Vec<Event>,
@@ -150,13 +156,16 @@ impl<'s> Script<'s> {
         let genesis = super::kind::begin(store, "script");
         let elsewhere = store.sibling();
         sync(store, &*elsewhere, Sender::Stranger).expect("syncs");
+        let third = store.sibling();
+        sync(store, &*third, Sender::Stranger).expect("syncs");
         for event in pool.iter().chain(&theirs).step_by(2) {
-            let _ = elsewhere.append(event.clone());
+            let _ = third.append(event.clone());
         }
         Script {
             first: store,
             second: store.open(),
             elsewhere,
+            third,
             genesis,
             pool,
             theirs,
@@ -185,7 +194,7 @@ impl<'s> Script<'s> {
         let recorded = match step {
             Step::Write(..) => Some(derived(self.first)),
             Step::Door(Door::DropRecord) => None,
-            Step::Door(Door::Arrive(_) | Door::SetAside(_)) | Step::Read(_) => before,
+            Step::Door(Door::Arrive(_) | Door::TakeAway(_)) | Step::Read(_) => before,
         };
         self.holds(step, recorded)
     }
@@ -225,7 +234,7 @@ impl<'s> Script<'s> {
             Write::Quarantine(pick) => {
                 let names: Vec<Hash> = history(self.first);
                 if !names.is_empty() {
-                    self.first.replace(pick.get(&names), b"damaged");
+                    self.first.overwrite(pick.get(&names), b"damaged");
                 }
                 let _ = by.fsck();
             }
@@ -242,17 +251,17 @@ impl<'s> Script<'s> {
             Door::Arrive(pick) => {
                 let kept = self.first.prints();
                 let lacking: Vec<(Hash, Vec<u8>)> = self
-                    .elsewhere
+                    .third
                     .prints()
                     .into_iter()
                     .filter(|(name, _)| !kept.contains_key(name))
                     .collect();
                 if !lacking.is_empty() {
                     let (name, bytes) = pick.get(&lacking);
-                    self.first.place(name, bytes);
+                    self.first.arrive(name, bytes);
                 }
             }
-            Door::SetAside(pick) => {
+            Door::TakeAway(pick) => {
                 let kept: Vec<Hash> = self
                     .first
                     .prints()
@@ -260,7 +269,7 @@ impl<'s> Script<'s> {
                     .filter(|name| *name != self.genesis)
                     .collect();
                 if !kept.is_empty() {
-                    self.first.set_aside(pick.get(&kept));
+                    self.first.take_away(pick.get(&kept));
                 }
             }
             Door::DropRecord => self.first.set_record(None),
@@ -272,9 +281,16 @@ impl<'s> Script<'s> {
     fn holds(&self, step: &Step, recorded: Option<Heads>) -> Result<(), TestCaseError> {
         let fresh = self.first.open();
         let cold = reading(&*fresh);
-        // Law 45: incremental equals cold.
-        prop_assert_eq!(&reading(self.first), &cold, "after {:?}", step);
-        prop_assert_eq!(&reading(&*self.second), &cold, "after {:?}", step);
+        // Law 45: incremental equals cold, for the handle that made the
+        // step. The other long-lived handle is not read, so it lags.
+        let by: Vec<&dyn StoreOfRecord<Event>> = match step {
+            Step::Write(Handle::First, _) | Step::Read(Handle::First) => vec![self.first],
+            Step::Write(Handle::Second, _) | Step::Read(Handle::Second) => vec![&*self.second],
+            Step::Write(Handle::Fresh, _) | Step::Read(Handle::Fresh) | Step::Door(_) => vec![],
+        };
+        for handle in &by {
+            prop_assert_eq!(&reading(*handle), &cold, "after {:?}", step);
+        }
         // Law 60: after a write of the store, the record is the derived
         // heads; after a door, it is the record before the door.
         let derived = derived(self.first);
@@ -288,7 +304,7 @@ impl<'s> Script<'s> {
             }
             Some(_) | None => derived.clone(),
         };
-        for handle in [self.first, &*self.second, &*fresh] {
+        for handle in by.iter().copied().chain([&*fresh]) {
             prop_assert_eq!(
                 handle.heads().expect("heads"),
                 served.clone(),
@@ -315,7 +331,7 @@ impl<'s> Script<'s> {
         // Law 65: the heads of the history are its tips and the count of
         // its objects, and a `Dag` read fresh from exactly its objects has
         // the same heads.
-        let held = self.first.held().expect("reads");
+        let held = fresh.held().expect("reads");
         prop_assert_eq!(derived.tips(), &held.tips);
         prop_assert_eq!(derived.count(), held.dag.objects().len());
         let dag = held.dag;
@@ -344,19 +360,20 @@ proptest! {
 
     /// Laws 45, 60, 62, 63 and 65, over every store of record: after every
     /// step of a script of writes by three handles (appends, runs of
-    /// appends under one hold, receipts, quarantines, `record_heads`) and
-    /// of doors (a print arrives, a print is taken away, the record is
-    /// removed), every long-lived handle reads what a fresh handle reads,
-    /// each append writes what a fresh handle's append to a copy writes,
-    /// the record is the derived heads after a write and the older record
-    /// after a door, the store serves the record while every tip it names
-    /// is kept, `verify` reports a record that is not the derived heads,
-    /// and a `Dag`'s heads are the derived heads.
+    /// appends under one hold, receipts, quarantines, `record_heads`), of
+    /// doors (a print of a third replica arrives, a print is taken away, the
+    /// record is removed) and of reads, the handle that made the step reads
+    /// what a fresh handle reads, from a memory that was behind; each append
+    /// writes what a fresh handle's append to a copy writes; the record is
+    /// the derived heads after a write and the older record after a door;
+    /// the store serves the record while every tip it names is kept;
+    /// `verify` reports a record that is not the derived heads; and a
+    /// `Dag`'s heads are the derived heads.
     #[test]
     fn every_step_of_a_script_keeps_the_laws_of_a_store_of_record(
         pool in a_log(),
         theirs in a_log(),
-        steps in prop::collection::vec(a_step(), 1..24),
+        steps in prop::collection::vec(a_step(), 1..40),
     ) {
         prop_assume!(!pool.is_empty());
         let scratch = Scratch::new();
@@ -367,4 +384,104 @@ proptest! {
             }
         }
     }
+}
+
+/// An index into any list: the fixed scripts below draw from lists whose
+/// members are all alike for what each one checks.
+fn any_index() -> Index {
+    use proptest::strategy::ValueTree;
+    any::<Index>()
+        .new_tree(&mut proptest::test_runner::TestRunner::deterministic())
+        .expect("an index")
+        .current()
+}
+
+/// Events about `count` different todos, each its entity's first write, so
+/// that each change rests on the genesis alone.
+fn apart(count: usize) -> Vec<Event> {
+    const TODOS: [&str; 6] = ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"];
+    let drafts: Vec<(common::Draft, i64)> = TODOS
+        .iter()
+        .take(count)
+        .zip(0..)
+        .map(|(todo, at)| {
+            (
+                common::Draft {
+                    todo,
+                    actor: "ada",
+                    roll: 1,
+                    spec: None,
+                    items: 0,
+                    text: 7,
+                },
+                at,
+            )
+        })
+        .collect();
+    common::realise(&drafts, 0)
+}
+
+/// Law 62, over every store of record, on fixed steps of the script: a
+/// print of the third replica arrives, and the store serves the older
+/// record, which is not the derived heads; then a hold of the lock, a
+/// `record_heads` or a removal of the record ends the lag, and the store
+/// serves the derived heads.
+#[test]
+fn another_door_s_objects_read_as_the_older_heads() -> Result<(), TestCaseError> {
+    let scratch = Scratch::new();
+    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+        let script = Script::new(&*store, apart(6), Vec::new());
+        let ends = [
+            Step::Write(Handle::First, Write::Run(Vec::new())),
+            Step::Write(Handle::Second, Write::RecordHeads),
+            Step::Door(Door::DropRecord),
+        ];
+        for end in &ends {
+            let older = store.record().expect("recorded");
+            script.run(&Step::Door(Door::Arrive(any_index())))?;
+            prop_assert_eq!(
+                store.heads().expect("reads"),
+                older.clone(),
+                "the record lags"
+            );
+            prop_assert_ne!(older, derived(&*store), "the arrival changed the heads");
+            script.run(end)?;
+            prop_assert_eq!(
+                store.heads().expect("reads"),
+                derived(&*store),
+                "after {:?}",
+                end
+            );
+        }
+    }
+    Ok(())
+}
+
+/// Law 63, over every store of record, on fixed steps of the script: the
+/// one change of the store is taken away while the record names it as a
+/// tip; the store serves the derived heads, and `verify` reports the record
+/// and the derived heads.
+#[test]
+fn a_record_naming_an_absent_head_is_not_served() -> Result<(), TestCaseError> {
+    let scratch = Scratch::new();
+    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+        let script = Script::new(&*store, apart(1), Vec::new());
+        script.run(&Step::Write(Handle::First, Write::Append(any_index())))?;
+        let recorded = store.record().expect("recorded");
+        let tip = recorded.tips().iter().next().expect("a tip").clone();
+        prop_assert_ne!(&tip, &script.genesis, "the tip is the change");
+        script.run(&Step::Door(Door::TakeAway(any_index())))?;
+        prop_assert!(!store.prints().contains_key(&tip), "the tip is taken away");
+        prop_assert_eq!(
+            store.record(),
+            Some(recorded.clone()),
+            "the record names it"
+        );
+        let derived = derived(&*store);
+        prop_assert_ne!(&derived, &recorded);
+        prop_assert_eq!(store.heads().expect("derives"), derived.clone());
+        let stale = Finding::StaleHeads { recorded, derived };
+        prop_assert!(store.verify().contains(&stale));
+    }
+    Ok(())
 }

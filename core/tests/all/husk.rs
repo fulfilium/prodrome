@@ -355,7 +355,7 @@ fn a_print_that_is_no_husk_is_tampered() {
             whole.replace("title 0", "title 9")
         };
         assert_ne!(other, whole);
-        store.replace(name, other.as_bytes());
+        store.overwrite(name, other.as_bytes());
         let reader = Store::new(store.root(), Untrusted::none());
         let read = reader.dag().expect("reads");
         assert!(
@@ -363,7 +363,7 @@ fn a_print_that_is_no_husk_is_tampered() {
             "{other}"
         );
         assert!(reader.append(events(&drafts)[1].clone()).is_err());
-        store.replace(name, whole.as_bytes());
+        store.overwrite(name, whole.as_bytes());
     }
 }
 
@@ -466,7 +466,7 @@ fn a_husk_whose_parent_is_absent_waits() {
     let parent = change.deps.first().expect("a dep").clone();
     let partial = copied(&scratch, &store);
     let parent_print = partial.kept(&parent).expect("kept");
-    partial.set_aside(&parent);
+    partial.take_away(&parent);
     let dag = partial.dag().expect("reads");
     assert!(dag.get(&name).is_none(), "the husk waits");
     assert!(dag.husks().contains(&name), "and is held as a husk");
@@ -475,7 +475,7 @@ fn a_husk_whose_parent_is_absent_waits() {
         findings,
         vec![format!("chain broke at {parent}: missing object {parent}")]
     );
-    partial.place(&parent, &parent_print);
+    partial.arrive(&parent, &parent_print);
     assert!(
         partial.dag().expect("reads").get(&name).is_some(),
         "the husk joins"
@@ -532,7 +532,7 @@ fn an_overlay_answers_its_own_whole_over_a_damaged_base() {
         .next()
         .expect("a tip");
     let base = copied(&scratch, &whole);
-    base.replace(&name, b"damaged");
+    base.overwrite(&name, b"damaged");
     let overlay = Overlay::new(&base);
     sync(&whole, &overlay, Sender::Stranger).expect("the overlay takes the whole");
     assert_eq!(overlay.kept(&name), whole.kept(&name));
@@ -574,7 +574,7 @@ fn writing_a_waiting_object_again_writes_nothing() {
             .expect("appended")
     });
     let store = copied(&scratch, &whole);
-    store.set_aside(&middle);
+    store.take_away(&middle);
     assert!(store.dag().expect("reads").get(&last).is_none(), "it waits");
     let merged = store
         .merge(Some(&[first.clone(), last.clone()]), None)

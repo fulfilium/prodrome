@@ -35,17 +35,22 @@ fn next() -> u64 {
     NEXT.fetch_add(1, Ordering::Relaxed)
 }
 
-/// A directory for the stores of one case. Dropping it removes the
-/// directory and every store in it.
+/// A directory for the stores of one case, empty when the case begins.
+/// Dropping it removes the directory and every store in it.
 pub(crate) struct Scratch(PathBuf);
 
 impl Scratch {
+    /// A new scratch directory. A run that was killed, or an earlier
+    /// process with the same id, can have left one under the same name, so
+    /// it is removed first.
     pub(crate) fn new() -> Scratch {
-        Scratch(std::env::temp_dir().join(format!(
+        let root = std::env::temp_dir().join(format!(
             "prodrome-store-laws-{}-{}",
             std::process::id(),
             next()
-        )))
+        ));
+        let _ = fs::remove_dir_all(&root);
+        Scratch(root)
     }
 
     /// A path in the scratch directory that no other store uses.
@@ -107,14 +112,18 @@ pub(crate) fn replicas<E: Schema>(scratch: &Scratch, schema: &E::Vocabulary) -> 
 /// store of record has, and the doors to the place where it keeps its
 /// prints.
 ///
-/// A door changes what the store keeps without any handle of the store:
-/// `place` puts a print under a name that the store does not keep,
-/// `replace` puts other bytes under a name that it keeps, and `set_aside`
-/// takes a print away. Another program does each of these (a copy of
-/// files, a `git merge`, a damaged disk, a host that deletes a rejected
-/// proposal), and a write of the store that stops after a step has done the
-/// steps before it. The suite states a stop after each step of a write as
-/// the doors that the steps before it opened.
+/// A door changes what the store keeps without any handle of the store,
+/// and takes no hold: `arrive` puts a print under a name that the store
+/// does not keep, `overwrite` puts other bytes under a name that it keeps,
+/// and `take_away` removes a print. Another program does each of these (a
+/// copy of files, a `git merge`, a damaged disk, a host that deletes a
+/// rejected proposal), and a write of the store that stops after a step has
+/// done the steps before it. The suite states a stop after each step of a
+/// write as the doors that the steps before it opened. The design note's
+/// `Placing` names the same three writes `place`, `replace` and
+/// `set_aside` when a holder makes them; a door is not a holder, so the
+/// suite gives the doors other names. What `fsck` sets aside is read by
+/// [`StoreOfRecord::aside`].
 pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// This store as a replica.
     fn replica(&self) -> &dyn Replica<E>;
@@ -180,17 +189,18 @@ pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
 
     /// Every name that the store keeps, with the bytes under it, read past
     /// every handle: the history, what waits outside it, and what is no
-    /// object.
+    /// object. What a stopped write left, and a stray, are under no name,
+    /// so they are not here; `verify` reports them.
     fn prints(&self) -> BTreeMap<Hash, Vec<u8>>;
 
     /// A door: `bytes` under `name`, which the store does not keep.
-    fn place(&self, name: &Hash, bytes: &[u8]);
+    fn arrive(&self, name: &Hash, bytes: &[u8]);
 
     /// A door: `bytes` under `name`, in place of the bytes kept there.
-    fn replace(&self, name: &Hash, bytes: &[u8]);
+    fn overwrite(&self, name: &Hash, bytes: &[u8]);
 
     /// A door: the print under `name` taken away.
-    fn set_aside(&self, name: &Hash);
+    fn take_away(&self, name: &Hash);
 
     /// What `fsck` has set aside, by the receipt that `verify` names, with
     /// the bytes.
@@ -328,17 +338,17 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
             .collect()
     }
 
-    fn place(&self, name: &Hash, bytes: &[u8]) {
+    fn arrive(&self, name: &Hash, bytes: &[u8]) {
         let objects = self.root().join("objects");
         fs::create_dir_all(&objects).expect("objects/ is made");
         fs::write(file_of(self.root(), name), bytes).expect("the print is placed");
     }
 
-    fn replace(&self, name: &Hash, bytes: &[u8]) {
+    fn overwrite(&self, name: &Hash, bytes: &[u8]) {
         fs::write(file_of(self.root(), name), bytes).expect("the print is replaced");
     }
 
-    fn set_aside(&self, name: &Hash) {
+    fn take_away(&self, name: &Hash) {
         fs::remove_file(file_of(self.root(), name)).expect("the print is taken away");
     }
 
@@ -425,13 +435,13 @@ fn listed(dir: &Path) -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
-/// Every print `from` keeps, placed in `to` by the door.
+/// Every print `from` keeps, put in `to` by the door `arrive`.
 pub(crate) fn copy_prints<E: Schema>(
     from: &(impl StoreOfRecord<E> + ?Sized),
     to: &(impl StoreOfRecord<E> + ?Sized),
 ) {
     for (name, bytes) in from.prints() {
-        to.place(&name, &bytes);
+        to.arrive(&name, &bytes);
     }
 }
 

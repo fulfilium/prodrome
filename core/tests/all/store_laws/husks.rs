@@ -231,6 +231,9 @@ fn a_run_is_appends_one_by_one(
     prop_assert_eq!(names, each.clone());
     prop_assert_eq!(run.prints(), one.prints());
     prop_assert_eq!(run.heads().expect("heads"), one.heads().expect("heads"));
+    // `prints` holds no temp and no stray, and `verify` reports each.
+    prop_assert_eq!(run.verify(), Vec::<Finding>::new());
+    prop_assert_eq!(one.verify(), Vec::<Finding>::new());
 
     let at = at.min(drafts.len());
     let mut refused = events(drafts);

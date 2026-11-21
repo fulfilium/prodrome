@@ -38,13 +38,13 @@ type Event = TodoEvent<Todo>;
 fn lay_out<E: Schema>(store: &dyn StoreOfRecord<E>, prints: &BTreeMap<Hash, Vec<u8>>) {
     let kept = store.prints();
     for name in kept.keys().filter(|name| !prints.contains_key(*name)) {
-        store.set_aside(name);
+        store.take_away(name);
     }
     for (name, bytes) in prints {
         match kept.get(name) {
             Some(held) if held == bytes => {}
-            Some(_) => store.replace(name, bytes),
-            None => store.place(name, bytes),
+            Some(_) => store.overwrite(name, bytes),
+            None => store.arrive(name, bytes),
         }
     }
 }
@@ -65,12 +65,12 @@ fn reads_its_interior(
     let gappy = store.sibling();
     lay_out(&*gappy, prints);
     for name in removed {
-        warm.set_aside(name);
-        gappy.set_aside(name);
+        warm.take_away(name);
+        gappy.take_away(name);
     }
     let only = store.sibling();
     for name in interior.objects().keys() {
-        only.place(name, &prints[name]);
+        only.arrive(name, &prints[name]);
     }
     let folded = fold(&interior.nodes().expect("an interior reads"));
     for at in [&warm, &gappy, &only] {
@@ -138,7 +138,7 @@ fn quarantine_reads_without_it(
         .collect();
     let mut bytes = intact.kept(&damaged).expect("kept");
     bytes.push(b' ');
-    store.replace(&damaged, &bytes);
+    store.overwrite(&damaged, &bytes);
     let read = store
         .held()
         .expect("a read leaves out what fails its hash")
@@ -194,7 +194,7 @@ fn quarantine_reads_without_it(
     let again = b"not an object".to_vec();
     let second = store.receipt(&damaged, &again);
     prop_assert_ne!(&second, &receipt);
-    store.place(&damaged, &again);
+    store.arrive(&damaged, &again);
     let report = store.fsck();
     let aside = store.aside();
     prop_assert_eq!(aside.len(), 2);
@@ -205,7 +205,7 @@ fn quarantine_reads_without_it(
     prop_assert_eq!(held.dag.objects(), expected.objects());
 
     // The same bytes set aside again are the same receipt: nothing new.
-    store.place(&damaged, &again);
+    store.arrive(&damaged, &again);
     let _ = store.fsck();
     prop_assert_eq!(store.aside().len(), 2);
 
@@ -482,7 +482,7 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
     let mut damaged = bytes.clone();
     let last = damaged.len() - 2;
     damaged[last] ^= 1;
-    store.replace(&name, &damaged);
+    store.overwrite(&name, &damaged);
     let left_out = read(store);
     assert!(
         left_out.0.get(&name).is_none(),
@@ -494,7 +494,7 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
     ));
     assert_eq!(left_out, read(&*store.open()));
     assert!(store.append(event[0].clone()).is_err(), "a write refuses");
-    store.replace(&name, &bytes);
+    store.overwrite(&name, &bytes);
     assert_eq!(read(store), before);
 }
 

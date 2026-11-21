@@ -64,7 +64,7 @@ fn a_stop_serves_the_derived_heads(
     for (name, print) in &placed {
         let _ = writer.interrupt(&print[..print.len() / 2]);
         prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
-        writer.place(name, print);
+        writer.arrive(name, print);
         prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
     }
     let heads = derived(writer);
@@ -122,6 +122,7 @@ fn a_failed_placement_reads_as_cold(clean: &dyn StoreOfRecord<Letter>) {
         store.obstruct(&names[1]);
         let stopped = hold.append_all(events[..2].to_vec());
         assert!(matches!(stopped, Err(Stopped { ref placed, .. }) if placed.is_empty()));
+        assert_eq!(store.record(), None, "removed before the placement");
         let cold = store.open();
         assert_eq!(*hold.dag(), *cold.held().expect("reads").dag);
         assert_eq!(hold.append(events[0].clone()).expect("a twin"), names[0]);
@@ -226,7 +227,7 @@ fn a_stop_leaves_the_whole_or_the_husk(store: &dyn StoreOfRecord<Letter>) {
     {
         let stopped = store.sibling();
         copy_prints(store, &*stopped);
-        stopped.replace(&name, file);
+        stopped.overwrite(&name, file);
         let expected: Vec<Finding> = staged
             .map(|staged| stopped.interrupt(staged))
             .into_iter()
