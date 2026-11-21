@@ -32,6 +32,7 @@
 //!   crash leaves a store half-written or an object empty.
 
 mod decision;
+mod fault;
 mod husk;
 mod levelled;
 mod memory;
@@ -39,6 +40,8 @@ mod memory_store;
 mod overlay;
 mod record;
 mod replica;
+#[cfg(target_os = "linux")]
+mod syncfs;
 mod writes;
 
 pub mod frontier;
@@ -178,7 +181,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let locked = self.lock()?;
         let mut memory = self.memory();
         self.begin_hold()?;
-        self.look(&mut memory)?;
+        let listing = self.listing()?;
+        self.sweep(&listing.garbage);
+        self.level(&mut memory, listing.objects);
         memory.dag().whole()?;
         Ok(Decision {
             store: self,
@@ -217,7 +222,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// would had the file never been there (SPEC law 45). Refuses only where
     /// `objects/` cannot be listed.
     fn look(&self, memory: &mut Memory<E>) -> Result<(), ProdromeError> {
-        let listed = self.listing()?.objects;
+        self.level(memory, self.listing()?.objects);
+        Ok(())
+    }
+
+    /// [`EventStore::look`] from the objects of one listing.
+    fn level(&self, memory: &mut Memory<E>, listed: Vec<(Hash, fs::DirEntry)>) {
         let now = SystemTime::now();
         let gone: Vec<Hash> = {
             let listed: BTreeSet<&Hash> = listed.iter().map(|(name, _)| name).collect();
@@ -239,7 +249,29 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             read_object(&dir, name)
         });
         memory.level(gone, read, &seen);
-        Ok(())
+    }
+
+    /// THE TEMPS OF A STOPPED WRITE, REMOVED BY THE NEXT HOLD. Every temp
+    /// that the store writes (an object staged, a husk, `.gitattributes`)
+    /// is written under the lock, so a temp that a holder finds was left by
+    /// a write that stopped: a killed process, or a placement that failed.
+    /// The holder removes each one in `objects/` (`garbage`, from its
+    /// listing) and in the root, with no sync: a removal that a power loss
+    /// undoes is done again by the next hold. An entry that is no temp (a
+    /// stray) is the host's, and stays. An entry named like a temp that
+    /// cannot be removed (a directory, an immutable file) stays too, and
+    /// `verify` reports it: the hold goes on, so that no write waits on a
+    /// person.
+    fn sweep(&self, garbage: &[String]) {
+        let objects = self.objects_dir();
+        let temps = garbage
+            .iter()
+            .filter(|file| is_temp(file))
+            .map(|file| objects.join(file))
+            .chain(self.temps().into_iter().map(|file| self.root.join(file)));
+        for temp in temps {
+            let _ = fs::remove_file(&temp);
+        }
     }
 
     /// The policy this store reads under — what `verify` asks and what a
@@ -332,7 +364,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let _locked = self.lock()?;
         let mut memory = self.memory();
         self.begin_hold()?;
-        self.look(&mut memory)?;
+        let listing = self.listing()?;
+        self.sweep(&listing.garbage);
+        self.level(&mut memory, listing.objects);
         let heads = memory.heads();
         Record::Untouched.finish(&self.root, &heads)?;
         self.end_hold(&mut memory, Level::Level);
@@ -671,11 +705,16 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(names)
     }
 
-    /// Objects onto disk under their names, in the order given, DURABLY:
-    /// each is [`put_durably`] without the directory sync, and `objects/` is
-    /// synced once when all of them are, so a batch — one adoption, one
-    /// append — costs one directory sync and not one per object. The store's
-    /// `.gitattributes` goes first, the same way, where there is none.
+    /// Objects onto disk under their names, in the order given, DURABLY,
+    /// with the fewest syncs that the file system allows. Every object is
+    /// staged in a temp file first ([`Staged`]); then the staged bytes are
+    /// made durable, all of them before the first rename; then each temp is
+    /// renamed under its name, parents first; and `objects/` is synced once
+    /// after the last. So a batch (one adoption, one append) costs one sync
+    /// of its bytes and one directory sync, and a stop at any step leaves a
+    /// prefix of the batch under its names, parents first, and temps that
+    /// `verify` reports. The store's `.gitattributes` goes first, durably,
+    /// where there is none.
     fn place<'a>(
         &self,
         objects: impl IntoIterator<Item = (&'a Hash, &'a [u8])>,
@@ -683,9 +722,26 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let dir = self.objects_dir();
         make_dir(&dir)?;
         self.gitattributes()?;
-        for (digest, bytes) in objects {
-            rename_into(&stage(&dir, bytes)?, &self.object_path(digest))?;
+        let objects: Vec<(&Hash, &[u8])> = objects.into_iter().collect();
+        let staging = Staged::begin(&dir, objects.len());
+        let mut staged: Vec<(PathBuf, &Hash)> = Vec::new();
+        for (at, (digest, bytes)) in objects.into_iter().enumerate() {
+            match fault::at(fault::Step::Stage(at)).and_then(|()| staging.stage(&dir, bytes)) {
+                Ok(temp) => staged.push((temp, digest)),
+                Err(why) => {
+                    unstage(&staged);
+                    return Err(why);
+                }
+            }
         }
+        if let Err(why) = fault::at(fault::Step::Sync).and_then(|()| staging.sync(&dir)) {
+            unstage(&staged);
+            return Err(why);
+        }
+        for (temp, digest) in staged {
+            rename_into(&temp, &self.object_path(digest))?;
+        }
+        fault::at(fault::Step::SyncDir)?;
         sync_dir(&dir)
     }
 
@@ -790,6 +846,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     fn quarantine(&self) -> Result<(), ProdromeError> {
         let _locked = self.lock()?;
         self.begin_hold()?;
+        self.sweep(&self.listing()?.garbage);
         let read = self.cold()?;
         let tampered: Vec<(&Hash, &Hash)> = read
             .dag()
@@ -1114,6 +1171,93 @@ fn replace(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
     rename_into(&Written::into(dir, bytes)?.sync()?, path)
 }
 
+/// How a batch of temp files in one directory is made durable before the
+/// first of them is renamed: by one sync of the file system, or by a sync
+/// of each file. [`Staged::begin`] chooses.
+enum Staged {
+    /// One `syncfs` through `handle`, a handle on the directory opened
+    /// before the first byte is staged. Each temp is closed once its bytes
+    /// are written, so a batch holds one descriptor however long it is.
+    OneSync { handle: File },
+    /// Each temp synced as it is staged, by `fsync` (on macOS,
+    /// `F_FULLFSYNC`), which reports the errors of that file.
+    EachFile,
+}
+
+/// The size of a batch from which one sync costs less than a sync of each
+/// file, also where another program has data on the file system that is
+/// not yet synced. On the generated store of 50,000 objects (ext4, a virtual
+/// disk), a sync of each file costs about 0.33 ms a print. One `syncfs`
+/// costs about 1 ms with nothing else to write, and about 150 ms where
+/// another program has 64 MiB to write, whatever the batch. The gain with
+/// nothing else to write equals the loss under that load at about 240
+/// prints.
+const ONE_SYNC_FROM: usize = 256;
+
+impl Staged {
+    /// The way for a batch of `len` prints in `dir`: one sync where the
+    /// batch is at least [`ONE_SYNC_FROM`], the kernel's `syncfs` reports
+    /// a lost write, and the file system is one where an answer of success
+    /// from `syncfs` leaves every staged byte durable ([`syncfs`]); a sync
+    /// of each file everywhere else. Where `dir` cannot be opened, each
+    /// file is synced, and the staging then says why it fails.
+    fn begin(dir: &Path, len: usize) -> Staged {
+        #[cfg(target_os = "linux")]
+        if len >= ONE_SYNC_FROM {
+            if let Ok(handle) = File::open(dir) {
+                if syncfs::stands_for_each_file(&handle) {
+                    return Staged::OneSync { handle };
+                }
+            }
+        }
+        let _ = (dir, len);
+        Staged::EachFile
+    }
+
+    /// `bytes` in a fresh temp file in `dir`, closed where one sync follows
+    /// and synced where each file is: its path.
+    fn stage(&self, dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+        match self {
+            Staged::OneSync { .. } => Ok(Written::into(dir, bytes)?.temp),
+            Staged::EachFile => stage(dir, bytes),
+        }
+    }
+
+    /// Every staged byte durable. One `syncfs` reports every error of
+    /// writeback on the file system after its handle was opened, which may
+    /// be another program's write: then the batch is not placed.
+    fn sync(self, dir: &Path) -> Result<(), ProdromeError> {
+        match self {
+            Staged::OneSync { handle } => {
+                #[cfg(target_os = "linux")]
+                return rustix::fs::syncfs(&handle).map_err(|error| {
+                    ProdromeError::Store(format!(
+                        "the batch was not placed: syncfs on {} reported an error of writeback \
+                         on the file system, which may be another program's write: {}",
+                        dir.display(),
+                        std::io::Error::from(error)
+                    ))
+                });
+                #[cfg(not(target_os = "linux"))]
+                {
+                    let _ = (handle, dir);
+                    Ok(())
+                }
+            }
+            Staged::EachFile => Ok(()),
+        }
+    }
+}
+
+/// The temps of a batch that is not placed, removed: what a staging or a
+/// sync that failed made. A temp that cannot be removed is removed by the
+/// next hold ([`EventStore::sweep`]).
+fn unstage(staged: &[(PathBuf, &Hash)]) {
+    for (temp, _) in staged {
+        let _ = fs::remove_file(temp);
+    }
+}
+
 /// A temp file written and not yet synced: the first step of a durable
 /// write. Each step is a value, so a stop between any two can be made and
 /// read (SPEC law 75).
@@ -1196,8 +1340,9 @@ fn temp_name() -> String {
 
 /// Is `file` a name [`temp_name`] draws?
 fn is_temp(file: &str) -> bool {
-    file.strip_suffix(".tmp")
-        .is_some_and(|stem| stem.len() == 16 && stem.bytes().all(|b| b.is_ascii_hexdigit()))
+    file.strip_suffix(".tmp").is_some_and(|stem| {
+        stem.len() == 16 && stem.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+    })
 }
 
 fn random() -> u64 {
@@ -1880,6 +2025,67 @@ mod tests {
         fs::write(&gitignore, "# the host's\n/.writes\n/.heads\n").expect("both lines");
         assert_eq!(findings(&store), Vec::<String>::new());
         let _ = fs::remove_dir_all(store.root());
+    }
+
+    /// Laws 61 and 79 at each step of a placement that fails: the staging
+    /// of the second print, the sync of the batch, and the sync of the
+    /// directory. Inside the hold, right after the failure, there is no
+    /// record of heads and the hold's memory reads as a fresh handle does.
+    /// A staging or a sync that fails removes the temps it made and places
+    /// nothing; a failed sync of the directory leaves every print renamed.
+    /// The hold records nothing, the store serves the derived heads, and
+    /// the same run, once the fault is gone, places what it did not.
+    #[test]
+    fn a_fault_at_each_step_of_a_placement_keeps_laws_61_and_79() {
+        use fault::{inject, Step};
+        for step in [Step::Stage(1), Step::Sync, Step::SyncDir] {
+            let store = Store::new(scratch(&format!("fault-{step:?}")), roster());
+            store.init("fault").expect("begins");
+            let events: Vec<TodoEvent<Todo>> = (1..4)
+                .map(|day| mk_created(&format!("t{day}"), at(day), "ada", "", "").expect("valid"))
+                .collect();
+            {
+                let mut decision = store.decide().expect("decides");
+                inject(Some(step));
+                let stopped = decision.append_all(events.clone());
+                inject(None);
+                assert!(
+                    matches!(stopped, Err(Stopped { ref placed, .. }) if placed.is_empty()),
+                    "{step:?}"
+                );
+                assert!(!store.root().join(".heads").exists(), "law 61 at {step:?}");
+                let cold = Store::new(store.root(), roster());
+                assert_eq!(
+                    **decision.dag(),
+                    *cold.dag().expect("reads"),
+                    "law 79 at {step:?}"
+                );
+            }
+            assert!(
+                !store.root().join(".heads").exists(),
+                "the hold records nothing"
+            );
+            let temps = fs::read_dir(store.objects_dir())
+                .expect("lists")
+                .filter_map(Result::ok)
+                .filter(|entry| is_temp(&entry.file_name().to_string_lossy()))
+                .count();
+            assert_eq!(temps, 0, "{step:?}");
+            let fresh = Store::new(store.root(), roster());
+            let held = fresh.dag().expect("reads").objects().len();
+            let expected = match step {
+                Step::Stage(_) | Step::Sync => 1,
+                Step::SyncDir => 4,
+            };
+            assert_eq!(held, expected, "{step:?}");
+            assert_eq!(
+                store.heads().expect("derives"),
+                fresh.dag().expect("reads").heads()
+            );
+            assert_eq!(store.append_all(events).expect("appends").len(), 3);
+            assert_eq!(findings(&store), Vec::<String>::new(), "{step:?}");
+            let _ = fs::remove_dir_all(store.root());
+        }
     }
 
     /// THERE ARE NO ORPHANS. An object nothing names is not unreachable, it is

@@ -215,6 +215,11 @@ pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// names what it left.
     fn interrupt(&self, bytes: &[u8]) -> Finding;
 
+    /// A door: an entry beside the prints that is no print and no temp, as
+    /// a host or another program leaves one. Answers the finding of
+    /// `verify` that names it.
+    fn stray(&self) -> Finding;
+
     /// Does `finding` name only what a write that stopped left?
     fn left_by_a_stop(&self, finding: &Finding) -> bool;
 
@@ -371,6 +376,14 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
             }
             Some(_) | None => first,
         }
+    }
+
+    /// A file `notes.txt` in `objects/`.
+    fn stray(&self) -> Finding {
+        let objects = self.root().join("objects");
+        fs::create_dir_all(&objects).expect("objects/ is made");
+        fs::write(objects.join("notes.txt"), b"a host's notes").expect("the stray is written");
+        Finding::Garbage("objects/notes.txt".to_owned())
     }
 
     /// A temp file in `objects/`, named as the store names its temps:

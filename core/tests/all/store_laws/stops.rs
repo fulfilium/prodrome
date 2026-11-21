@@ -1,8 +1,9 @@
 //! A write of a store of record stopped after each of its steps, or failed
 //! at one: SPEC law 61 (a stop of a post leaves no record but the derived
 //! one), law 75 (a stop at each step of a replacement leaves the whole or
-//! the husk) and law 79, with the second clause of law 61 (a failed
-//! placement leaves the memory as a cold read, and no record).
+//! the husk), law 79, with the second clause of law 61 (a failed
+//! placement leaves the memory as a cold read, and no record), and law 82
+//! (the next hold removes what a stopped write left).
 //!
 //! Each stop is stated through the doors of [`StoreOfRecord`]: the steps
 //! that a write made before the stop are the doors it opened, and
@@ -39,6 +40,7 @@ fn a_stop_serves_the_derived_heads(
     writer: &dyn StoreOfRecord<Event>,
     before: usize,
     new: usize,
+    order: Order,
 ) -> Result<(), TestCaseError> {
     begin(writer, "heads");
     for n in 0..before {
@@ -61,9 +63,23 @@ fn a_stop_serves_the_derived_heads(
     let record = writer.record().expect("recorded");
     writer.set_record(None);
     prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
+    match order {
+        Order::EachThenItsRename => {}
+        Order::AllStagedFirst => {
+            for (_, print) in &placed {
+                let _ = writer.interrupt(print);
+                prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
+            }
+        }
+    }
     for (name, print) in &placed {
-        let _ = writer.interrupt(&print[..print.len() / 2]);
-        prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
+        match order {
+            Order::EachThenItsRename => {
+                let _ = writer.interrupt(&print[..print.len() / 2]);
+                prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
+            }
+            Order::AllStagedFirst => {}
+        }
         writer.arrive(name, print);
         prop_assert_eq!(writer.open().heads().expect("derives"), derived(writer));
     }
@@ -91,10 +107,14 @@ proptest! {
     /// the new record, or cut it at any byte, after every new object is
     /// placed.
     #[test]
-    fn a_served_record_is_the_derived_one(before in 0usize..4, new in 1usize..4) {
+    fn a_served_record_is_the_derived_one(
+        before in 0usize..4,
+        new in 1usize..4,
+        order in prop_oneof![Just(Order::EachThenItsRename), Just(Order::AllStagedFirst)],
+    ) {
         let scratch = Scratch::new();
         for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-            a_stop_serves_the_derived_heads(&*store, before, new)?;
+            a_stop_serves_the_derived_heads(&*store, before, new, order)?;
         }
     }
 }
@@ -156,6 +176,15 @@ fn a_failed_placement_leaves_the_memory_as_a_cold_read() {
     for store in stores_of_record::<Letter>(&scratch, &Default::default()) {
         a_failed_placement_reads_as_cold(&*store);
     }
+}
+
+/// The order of the steps of a post in law 61's model: each print staged
+/// and then renamed, or every print staged before the first rename, as one
+/// sync of a batch stages them.
+#[derive(Debug, Clone, Copy)]
+enum Order {
+    EachThenItsRename,
+    AllStagedFirst,
 }
 
 /// What a stop of a replacement leaves under the name, and beside it.
@@ -257,5 +286,49 @@ fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
     let scratch = Scratch::new();
     for store in stores_of_record::<Letter>(&scratch, &Default::default()) {
         a_stop_leaves_the_whole_or_the_husk(&*store);
+    }
+}
+
+/// Law 82 at one store: what a stopped write left is reported by `verify`
+/// until the next hold of the lock, and the hold removes it and changes no
+/// print.
+fn a_hold_removes_what_a_stop_left(store: &dyn StoreOfRecord<Event>) {
+    begin(store, "sweep");
+    store.append(reopened(1, 1)).expect("appends");
+    let stray = store.stray();
+    let holds: [(&str, &dyn Fn()); 3] = [
+        ("a decision", &|| drop(store.hold().expect("holds"))),
+        ("record_heads", &|| {
+            drop(store.record_heads().expect("records"))
+        }),
+        ("fsck", &|| drop(store.fsck())),
+    ];
+    for (hold, run) in holds {
+        let left = [
+            store.interrupt(b"a print cut sh"),
+            store.interrupt(b"a whole print, staged"),
+        ];
+        let found = store.verify();
+        assert!(
+            left.iter().all(|finding| found.contains(finding)),
+            "{found:?}"
+        );
+        let prints = store.prints();
+        run();
+        assert_eq!(
+            store.verify(),
+            vec![stray.clone()],
+            "after {hold}: the stray stays"
+        );
+        assert_eq!(store.prints(), prints, "after {hold}");
+    }
+}
+
+/// Law 82, over every store of record.
+#[test]
+fn a_hold_removes_what_a_stopped_write_left() {
+    let scratch = Scratch::new();
+    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+        a_hold_removes_what_a_stop_left(&*store);
     }
 }
