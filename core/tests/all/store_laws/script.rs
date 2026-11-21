@@ -141,8 +141,8 @@ struct Script<'s> {
     genesis: Hash,
     pool: Vec<Event>,
     theirs: Vec<Event>,
-    /// How many holds of the lock the script has made: the count that the
-    /// store's count of holds stands at, from where it began.
+    /// How many holds of the lock the script has made. Each one writes a
+    /// fresh mark of the last hold.
     holds: u64,
     /// For the first and the second handle, the number of holds when the
     /// handle last listed the prints, and what it read then. A handle reads
@@ -211,8 +211,8 @@ impl<'s> Script<'s> {
             }
         }
         if let Step::Write(..) = step {
-            // Every write holds the lock, and every hold writes the next
-            // count of holds.
+            // Every write holds the lock, and every hold writes a fresh
+            // mark.
             self.holds += 1;
         }
         let recorded = match step {

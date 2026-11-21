@@ -378,44 +378,53 @@ since this grammar has tuples and no mapping.
     the store does not own: a union or a copy of object files, a same-name
     move of files from a staging store, a version-control merge or
     checkout of the directory, or an older binary that writes no record.
-    After such a door, the record can be older than the objects. Until the
-    host calls `record_heads()` (which derives and records the heads under
-    the lock) or deletes `.heads`, readers of `heads()` see the last
+    After such a door, the record can be older than the objects, and a
+    handle that has read the store reads the history that it read (see
+    "The mark of the last hold" below). The one remedy is a hold of the
+    lock: a host calls `record_heads()`, which lists `objects/`, derives
+    and records the heads, and writes a fresh mark, so that every handle
+    lists at its next read. Until then, readers of `heads()` see the last
     recorded history, and `verify` reports the record as stale. Such a
     door also speaks as the store's keeper for every husk it brings (§3,
     "A husk"): a host that does not take its word asks `Dag::husks` and
     `Proof::standing` which objects stand on it. `verify`
     takes no lock, so it reads the record before its look at the objects
     and after it, and reports a stale record only when both reads found
-    the same record. Deleting
-    `.heads` is always safe: the next reader derives, and the next hold of
-    the lock records. A host that never calls `heads()` needs to do nothing
-    for correctness, but its `verify` reports the stale record after such a
-    door until a write, a `decide`, a `record_heads()` or a deletion.
-- **The count of holds.** A store on disk also keeps `root/.writes`, a file
-  local to one machine that holds a random tag of 16 hex digits, one space,
-  and the number of holds of the store's lock, in decimal, with no newline.
-  Every hold of the lock (each write, `decide`, `record_heads()` and
-  `fsck`) removes the file when it takes the lock, with no sync, and writes
-  the next count when it lets the lock go; a hold that refuses before its
-  end leaves no file. A file that is absent, cut short or not exactly that
-  print holds no count. A handle keeps the count that it read before its
-  last listing of `objects/`, or that its own hold wrote. A read of the
-  history (`held()`, `tips()`, `dag()`, `folded()`) reads the file, and
-  lists `objects/` only when it holds no count or another count than the
-  one the handle keeps. So a read sees every write of the store at once,
-  and a change by a door that the store does not own at the first read
-  after the next hold of the lock by any handle. A fresh handle, a hold,
-  `verify`, and `heads()` where it does not serve the record always list.
-  - A store never rewrites a `.gitignore` that is there, so the host of a
-    store written before the count of holds adds the line `/.writes` to
-    the store's `.gitignore`. A hold writes `.writes` into such a store
-    all the same. `verify` reads the index of the git repository that holds
-    the store's root (versions 2, 3 and 4 of its format, with SHA-1 or
-    SHA-256 object ids, from a work tree or a linked one) and reports each
-    of `.heads` and `.writes` that the index lists (`Finding::Tracked`),
-    because a tracked record carries one machine's state into every clone.
-    A store in no repository, or in one with no index, reports neither.
+    the same record. Deleting `.heads` loses nothing, since the next hold
+    records it again, but it is no remedy: `heads()` then derives from a
+    listing, while `tips()` and the other reads of a warm handle still read
+    what the handle read. So after such a door a host calls
+    `record_heads()`.
+- **The mark of the last hold.** A store on disk also keeps
+  `root/.writes`, a file local to one machine that holds a mark: 32
+  lowercase hex digits of fresh random bits, with no newline. Every hold
+  of the lock (each write, `decide`, `record_heads()` and `fsck`) removes
+  the file when it takes the lock, with no sync, and writes a fresh mark
+  when it lets the lock go; a hold that refuses before its end leaves no
+  file. A file that is absent, cut short or not exactly that print holds
+  no mark. A mark is compared for equality alone, and no hold writes a
+  mark that a hold wrote before, so a file put back to an older mark is a
+  door like any other, which the next hold ends. A handle keeps the mark
+  that it read before its last listing of `objects/`, or that its own hold
+  wrote, with its memory: a memory that a panic empties keeps no mark. A
+  hold whose placement failed, and whose look after the failure failed
+  too, keeps no mark. A read of the history (`held()`, `tips()`, `dag()`,
+  `folded()`) reads the file, and lists `objects/` only when it holds no
+  mark or another mark than the one the handle keeps. So a read sees every
+  write of the store at once, and a change by a door that the store does
+  not own at the first read after the next hold of the lock by any handle.
+  A fresh handle, a hold, `verify`, and `heads()` where it does not serve
+  the record always list.
+  - Every process that writes a store runs a version that writes the
+    mark: an older binary holds the lock and writes no mark, so its writes
+    are a door to the handles of a newer one. A store never rewrites a
+    `.gitignore` that is there, so the host of a store written before the
+    mark adds the line `/.writes` to the store's `.gitignore`. `verify`
+    reports each of `.heads` and `.writes` that is there and that the
+    store's `.gitignore` does not name as its own line
+    (`Finding::Unignored`, law 81). A tracked mark carries no harm, since a
+    mark put back is a door that the next hold ends, but it is local to one
+    machine and does not belong in a repository.
 - **`init(label)`** writes a prodrome's `Genesis`, once.
 - **Appending writes a `Change`**, never a `Woven`, into the writer's
   genesis; a store of several geneses is written through a handle that
@@ -487,7 +496,8 @@ since this grammar has tuples and no mapping.
 - **`verify`** changes nothing and reports an object not hashing to its
   name, a missing parent, a cycle, a malformed `Woven`, a leftover `HEAD` or
   `refs/`, a record of heads that parses and is not the derived heads, a
-  `.heads` or `.writes` that git tracks (law 81), every entry of `objects/` that is not named `<name>.py` for a
+  `.heads` or `.writes` that the store's `.gitignore` does not name (law
+  81), every entry of `objects/` that is not named `<name>.py` for a
   well-formed name (a temp an interrupted write left, or a stray) and every
   temp in the root as garbage, each by name — the reads pass over such an
   entry, and only `verify` speaks of it — a receipt for
@@ -2499,19 +2509,15 @@ faults and without.
     `husk.rs::no_signature_over_a_name_whose_whole_is_not_held`,
     `wasm/exports/src/husk.rs::a_replica_reads_a_keepers_husk_and_never_signs_it`.
 
-Law 81 is §3's report of a record that git tracks, over generated indexes
-of git's three formats.
+Law 81 is §3's report of a local file that the store's `.gitignore` does
+not name.
 
-81. **A local record that git tracks is reported.** The paths that an
-    index of version 2, 3 or 4 lists, with object ids of SHA-1 or SHA-256,
-    are read back exactly, in order, and an index cut short or of another
-    format does not parse. `verify` reports `.heads` and `.writes` exactly
-    when the index of the repository that holds the store lists them, also
-    from a linked work tree, and the store's own `.gitignore` is not
-    reported.
-    `store/tracked.rs::tests::an_index_lists_exactly_its_paths`,
-    `store/tracked.rs::tests::a_cut_or_foreign_index_does_not_parse`,
-    `store/tracked.rs::tests::verify_names_a_local_file_that_git_tracks`.
+81. **A local file that the `.gitignore` does not name is reported.**
+    `verify` reports each of `.heads` and `.writes` that is there and that
+    no line of the store's `.gitignore` names exactly (`/.heads`,
+    `/.writes`), and nothing when both lines are there, in any order and
+    beside any other line.
+    `store.rs::tests::verify_names_a_local_file_that_the_gitignore_does_not`.
 
 ## 10. Non-goals
 

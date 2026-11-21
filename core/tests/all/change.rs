@@ -387,6 +387,7 @@ proptest! {
         prop_assert!(lagging, "the record lags the moved files, and nothing else is reported");
         base.record_heads().expect("records");
         prop_assert_eq!(findings(&base), Vec::<String>::new());
+        prop_assert_eq!(names(&base), held.union(&moved).cloned().collect::<BTreeSet<_>>());
 
         let direct = scratch.store("direct", "one");
         append(&direct, &shared);

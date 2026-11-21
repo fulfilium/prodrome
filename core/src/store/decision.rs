@@ -7,7 +7,8 @@ use std::sync::{Arc, MutexGuard};
 use std::time::SystemTime;
 
 use super::husk::{HuskObject, Husking};
-use super::memory::{Memory, Printed, Seen};
+use super::levelled::Levelled;
+use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
 use super::{replace, sync_dir, EventStore};
 use crate::dag::Dag;
@@ -90,11 +91,12 @@ use crate::schema::Schema;
 /// own reads wait for it, on this thread too.
 pub struct Decision<'s, E: Schema, Pol> {
     pub(super) store: &'s EventStore<E, Pol>,
-    pub(super) memory: MutexGuard<'s, Memory<E>>,
+    pub(super) memory: MutexGuard<'s, Levelled<E>>,
     /// What this hold did to the record of heads.
     pub(super) record: Record,
-    /// The count of holds that the hold read when it began.
-    pub(super) prior: Option<super::writes::Count>,
+    /// Whether the memory is level with `objects/`, so that the mark that
+    /// the hold writes at its end is kept.
+    pub(super) level: super::Level,
     pub(super) _locked: Option<File>,
 }
 
@@ -105,7 +107,7 @@ pub struct Decision<'s, E: Schema, Pol> {
 impl<E: Schema, Pol> Drop for Decision<'_, E, Pol> {
     fn drop(&mut self) {
         let _ = self.record.finish(&self.store.root, &self.memory.heads());
-        self.store.end_hold(self.prior);
+        self.store.end_hold(&mut self.memory, self.level);
     }
 }
 
@@ -263,9 +265,12 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
                         self.forget(prints);
                         match self.store.look(&mut self.memory) {
                             Ok(()) => Err(why),
-                            Err(looked) => Err(ProdromeError::Store(format!(
-                                "{why}; and objects/ was not listed after it: {looked}"
-                            ))),
+                            Err(looked) => {
+                                self.level = super::Level::Behind;
+                                Err(ProdromeError::Store(format!(
+                                    "{why}; and objects/ was not listed after it: {looked}"
+                                )))
+                            }
                         }
                     }
                 }

@@ -497,7 +497,7 @@ fn a_changed_print_is_read_again(store: &dyn StoreOfRecord<Event>) {
     ));
     assert_eq!(left_out, read(&*store.open()));
     store.overwrite(&name, &bytes);
-    // A refused hold leaves no count of holds, so the handle lists again.
+    // A refused hold leaves no mark, so the handle lists again.
     assert_eq!(read(store), before);
 }
 
