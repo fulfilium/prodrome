@@ -38,6 +38,7 @@ mod memory_store;
 mod overlay;
 mod record;
 mod replica;
+mod writes;
 
 pub mod frontier;
 
@@ -96,6 +97,10 @@ pub struct EventStore<E: Schema, Pol = Untrusted> {
     /// between threads: `EventStore` is `Send` and `Sync` wherever its
     /// schema's events and its policy are.
     memory: Arc<Mutex<Memory<E>>>,
+    /// The count of holds (`root/.writes`) that the memory is level with:
+    /// the count read before the memory's last listing, or the count that
+    /// this handle's last hold wrote. Shared as the memory is.
+    count: Arc<Mutex<Option<writes::Count>>>,
     /// The prodrome this handle writes into, for a store that holds several.
     genesis: Option<Hash>,
 }
@@ -126,6 +131,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             policy,
             schema,
             memory: Arc::new(Mutex::new(Memory::empty())),
+            count: Arc::new(Mutex::new(None)),
             genesis: None,
         }
     }
@@ -172,14 +178,31 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     fn decision(&self) -> Result<Decision<'_, E, Pol>, ProdromeError> {
         let locked = self.lock()?;
         let mut memory = self.memory();
+        let prior = self.begin_hold()?;
         self.look(&mut memory)?;
         memory.dag().whole()?;
         Ok(Decision {
             store: self,
             memory,
             record: Record::Untouched,
+            prior,
             _locked: locked,
         })
+    }
+
+    /// Bring `memory` level with `objects/` for a read: where the count of
+    /// holds is the count that the memory is level with, no handle held the
+    /// lock since, and nothing is read; otherwise [`EventStore::look`]. The
+    /// count is read before the listing, so a hold that ends during the
+    /// listing leaves a count that the next read does not trust.
+    fn refresh(&self, memory: &mut Memory<E>) -> Result<(), ProdromeError> {
+        let count = writes::read(&self.root);
+        if count.is_some() && *self.kept_count() == count {
+            return Ok(());
+        }
+        self.look(memory)?;
+        *self.kept_count() = count;
+        Ok(())
     }
 
     /// Bring `memory` level with `objects/`. A name listed and not held is
@@ -254,7 +277,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// `objects/` not listed.
     pub fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError> {
         let mut memory = self.memory();
-        self.look(&mut memory)?;
+        self.refresh(&mut memory)?;
         Ok(memory.tips().clone())
     }
 
@@ -308,9 +331,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     pub fn record_heads(&self) -> Result<Heads, ProdromeError> {
         let _locked = self.lock()?;
         let mut memory = self.memory();
+        let prior = self.begin_hold()?;
         self.look(&mut memory)?;
         let heads = memory.heads();
         Record::Untouched.finish(&self.root, &heads)?;
+        self.end_hold(prior);
         Ok(heads)
     }
 
@@ -360,7 +385,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// `objects/` not listed.
     pub fn dag(&self) -> Result<Arc<Dag<E>>, ProdromeError> {
         let mut memory = self.memory();
-        self.look(&mut memory)?;
+        self.refresh(&mut memory)?;
         Ok(Arc::clone(memory.dag()))
     }
 
@@ -370,7 +395,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// while the store extends its memory makes that extension copy it.
     pub fn folded(&self) -> Result<Arc<Folded<E>>, ProdromeError> {
         let mut memory = self.memory();
-        self.look(&mut memory)?;
+        self.refresh(&mut memory)?;
         memory.folded().map(Arc::clone)
     }
 
@@ -764,6 +789,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// unread ([`EventStore::cold`]), every one rehashed.
     fn quarantine(&self) -> Result<(), ProdromeError> {
         let _locked = self.lock()?;
+        let prior = self.begin_hold()?;
         let read = self.cold()?;
         let tampered: Vec<(&Hash, &Hash)> = read
             .dag()
@@ -790,6 +816,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         // The files are set aside: a record that cannot be written is
         // absent, which every reader reads as "derive".
         let _ = record.finish(&self.root, &memory.heads());
+        self.end_hold(prior);
         Ok(())
     }
 
@@ -942,6 +969,36 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 }
 
+/// The count of holds, which every hold of the lock reads at its start and
+/// writes at its end, whatever the store's policy.
+impl<E: Schema, Pol> EventStore<E, Pol> {
+    /// The count that this handle's memory is level with.
+    fn kept_count(&self) -> MutexGuard<'_, Option<writes::Count>> {
+        self.count
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
+    /// The start of a hold of the lock: the count of holds read, and the
+    /// file removed, so that every reader lists `objects/` until the hold
+    /// ends.
+    fn begin_hold(&self) -> Result<Option<writes::Count>, ProdromeError> {
+        let prior = writes::read(&self.root);
+        writes::remove(&self.root)?;
+        Ok(prior)
+    }
+
+    /// The end of a hold: the count after `prior` written, and kept as the
+    /// count that the memory is level with. A count that cannot be written
+    /// is absent, which every reader reads as "list".
+    fn end_hold(&self, prior: Option<writes::Count>) {
+        let count = writes::Count::after(prior, random);
+        if writes::write(&self.root, count).is_ok() {
+            *self.kept_count() = Some(count);
+        }
+    }
+}
+
 /// The store on disk as a replica: what it holds is `objects/`, and what it
 /// receives is placed there, durably, under its lock.
 impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
@@ -953,7 +1010,7 @@ impl<E: Schema, Pol: Policy<E>> Replica<E> for EventStore<E, Pol> {
     /// out, and its `dag` says so.
     fn held(&self) -> Result<Held<E>, ProdromeError> {
         let mut memory = self.memory();
-        self.look(&mut memory)?;
+        self.refresh(&mut memory)?;
         let folded = memory.folded()?.clone();
         Ok(Held {
             dag: memory.dag().clone(),
@@ -1264,10 +1321,16 @@ mod tests {
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .filter(|name| name != ".lock")
                 .collect::<BTreeSet<_>>(),
-            [".gitattributes", ".gitignore", ".heads", "objects"]
-                .into_iter()
-                .map(str::to_owned)
-                .collect(),
+            [
+                ".gitattributes",
+                ".gitignore",
+                ".heads",
+                ".writes",
+                "objects"
+            ]
+            .into_iter()
+            .map(str::to_owned)
+            .collect(),
             "the objects are the whole store, beside the derived record of its heads"
         );
         assert_eq!(
@@ -1539,13 +1602,20 @@ mod tests {
         assert!(store.load(&digest).is_err());
         // The reads ANSWER, and say what they left out: the file, with why,
         // and the object resting on it. A FILE CHANGED UNDER A HELD NAME IS
-        // READ AGAIN, so the handle that verified the object before it was
-        // tampered with reads as a fresh one does.
+        // READ AGAIN at the next hold of the lock, here the write that
+        // refuses, so the handle that verified the object before it was
+        // tampered with then reads as a fresh one does.
         let fresh = Store::new(store.root(), roster());
         assert!(
             fresh.dag().expect("reads").objects().is_empty(),
             "the history is what rests on nothing unread"
         );
+        // A WRITE REFUSES: the file it cannot read might be a head.
+        let refusal = store
+            .append(mk_reopened("alpha", at(3), "bassel", "").expect("valid"))
+            .expect_err("a write does not guess")
+            .to_string();
+        assert!(refusal.contains(digest.as_str()), "{refusal}");
         for at in [&fresh, &store] {
             assert!(at.tips().expect("answers").is_empty());
             let excluded = at.dag().expect("reads").excluded();
@@ -1554,12 +1624,6 @@ mod tests {
             assert!(matches!(excluded[0].why, Some(Unread::Tampered(_))));
             assert_eq!(excluded[0].resting.len(), 1);
         }
-        // A WRITE REFUSES: the file it cannot read might be a head.
-        let refusal = store
-            .append(mk_reopened("alpha", at(3), "bassel", "").expect("valid"))
-            .expect_err("a write does not guess")
-            .to_string();
-        assert!(refusal.contains(digest.as_str()), "{refusal}");
         // `verify` REPORTS three things, and all are true: the file no longer
         // hashes to its name, the object resting on it rests on nothing, and
         // the record of heads, which the last write left, is not what the
@@ -1695,6 +1759,9 @@ mod tests {
         );
         assert_eq!(tips(&store), [second.clone()].into_iter().collect());
         fs::remove_file(store.object_path(&second)).expect("removes");
+        // The removal is a door that the store does not own: a handle that
+        // has read the store reads it at the next hold of the lock.
+        drop(store.decide().expect("holds"));
         assert_eq!(tips(&store), [first].into_iter().collect());
         let _ = fs::remove_dir_all(store.root());
     }
@@ -1994,13 +2061,15 @@ mod tests {
         // over the history without them: both are tips. The copy is a door
         // the store does not own, so the record of heads lags until the
         // host records the heads (SPEC §3), and then nothing is reported.
+        // A new handle reads the restored file at once.
         fs::write(&path, text).expect("restores");
         fs::remove_dir_all(store.root().join("quarantine")).expect("deletes the receipt");
+        let reopened = Store::new(store.root(), roster());
         assert_eq!(
-            tips(&fresh),
+            tips(&reopened),
             [last.clone(), next.clone()].into_iter().collect()
         );
-        assert!(fresh.concurrent(&last, &next).expect("both held"));
+        assert!(reopened.concurrent(&last, &next).expect("both held"));
         assert_eq!(
             findings(&fresh),
             vec![

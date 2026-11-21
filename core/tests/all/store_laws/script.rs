@@ -112,7 +112,7 @@ fn a_step() -> impl Strategy<Value = Step> {
 
 /// What a handle reads: its history, its fold, its tips and what it leaves
 /// out, or its refusal.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 struct Reading {
     dag: Dag<Event>,
     folded: Folded<Event>,
@@ -141,6 +141,22 @@ struct Script<'s> {
     genesis: Hash,
     pool: Vec<Event>,
     theirs: Vec<Event>,
+    /// How many holds of the lock the script has made: the count that the
+    /// store's count of holds stands at, from where it began.
+    holds: u64,
+    /// For the first and the second handle, the number of holds when the
+    /// handle last listed the prints, and what it read then. A handle reads
+    /// that until a hold of the lock passes, and lists at its first read
+    /// after it.
+    level: [Option<(u64, Result<Reading, String>)>; 2],
+}
+
+/// Where `heads()` takes the heads from.
+enum Served {
+    /// The record, with no listing of the prints.
+    Record,
+    /// The prints, listed into the handle's memory.
+    Listing,
 }
 
 impl<'s> Script<'s> {
@@ -161,6 +177,7 @@ impl<'s> Script<'s> {
         for event in pool.iter().chain(&theirs).step_by(2) {
             let _ = third.append(event.clone());
         }
+        let first = Some((0, reading(store)));
         Script {
             first: store,
             second: store.open(),
@@ -169,12 +186,14 @@ impl<'s> Script<'s> {
             genesis,
             pool,
             theirs,
+            holds: 0,
+            level: [first, None],
         }
     }
 
     /// Run `step`, then check every law after it. A refused write changes
     /// nothing, and the laws say what the store then reads.
-    fn run(&self, step: &Step) -> Result<(), TestCaseError> {
+    fn run(&mut self, step: &Step) -> Result<(), TestCaseError> {
         let before = self.first.record();
         match step {
             Step::Write(by, write) => match by {
@@ -190,6 +209,11 @@ impl<'s> Script<'s> {
                     Handle::Fresh => self.first.open().held(),
                 };
             }
+        }
+        if let Step::Write(..) = step {
+            // Every write holds the lock, and every hold writes the next
+            // count of holds.
+            self.holds += 1;
         }
         let recorded = match step {
             Step::Write(..) => Some(derived(self.first)),
@@ -278,19 +302,29 @@ impl<'s> Script<'s> {
 
     /// The laws after `step`, where `recorded` is the record that the step
     /// leaves.
-    fn holds(&self, step: &Step, recorded: Option<Heads>) -> Result<(), TestCaseError> {
+    fn holds(&mut self, step: &Step, recorded: Option<Heads>) -> Result<(), TestCaseError> {
         let fresh = self.first.open();
         let cold = reading(&*fresh);
         // Law 45: incremental equals cold, for the handle that made the
-        // step. The other long-lived handle is not read, so it lags.
-        let by: Vec<&dyn StoreOfRecord<Event>> = match step {
-            Step::Write(Handle::First, _) | Step::Read(Handle::First) => vec![self.first],
-            Step::Write(Handle::Second, _) | Step::Read(Handle::Second) => vec![&*self.second],
+        // step, as of the last hold of the lock: a handle that reads with no
+        // hold since its last listing reads what it read then, and a door's
+        // change since is read at the next hold. The other long-lived handle
+        // is not read, so it lags.
+        let checked: Vec<usize> = match step {
+            Step::Write(Handle::First, _) | Step::Read(Handle::First) => vec![0],
+            Step::Write(Handle::Second, _) | Step::Read(Handle::Second) => vec![1],
             Step::Write(Handle::Fresh, _) | Step::Read(Handle::Fresh) | Step::Door(_) => vec![],
         };
-        for handle in &by {
-            prop_assert_eq!(&reading(*handle), &cold, "after {:?}", step);
+        let handles: [&dyn StoreOfRecord<Event>; 2] = [self.first, &*self.second];
+        for &at in &checked {
+            let expected = match (step, &self.level[at]) {
+                (Step::Read(_), Some((holds, read))) if *holds == self.holds => read.clone(),
+                (Step::Read(_) | Step::Write(..) | Step::Door(_), _) => cold.clone(),
+            };
+            prop_assert_eq!(&reading(handles[at]), &expected, "after {:?}", step);
+            self.level[at] = Some((self.holds, expected));
         }
+        let by: Vec<&dyn StoreOfRecord<Event>> = checked.iter().map(|&at| handles[at]).collect();
         // Law 60: after a write of the store, the record is the derived
         // heads; after a door, it is the record before the door.
         let derived = derived(self.first);
@@ -298,11 +332,11 @@ impl<'s> Script<'s> {
         // Laws 62 and 63: the store serves the record while every tip it
         // names is kept, and otherwise the derived heads.
         let kept = self.first.prints();
-        let served = match &recorded {
+        let (served, from) = match &recorded {
             Some(record) if record.tips().iter().all(|tip| kept.contains_key(tip)) => {
-                record.clone()
+                (record.clone(), Served::Record)
             }
-            Some(_) | None => derived.clone(),
+            Some(_) | None => (derived.clone(), Served::Listing),
         };
         for handle in by.iter().copied().chain([&*fresh]) {
             prop_assert_eq!(
@@ -311,6 +345,16 @@ impl<'s> Script<'s> {
                 "after {:?}",
                 step
             );
+        }
+        // Heads that are not the record's are listed into the handle's
+        // memory, so the handle is level with the prints from here.
+        match from {
+            Served::Record => {}
+            Served::Listing => {
+                for &at in &checked {
+                    self.level[at] = Some((self.holds, cold.clone()));
+                }
+            }
         }
         // Law 63: `verify` reports a record that is not the derived heads.
         let stale: Vec<Finding> = self
@@ -378,7 +422,7 @@ proptest! {
         prop_assume!(!pool.is_empty());
         let scratch = Scratch::new();
         for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-            let script = Script::new(&*store, pool.clone(), theirs.clone());
+            let mut script = Script::new(&*store, pool.clone(), theirs.clone());
             for step in &steps {
                 script.run(step)?;
             }
@@ -430,7 +474,7 @@ fn apart(count: usize) -> Vec<Event> {
 fn another_door_s_objects_read_as_the_older_heads() -> Result<(), TestCaseError> {
     let scratch = Scratch::new();
     for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-        let script = Script::new(&*store, apart(6), Vec::new());
+        let mut script = Script::new(&*store, apart(6), Vec::new());
         let ends = [
             Step::Write(Handle::First, Write::Run(Vec::new())),
             Step::Write(Handle::Second, Write::RecordHeads),
@@ -465,7 +509,7 @@ fn another_door_s_objects_read_as_the_older_heads() -> Result<(), TestCaseError>
 fn a_record_naming_an_absent_head_is_not_served() -> Result<(), TestCaseError> {
     let scratch = Scratch::new();
     for store in stores_of_record::<Event>(&scratch, &Default::default()) {
-        let script = Script::new(&*store, apart(1), Vec::new());
+        let mut script = Script::new(&*store, apart(1), Vec::new());
         script.run(&Step::Write(Handle::First, Write::Append(any_index())))?;
         let recorded = store.record().expect("recorded");
         let tip = recorded.tips().iter().next().expect("a tip").clone();

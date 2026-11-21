@@ -10,6 +10,14 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A count of holds lets a warm handle read without a listing (SPEC §3,
+  "The count of holds"; laws 40 and 45).** Every hold of a store's lock
+  writes the next count into `root/.writes`. A handle that has read the
+  store reads that file, and lists `objects/` only when the count is
+  another than the one it keeps. A change by a door that the store does
+  not own is read at the next hold of the lock, as the record of heads
+  does. A new store's `.gitignore` also holds the line `/.writes`. No
+  stored object changes.
 - **The file store reads, keeps and makes husks (SPEC §3, laws 71 to
   75, 77, 78 and 80).** A husk is a `Change` whose event has each sealed part
   replaced by the name of its key, kept under the name of the whole
