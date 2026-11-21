@@ -181,16 +181,22 @@ since this grammar has tuples and no mapping.
   share), and is synced to disk before it is renamed into place; the
   directory is then synced, once after a batch of placements (one append,
   one adoption). In a batch, every temp file is written before the first
-  is renamed, and on Linux one `syncfs` makes all of them durable; the
-  store opens the handle it syncs through before it writes the first byte,
-  so the sync reports every error of writeback since. On a Linux kernel
-  before 5.8, `syncfs` answers success after such an error, so the store
-  refuses every write there, and says why (law 83). A stop of a batch can
-  leave a temp for each object that was not yet renamed. Every temp is
-  written under the lock, so the next hold of the lock (a write, `decide`,
+  is renamed. The store makes them durable in one of two ways (law 83).
+  It takes one `syncfs` of the file system where the batch holds 256
+  prints or more, the kernel is Linux 5.8 or later (read by `uname`), and
+  the file system (read by `fstatfs`) is ext2, ext3, ext4, XFS, btrfs or
+  ZFS. It opens the handle that it syncs through before it writes the
+  first byte, so the sync reports every error of writeback since, which may
+  be another program's write; then the batch is not placed. Everywhere
+  else (a smaller batch, an earlier kernel, FUSE, overlayfs, any other
+  file system) it syncs each temp as it writes it. A staging or a sync
+  that fails removes the temps it made. A stop of a batch can leave a temp
+  for each object that was not yet renamed. Every temp is written under
+  the lock, so the next hold of the lock (a write, `decide`,
   `record_heads()` or `fsck`) removes each temp it finds in `objects/` and
-  in the root, with no sync, and leaves every other entry (law 82). A
-  directory the store makes (the root, `objects/`,
+  in the root, with no sync, and leaves every other entry; an entry named
+  like a temp that cannot be removed stays, and `verify` reports it (law
+  82). A directory the store makes (the root, `objects/`,
   `quarantine/`) is synced into its parent before anything is written into
   it, and a move into `quarantine/` syncs both directories. So a crash
   leaves either no file or the whole one, never an empty file under a name
@@ -2530,19 +2536,23 @@ not name.
     beside any other line.
     `store.rs::tests::verify_names_a_local_file_that_the_gitignore_does_not`.
 
-Laws 82 and 83 are §3's durable batch: one sync for its bytes, over every
-store of record.
+Laws 82 and 83 are §3's durable batch, over every store of record and at
+each step of a placement.
 
 82. **The next hold removes what a stopped write left.** After a write
     stops between staging its bytes and renaming them, `verify` reports
-    each temp it left, and the next hold of the lock removes every such
-    temp and changes no print; `verify` is then clean.
-    `store_laws/stops.rs::a_hold_removes_what_a_stopped_write_left`.
-83. **The store writes only where a sync reports a lost write.** On Linux,
-    a batch is written only under a kernel of version 5.8 or later. An
-    earlier kernel, or a release that does not parse, is refused, and the
-    refusal names the release.
-    `store/kernel.rs::tests::the_store_writes_only_where_syncfs_reports_a_lost_write`.
+    each temp it left, and the next hold of the lock (a decision,
+    `record_heads()` or `fsck`) removes every such temp, changes no print
+    and leaves a stray. A staging or a sync that fails removes the temps it
+    made and places nothing; a failed sync of the directory leaves every
+    print renamed. At each of these faults, laws 61 and 79 hold inside the
+    hold.
+    `store_laws/stops.rs::a_hold_removes_what_a_stopped_write_left`,
+    `store.rs::tests::a_fault_at_each_step_of_a_placement_keeps_laws_61_and_79`.
+83. **One sync stands for each file only where it reports a lost write.**
+    One `syncfs` is taken only under Linux 5.8 or later; under an earlier
+    kernel, or a release that does not parse, each file is synced.
+    `store/syncfs.rs::tests::one_sync_only_where_syncfs_reports_a_lost_write`.
 
 ## 10. Non-goals
 
