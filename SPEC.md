@@ -180,7 +180,12 @@ since this grammar has tuples and no mapping.
   (never a fixed `<name>.tmp`, which two writers of one object would
   share), and is synced to disk before it is renamed into place; the
   directory is then synced, once after a batch of placements (one append,
-  one adoption). A directory the store makes (the root, `objects/`,
+  one adoption). In a batch, every temp file is written before the first
+  is renamed, and on Linux one `syncfs` makes all of them durable; the
+  store opens the handle it syncs through before it writes the first byte,
+  so the sync reports every error of writeback since (Linux 5.8 or later).
+  So a stop of a batch can leave a temp for each object that was not yet
+  renamed. A directory the store makes (the root, `objects/`,
   `quarantine/`) is synced into its parent before anything is written into
   it, and a move into `quarantine/` syncs both directories. So a crash
   leaves either no file or the whole one, never an empty file under a name

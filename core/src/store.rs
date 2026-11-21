@@ -671,11 +671,16 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(names)
     }
 
-    /// Objects onto disk under their names, in the order given, DURABLY:
-    /// each is [`put_durably`] without the directory sync, and `objects/` is
-    /// synced once when all of them are, so a batch — one adoption, one
-    /// append — costs one directory sync and not one per object. The store's
-    /// `.gitattributes` goes first, the same way, where there is none.
+    /// Objects onto disk under their names, in the order given, DURABLY,
+    /// with the fewest syncs that the file system allows. Every object is
+    /// staged in a temp file first ([`Staged`]); then the staged bytes are
+    /// made durable, all of them before the first rename; then each temp is
+    /// renamed under its name, parents first; and `objects/` is synced once
+    /// after the last. So a batch (one adoption, one append) costs one sync
+    /// of its bytes and one directory sync, and a stop at any step leaves a
+    /// prefix of the batch under its names, parents first, and temps that
+    /// `verify` reports. The store's `.gitattributes` goes first, durably,
+    /// where there is none.
     fn place<'a>(
         &self,
         objects: impl IntoIterator<Item = (&'a Hash, &'a [u8])>,
@@ -683,8 +688,14 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let dir = self.objects_dir();
         make_dir(&dir)?;
         self.gitattributes()?;
-        for (digest, bytes) in objects {
-            rename_into(&stage(&dir, bytes)?, &self.object_path(digest))?;
+        let staging = Staged::begin(&dir)?;
+        let staged = objects
+            .into_iter()
+            .map(|(digest, bytes)| Ok((staging.stage(&dir, bytes)?, digest)))
+            .collect::<Result<Vec<(PathBuf, &Hash)>, ProdromeError>>()?;
+        staging.sync(&dir)?;
+        for (temp, digest) in staged {
+            rename_into(&temp, &self.object_path(digest))?;
         }
         sync_dir(&dir)
     }
@@ -1113,6 +1124,59 @@ fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
 /// 75).
 fn replace(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
     rename_into(&Written::into(dir, bytes)?.sync()?, path)
+}
+
+/// The staging of a batch of temp files in one directory, whose bytes one
+/// sync makes durable before any of them is renamed.
+///
+/// On Linux the sync is one `syncfs` of the file system, made through a
+/// handle on the directory that is opened before the first byte is staged.
+/// Since Linux 5.8, `syncfs` reports every error of writeback on the file
+/// system after the handle was opened, also of a file that was closed
+/// before the sync. So a temp file is closed once its bytes are written,
+/// and a batch holds one descriptor, however long it is. A write that fails
+/// fails when it is staged. On another system each temp file is synced as
+/// it is staged, by `fsync` (on macOS, `F_FULLFSYNC`).
+struct Staged {
+    #[cfg(target_os = "linux")]
+    handle: File,
+}
+
+impl Staged {
+    /// The handle that the sync is made through, opened before any byte of
+    /// the batch is staged.
+    fn begin(dir: &Path) -> Result<Staged, ProdromeError> {
+        Ok(Staged {
+            #[cfg(target_os = "linux")]
+            handle: File::open(dir).map_err(|error| ProdromeError::io(dir, &error))?,
+        })
+    }
+
+    /// `bytes` in a fresh temp file in `dir`, closed: its path.
+    #[cfg(target_os = "linux")]
+    fn stage(&self, dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+        Ok(Written::into(dir, bytes)?.temp)
+    }
+
+    /// `bytes` in a fresh temp file in `dir`, synced: its path.
+    #[cfg(not(target_os = "linux"))]
+    fn stage(&self, dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+        stage(dir, bytes)
+    }
+
+    /// Every staged byte durable, or the first error of writeback since
+    /// [`Staged::begin`].
+    #[cfg(target_os = "linux")]
+    fn sync(self, dir: &Path) -> Result<(), ProdromeError> {
+        rustix::fs::syncfs(&self.handle)
+            .map_err(|error| ProdromeError::io(dir, &std::io::Error::from(error)))
+    }
+
+    /// Nothing more: each temp was synced as it was staged.
+    #[cfg(not(target_os = "linux"))]
+    fn sync(self, _dir: &Path) -> Result<(), ProdromeError> {
+        Ok(())
+    }
 }
 
 /// A temp file written and not yet synced: the first step of a durable

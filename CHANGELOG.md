@@ -10,6 +10,12 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **A batch of placements costs one sync of its bytes (SPEC §3, "A write is
+  durable").** On Linux, a post writes every temp file first, makes all of
+  them durable with one `syncfs` through a handle opened before the first
+  byte, renames them parents first, and syncs `objects/` once. A stop can
+  leave a temp for each object of the batch that was not yet renamed, and
+  `verify` reports each one. No stored object changes.
 - **A count of holds lets a warm handle read without a listing (SPEC §3,
   "The count of holds"; laws 40 and 45).** Every hold of a store's lock
   writes the next count into `root/.writes`. A handle that has read the
