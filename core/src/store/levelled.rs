@@ -22,8 +22,10 @@ pub(super) struct Levelled<E: Schema> {
 pub(super) enum Level {
     /// The memory holds what the hold read and wrote.
     Level,
-    /// A placement failed and the look after it failed too, so the memory
-    /// can lack objects that are under their names.
+    /// A write of the hold failed: the memory can lack objects that are
+    /// under their names, or a temp can be left. The hold keeps no mark, so
+    /// the next read lists, and the next decision lists and removes the
+    /// temps.
     Behind,
 }
 

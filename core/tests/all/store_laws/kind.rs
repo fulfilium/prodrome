@@ -24,7 +24,9 @@ use prodrome::genesis::mk_genesis;
 use prodrome::literal::ProdromeError;
 use prodrome::policy::Untrusted;
 use prodrome::schema::Schema;
-use prodrome::store::{Decision, EventStore, Husking, MemoryStore, Replica, Sender, Stopped};
+use prodrome::store::{
+    Decision, Doors, EventStore, Husking, MemoryStore, Replica, Sender, Stopped,
+};
 use sha2::{Digest, Sha256};
 
 /// The number in the name of each new directory, so that no two stores of a
@@ -66,11 +68,25 @@ impl Drop for Scratch {
 }
 
 /// THE FACTORY OF STORES OF RECORD: one new, empty store of each kind, at
-/// `schema`. A third kind is one more line here.
+/// `schema`: the store of files opened as shared, and opened as its
+/// program's alone. A third kind is one more line here.
 pub(crate) fn stores_of_record<E: Schema>(
     scratch: &Scratch,
     schema: &E::Vocabulary,
 ) -> Vec<Box<dyn StoreOfRecord<E>>> {
+    vec![
+        Box::new(directory::<E>(scratch, schema)),
+        Box::new(directory::<E>(scratch, schema).with_doors(Doors::Alone)),
+    ]
+}
+
+/// THE FACTORY OF STORES WITH DOORS: one new, empty store of each kind that
+/// other programs may change, at `schema`. The laws of another door run
+/// over these.
+pub(crate) fn stores_with_doors<E: Schema>(
+    scratch: &Scratch,
+    schema: &E::Vocabulary,
+) -> Vec<Box<dyn WithDoors<E>>> {
     vec![Box::new(directory::<E>(scratch, schema))]
 }
 
@@ -109,21 +125,9 @@ pub(crate) fn replicas<E: Schema>(scratch: &Scratch, schema: &E::Vocabulary) -> 
 }
 
 /// A store of record, as the suite drives it: the operations that only a
-/// store of record has, and the doors to the place where it keeps its
-/// prints.
-///
-/// A door changes what the store keeps without any handle of the store,
-/// and takes no hold: `arrive` puts a print under a name that the store
-/// does not keep, `overwrite` puts other bytes under a name that it keeps,
-/// and `take_away` removes a print. Another program does each of these (a
-/// copy of files, a `git merge`, a damaged disk, a host that deletes a
-/// rejected proposal), and a write of the store that stops after a step has
-/// done the steps before it. The suite states a stop after each step of a
-/// write as the doors that the steps before it opened. The design note's
-/// `Placing` names the same three writes `place`, `replace` and
-/// `set_aside` when a holder makes them; a door is not a holder, so the
-/// suite gives the doors other names. What `fsck` sets aside is read by
-/// [`StoreOfRecord::aside`].
+/// store of record has, a new handle on it, a new sibling of it, the prints
+/// that it keeps, and a fault. A store that other programs may change has
+/// doors too ([`WithDoors`]).
 pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// This store as a replica.
     fn replica(&self) -> &dyn Replica<E>;
@@ -193,6 +197,44 @@ pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// so they are not here; `verify` reports them.
     fn prints(&self) -> BTreeMap<Hash, Vec<u8>>;
 
+    /// `prints` put in this store, which is new and which no handle has
+    /// read: what a copy of a store does before the copy is opened, so it
+    /// is no door, whatever doors the store has.
+    fn seed(&self, prints: &BTreeMap<Hash, Vec<u8>>);
+
+    /// A fault: every placement under `name` fails until [`Self::clear`].
+    fn obstruct(&self, name: &Hash);
+
+    /// The fault of [`Self::obstruct`] removed.
+    fn clear(&self, name: &Hash);
+
+    /// The record of heads, read past every handle, where it is there and
+    /// parses.
+    fn record(&self) -> Option<Heads>;
+}
+
+/// A store of record that other programs may change, as the suite drives
+/// it: the doors to the place where it keeps its prints, and what `fsck`
+/// set aside there.
+///
+/// A door changes what the store keeps without any handle of the store,
+/// and takes no hold: `arrive` puts a print under a name that the store
+/// does not keep, `overwrite` puts other bytes under a name that it keeps,
+/// and `take_away` removes a print. Another program does each of these (a
+/// copy of files, a `git merge`, a damaged disk, a host that deletes a
+/// rejected proposal), and a write of the store that stops after a step has
+/// done the steps before it. The suite states a stop after each step of a
+/// write as the doors that the steps before it opened. The design note's
+/// `Placing` names the same three writes `place`, `replace` and
+/// `set_aside` when a holder makes them; a door is not a holder, so the
+/// suite gives the doors other names.
+pub(crate) trait WithDoors<E: Schema>: StoreOfRecord<E> {
+    /// This store as a store of record.
+    fn store(&self) -> &dyn StoreOfRecord<E>;
+
+    /// A new, empty store of the same kind, at the same schema.
+    fn sibling_with_doors(&self) -> Box<dyn WithDoors<E>>;
+
     /// A door: `bytes` under `name`, which the store does not keep.
     fn arrive(&self, name: &Hash, bytes: &[u8]);
 
@@ -219,19 +261,6 @@ pub(crate) trait StoreOfRecord<E: Schema>: Replica<E> {
     /// a host or another program leaves one. Answers the finding of
     /// `verify` that names it.
     fn stray(&self) -> Finding;
-
-    /// Does `finding` name only what a write that stopped left?
-    fn left_by_a_stop(&self, finding: &Finding) -> bool;
-
-    /// A fault: every placement under `name` fails until [`Self::clear`].
-    fn obstruct(&self, name: &Hash);
-
-    /// The fault of [`Self::obstruct`] removed.
-    fn clear(&self, name: &Hash);
-
-    /// The record of heads, read past every handle, where it is there and
-    /// parses.
-    fn record(&self) -> Option<Heads>;
 
     /// A door to the record of heads: removed, or these bytes in its place,
     /// as a power loss leaves a record cut short.
@@ -282,20 +311,14 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
     }
 
     fn sibling(&self) -> Box<dyn StoreOfRecord<E>> {
-        let root = self.root().with_file_name(format!("sibling-{}", next()));
-        Box::new(EventStore::at(
-            root,
-            self.policy().clone(),
-            self.schema().clone(),
-        ))
+        Box::new(self.sibling_store())
     }
 
     fn open(&self) -> Box<dyn StoreOfRecord<E>> {
-        Box::new(EventStore::at(
-            self.root(),
-            self.policy().clone(),
-            self.schema().clone(),
-        ))
+        Box::new(
+            EventStore::at(self.root(), self.policy().clone(), self.schema().clone())
+                .with_doors(self.doors()),
+        )
     }
 
     fn hold(&self) -> Result<Box<dyn Hold<E> + '_>, ProdromeError> {
@@ -343,6 +366,46 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
             .collect()
     }
 
+    fn seed(&self, prints: &BTreeMap<Hash, Vec<u8>>) {
+        for (name, bytes) in prints {
+            WithDoors::arrive(self, name, bytes);
+        }
+    }
+
+    /// A directory under the print's file name, onto which no rename lands.
+    fn obstruct(&self, name: &Hash) {
+        fs::create_dir_all(file_of(self.root(), name)).expect("the name is obstructed");
+    }
+
+    fn clear(&self, name: &Hash) {
+        fs::remove_dir(file_of(self.root(), name)).expect("the name is cleared");
+    }
+
+    fn record(&self) -> Option<Heads> {
+        let text = fs::read_to_string(self.root().join(".heads")).ok()?;
+        Heads::parse(&text).ok()
+    }
+}
+
+/// The store of files, whatever doors it was opened with: its doors are
+/// writes into `objects/`, `quarantine/` and `.heads` past every handle.
+impl<E: Schema> WithDoors<E> for EventStore<E> {
+    fn store(&self) -> &dyn StoreOfRecord<E> {
+        self
+    }
+
+    fn sibling_with_doors(&self) -> Box<dyn WithDoors<E>> {
+        Box::new(self.sibling_store())
+    }
+
+    /// A file `notes.txt` in `objects/`.
+    fn stray(&self) -> Finding {
+        let objects = self.root().join("objects");
+        fs::create_dir_all(&objects).expect("objects/ is made");
+        fs::write(objects.join("notes.txt"), b"a host's notes").expect("the stray is written");
+        Finding::Garbage("objects/notes.txt".to_owned())
+    }
+
     fn arrive(&self, name: &Hash, bytes: &[u8]) {
         let objects = self.root().join("objects");
         fs::create_dir_all(&objects).expect("objects/ is made");
@@ -378,14 +441,6 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
         }
     }
 
-    /// A file `notes.txt` in `objects/`.
-    fn stray(&self) -> Finding {
-        let objects = self.root().join("objects");
-        fs::create_dir_all(&objects).expect("objects/ is made");
-        fs::write(objects.join("notes.txt"), b"a host's notes").expect("the stray is written");
-        Finding::Garbage("objects/notes.txt".to_owned())
-    }
-
     /// A temp file in `objects/`, named as the store names its temps:
     /// sixteen hex digits and `.tmp`.
     fn interrupt(&self, bytes: &[u8]) -> Finding {
@@ -394,24 +449,6 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
         let temp = format!("{:016x}.tmp", next());
         fs::write(objects.join(&temp), bytes).expect("the temp is written");
         Finding::Garbage(format!("objects/{temp}"))
-    }
-
-    fn left_by_a_stop(&self, finding: &Finding) -> bool {
-        matches!(finding, Finding::Garbage(file) if file.ends_with(".tmp"))
-    }
-
-    /// A directory under the print's file name, onto which no rename lands.
-    fn obstruct(&self, name: &Hash) {
-        fs::create_dir_all(file_of(self.root(), name)).expect("the name is obstructed");
-    }
-
-    fn clear(&self, name: &Hash) {
-        fs::remove_dir(file_of(self.root(), name)).expect("the name is cleared");
-    }
-
-    fn record(&self) -> Option<Heads> {
-        let text = fs::read_to_string(self.root().join(".heads")).ok()?;
-        Heads::parse(&text).ok()
     }
 
     fn set_record(&self, bytes: Option<&[u8]>) {
@@ -424,6 +461,19 @@ impl<E: Schema> StoreOfRecord<E> for EventStore<E> {
                 Err(error) => panic!("the record is not removed: {error}"),
             },
         }
+    }
+}
+
+/// What a store of files and its sibling share: a new, empty store beside
+/// it, with the same policy, schema and doors.
+trait Sibling<E: Schema> {
+    fn sibling_store(&self) -> EventStore<E>;
+}
+
+impl<E: Schema> Sibling<E> for EventStore<E> {
+    fn sibling_store(&self) -> EventStore<E> {
+        let root = self.root().with_file_name(format!("sibling-{}", next()));
+        EventStore::at(root, self.policy().clone(), self.schema().clone()).with_doors(self.doors())
     }
 }
 
@@ -448,14 +498,13 @@ fn listed(dir: &Path) -> BTreeMap<String, Vec<u8>> {
         .collect()
 }
 
-/// Every print `from` keeps, put in `to` by the door `arrive`.
+/// Every print `from` keeps, put in `to`, which is new and which no handle
+/// has read ([`StoreOfRecord::seed`]).
 pub(crate) fn copy_prints<E: Schema>(
     from: &(impl StoreOfRecord<E> + ?Sized),
     to: &(impl StoreOfRecord<E> + ?Sized),
 ) {
-    for (name, bytes) in from.prints() {
-        to.arrive(&name, &bytes);
-    }
+    to.seed(&from.prints());
 }
 
 /// `replica` begun with a genesis whose nonce is fixed, so that every

@@ -106,8 +106,12 @@ pub struct Decision<'s, E: Schema, Pol> {
 /// store, so the hold's writes stand.
 impl<E: Schema, Pol> Drop for Decision<'_, E, Pol> {
     fn drop(&mut self) {
-        let _ = self.record.finish(&self.store.root, &self.memory.heads());
-        self.store.end_hold(&mut self.memory, self.level);
+        let level = match self.record.finish(&self.store.root, &self.memory.heads()) {
+            Ok(()) => self.level,
+            // The `.gitignore` or the record not written can leave a temp.
+            Err(_) => super::Level::Behind,
+        };
+        self.store.end_hold(&mut self.memory, level);
     }
 }
 
@@ -262,15 +266,15 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
                         Ok(())
                     }
                     Err(why) => {
+                        // A temp can be left: the hold keeps no mark, so
+                        // the next decision lists and removes it.
+                        self.level = super::Level::Behind;
                         self.forget(prints);
                         match self.store.look(&mut self.memory) {
                             Ok(()) => Err(why),
-                            Err(looked) => {
-                                self.level = super::Level::Behind;
-                                Err(ProdromeError::Store(format!(
-                                    "{why}; and objects/ was not listed after it: {looked}"
-                                )))
-                            }
+                            Err(looked) => Err(ProdromeError::Store(format!(
+                                "{why}; and objects/ was not listed after it: {looked}"
+                            ))),
                         }
                     }
                 }
@@ -360,10 +364,16 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
             })
             .collect();
         self.memory.husk(husked);
-        match failed {
+        let result = match failed {
             Some(why) => Err(why),
             None => synced.map(|()| names),
+        };
+        if result.is_err() {
+            // A temp can be left: the hold keeps no mark, so the next
+            // decision lists and removes it.
+            self.level = super::Level::Behind;
         }
+        result
     }
 }
 

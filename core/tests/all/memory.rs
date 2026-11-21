@@ -14,7 +14,7 @@
 //! in `store_laws/script.rs`.
 
 use crate::common;
-use crate::store_laws::{copy_prints, StoreOfRecord};
+use crate::store_laws::{copy_prints, StoreOfRecord, WithDoors};
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

@@ -60,7 +60,7 @@ thiserror = "2"
 # `prodrome-wasm` compiles this crate for `wasm32-unknown-unknown`, which has no
 # filesystem to lock and whose `errno` will not build.
 [target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["fs", "system"] }
+rustix = { version = "1", features = ["fs", "rand", "system"] }
 
 [dev-dependencies]
 proptest = "1"
