@@ -34,6 +34,8 @@
 mod decision;
 mod husk;
 mod levelled;
+#[cfg(target_os = "linux")]
+mod kernel;
 mod memory;
 mod memory_store;
 mod overlay;
@@ -178,7 +180,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let locked = self.lock()?;
         let mut memory = self.memory();
         self.begin_hold()?;
-        self.look(&mut memory)?;
+        let listing = self.listing()?;
+        self.sweep(&listing.garbage);
+        self.level(&mut memory, listing.objects);
         memory.dag().whole()?;
         Ok(Decision {
             store: self,
@@ -217,7 +221,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// would had the file never been there (SPEC law 45). Refuses only where
     /// `objects/` cannot be listed.
     fn look(&self, memory: &mut Memory<E>) -> Result<(), ProdromeError> {
-        let listed = self.listing()?.objects;
+        self.level(memory, self.listing()?.objects);
+        Ok(())
+    }
+
+    /// [`EventStore::look`] from the objects of one listing.
+    fn level(&self, memory: &mut Memory<E>, listed: Vec<(Hash, fs::DirEntry)>) {
         let now = SystemTime::now();
         let gone: Vec<Hash> = {
             let listed: BTreeSet<&Hash> = listed.iter().map(|(name, _)| name).collect();
@@ -239,6 +248,34 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             read_object(&dir, name)
         });
         memory.level(gone, read, &seen);
+    }
+
+    /// THE TEMPS OF A STOPPED WRITE, REMOVED BY THE NEXT HOLD. Every temp
+    /// that the store writes (an object staged, a husk, `.gitattributes`)
+    /// is written under the lock, so a temp that a holder finds was left by
+    /// a write that stopped: a killed process, or a placement that failed.
+    /// The holder removes each one in `objects/` (`garbage`, from its
+    /// listing) and in the root, with no sync: a removal that a power loss
+    /// undoes is done again by the next hold. An entry that is no temp (a
+    /// stray) is the host's, and stays.
+    ///
+    /// # Errors
+    ///
+    /// A temp that is there and not removed.
+    fn sweep(&self, garbage: &[String]) -> Result<(), ProdromeError> {
+        let objects = self.objects_dir();
+        let temps = garbage
+            .iter()
+            .filter(|file| is_temp(file))
+            .map(|file| objects.join(file))
+            .chain(self.temps().into_iter().map(|file| self.root.join(file)));
+        for temp in temps {
+            match fs::remove_file(&temp) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(ProdromeError::io(&temp, &error)),
+            }
+        }
         Ok(())
     }
 
@@ -332,7 +369,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let _locked = self.lock()?;
         let mut memory = self.memory();
         self.begin_hold()?;
-        self.look(&mut memory)?;
+        let listing = self.listing()?;
+        self.sweep(&listing.garbage);
+        self.level(&mut memory, listing.objects);
         let heads = memory.heads();
         Record::Untouched.finish(&self.root, &heads)?;
         self.end_hold(&mut memory, Level::Level);
@@ -671,11 +710,16 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(names)
     }
 
-    /// Objects onto disk under their names, in the order given, DURABLY:
-    /// each is [`put_durably`] without the directory sync, and `objects/` is
-    /// synced once when all of them are, so a batch — one adoption, one
-    /// append — costs one directory sync and not one per object. The store's
-    /// `.gitattributes` goes first, the same way, where there is none.
+    /// Objects onto disk under their names, in the order given, DURABLY,
+    /// with the fewest syncs that the file system allows. Every object is
+    /// staged in a temp file first ([`Staged`]); then the staged bytes are
+    /// made durable, all of them before the first rename; then each temp is
+    /// renamed under its name, parents first; and `objects/` is synced once
+    /// after the last. So a batch (one adoption, one append) costs one sync
+    /// of its bytes and one directory sync, and a stop at any step leaves a
+    /// prefix of the batch under its names, parents first, and temps that
+    /// `verify` reports. The store's `.gitattributes` goes first, durably,
+    /// where there is none.
     fn place<'a>(
         &self,
         objects: impl IntoIterator<Item = (&'a Hash, &'a [u8])>,
@@ -683,8 +727,14 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         let dir = self.objects_dir();
         make_dir(&dir)?;
         self.gitattributes()?;
-        for (digest, bytes) in objects {
-            rename_into(&stage(&dir, bytes)?, &self.object_path(digest))?;
+        let staging = Staged::begin(&dir)?;
+        let staged = objects
+            .into_iter()
+            .map(|(digest, bytes)| Ok((staging.stage(&dir, bytes)?, digest)))
+            .collect::<Result<Vec<(PathBuf, &Hash)>, ProdromeError>>()?;
+        staging.sync(&dir)?;
+        for (temp, digest) in staged {
+            rename_into(&temp, &self.object_path(digest))?;
         }
         sync_dir(&dir)
     }
@@ -790,6 +840,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     fn quarantine(&self) -> Result<(), ProdromeError> {
         let _locked = self.lock()?;
         self.begin_hold()?;
+        self.sweep(&self.listing()?.garbage);
         let read = self.cold()?;
         let tampered: Vec<(&Hash, &Hash)> = read
             .dag()
@@ -1112,6 +1163,66 @@ fn stage(dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
 /// 75).
 fn replace(dir: &Path, path: &Path, bytes: &[u8]) -> Result<(), ProdromeError> {
     rename_into(&Written::into(dir, bytes)?.sync()?, path)
+}
+
+/// The staging of a batch of temp files in one directory, whose bytes one
+/// sync makes durable before any of them is renamed.
+///
+/// On Linux the sync is one `syncfs` of the file system, made through a
+/// handle on the directory that is opened before the first byte is staged.
+/// Since Linux 5.8, `syncfs` reports every error of writeback on the file
+/// system after the handle was opened, also of a file that was closed
+/// before the sync. So a temp file is closed once its bytes are written,
+/// and a batch holds one descriptor, however long it is. A write that fails
+/// fails when it is staged. On another system each temp file is synced as
+/// it is staged, by `fsync` (on macOS, `F_FULLFSYNC`).
+struct Staged {
+    #[cfg(target_os = "linux")]
+    handle: File,
+}
+
+impl Staged {
+    /// The handle that the sync is made through, opened before any byte of
+    /// the batch is staged.
+    ///
+    /// # Errors
+    ///
+    /// On Linux, a kernel whose `syncfs` does not report a lost write
+    /// ([`kernel::reports_lost_writes`]), or the handle not opened.
+    fn begin(dir: &Path) -> Result<Staged, ProdromeError> {
+        #[cfg(target_os = "linux")]
+        kernel::reports_lost_writes()?;
+        Ok(Staged {
+            #[cfg(target_os = "linux")]
+            handle: File::open(dir).map_err(|error| ProdromeError::io(dir, &error))?,
+        })
+    }
+
+    /// `bytes` in a fresh temp file in `dir`, closed: its path.
+    #[cfg(target_os = "linux")]
+    fn stage(&self, dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+        Ok(Written::into(dir, bytes)?.temp)
+    }
+
+    /// `bytes` in a fresh temp file in `dir`, synced: its path.
+    #[cfg(not(target_os = "linux"))]
+    fn stage(&self, dir: &Path, bytes: &[u8]) -> Result<PathBuf, ProdromeError> {
+        stage(dir, bytes)
+    }
+
+    /// Every staged byte durable, or the first error of writeback since
+    /// [`Staged::begin`].
+    #[cfg(target_os = "linux")]
+    fn sync(self, dir: &Path) -> Result<(), ProdromeError> {
+        rustix::fs::syncfs(&self.handle)
+            .map_err(|error| ProdromeError::io(dir, &std::io::Error::from(error)))
+    }
+
+    /// Nothing more: each temp was synced as it was staged.
+    #[cfg(not(target_os = "linux"))]
+    fn sync(self, _dir: &Path) -> Result<(), ProdromeError> {
+        Ok(())
+    }
 }
 
 /// A temp file written and not yet synced: the first step of a durable

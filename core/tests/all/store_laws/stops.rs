@@ -1,8 +1,9 @@
 //! A write of a store of record stopped after each of its steps, or failed
 //! at one: SPEC law 61 (a stop of a post leaves no record but the derived
 //! one), law 75 (a stop at each step of a replacement leaves the whole or
-//! the husk) and law 79, with the second clause of law 61 (a failed
-//! placement leaves the memory as a cold read, and no record).
+//! the husk), law 79, with the second clause of law 61 (a failed
+//! placement leaves the memory as a cold read, and no record), and law 82
+//! (the next hold removes what a stopped write left).
 //!
 //! Each stop is stated through the doors of [`StoreOfRecord`]: the steps
 //! that a write made before the stop are the doors it opened, and
@@ -257,5 +258,35 @@ fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
     let scratch = Scratch::new();
     for store in stores_of_record::<Letter>(&scratch, &Default::default()) {
         a_stop_leaves_the_whole_or_the_husk(&*store);
+    }
+}
+
+/// Law 82 at one store: what a stopped write left is reported by `verify`
+/// until the next hold of the lock, and the hold removes it and changes no
+/// print.
+fn a_hold_removes_what_a_stop_left(store: &dyn StoreOfRecord<Event>) {
+    begin(store, "sweep");
+    store.append(reopened(1, 1)).expect("appends");
+    let left = [
+        store.interrupt(b"a print cut sh"),
+        store.interrupt(b"a whole print, staged"),
+    ];
+    let found = store.verify();
+    assert!(
+        left.iter().all(|finding| found.contains(finding)),
+        "{found:?}"
+    );
+    let prints = store.prints();
+    drop(store.hold().expect("holds"));
+    assert_eq!(store.verify(), Vec::<Finding>::new());
+    assert_eq!(store.prints(), prints);
+}
+
+/// Law 82, over every store of record.
+#[test]
+fn a_hold_removes_what_a_stopped_write_left() {
+    let scratch = Scratch::new();
+    for store in stores_of_record::<Event>(&scratch, &Default::default()) {
+        a_hold_removes_what_a_stop_left(&*store);
     }
 }
