@@ -26,7 +26,8 @@ use prodrome::store::Sender;
 use prodrome::store::{accept, sync, Held, MemoryStore, Overlay, Replica};
 use proptest::prelude::*;
 
-use crate::memory::{copy_store, replicas, Scratch};
+use crate::memory::{replicas, Scratch};
+use crate::store_laws::copy_prints;
 use common::two_writers;
 
 use crate::schema_laws::failed;
@@ -191,7 +192,7 @@ proptest! {
         let union = scratch.store("union");
         let beneath = scratch.store("beneath");
         for copy in [&union, &beneath] {
-            copy_store(disk.root(), copy.root());
+            copy_prints(&disk, copy);
         }
         let overlay = Overlay::new(&disk);
         prop_assert_eq!(reading(&overlay), reading(&disk));

@@ -1,6 +1,8 @@
-//! SPEC §3's husks and laws 71 to 76, over the letter schema
+//! SPEC §3's husks and laws 71, 78 and 80, over the letter schema
 //! (`../schemas/letter.rs`), whose bodies hold parts sealed under named
-//! keys.
+//! keys. Laws 72 to 77 and 79 run from the suite in `store_laws/`, over
+//! every store of record and every replica where a law applies, with the
+//! drafts and readings of this file.
 //!
 //! A history of letters is appended to a store on disk as one run. A set of
 //! its objects is husked in a copy of the store. The laws compare the two
@@ -8,83 +10,44 @@
 //! reads them: each sealed part read as the name of its key.
 
 use crate::common;
+use crate::store_laws::{copy_prints, directory, Scratch, StoreOfRecord};
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 
 use prodrome::dag::decode;
 use prodrome::dag::{Finding, Unread};
-use prodrome::event::{canonical_envelope, seal_hash, Actor, Envelope, Hash};
-use prodrome::genesis::mk_genesis;
+use prodrome::event::{canonical_envelope, Actor, Envelope, Hash};
 use prodrome::laws::Registers;
 use prodrome::literal::{Datetime, ProdromeError};
-use prodrome::policy::{Everything, Policy, Proven, Standing, Untrusted};
+use prodrome::policy::Untrusted;
 use prodrome::reference::Todo;
-use prodrome::sign::{KeyAdded, Proof, Proved, Registrar, Secret};
+use prodrome::sign::Secret;
 use prodrome::store::{
-    accept, sync, EventStore, HuskObject, MemoryStore, Overlay, Replica, Sender, Stopped, Stored,
+    accept, sync, EventStore, HuskObject, MemoryStore, Overlay, Replica, Sender, Stored,
 };
 use proptest::prelude::*;
 
 use common::vectors::{each, text_at, vectors};
 
 #[path = "../schemas/letter.rs"]
-mod letter;
+pub(crate) mod letter;
 
 use letter::{Id, Letter, Part, Says};
 
 type Store = EventStore<Letter>;
 
-static NEXT: AtomicU64 = AtomicU64::new(0);
-
-/// A directory for one case's stores, removed when the case ends.
-struct Scratch(PathBuf);
-
-impl Scratch {
-    fn new() -> Scratch {
-        let root = std::env::temp_dir().join(format!(
-            "prodrome-husk-{}-{}",
-            std::process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
-        let _ = fs::remove_dir_all(&root);
-        Scratch(root)
-    }
-
-    fn at(&self, name: &str) -> PathBuf {
-        self.0.join(name)
-    }
-
-    /// A store begun with a genesis whose nonce is fixed, so that every
-    /// store of a case is one prodrome.
-    fn store(&self, name: &str) -> Store {
-        let store = Store::new(self.at(name), Untrusted::none());
-        let genesis: Envelope<Letter> =
-            Envelope::Genesis(mk_genesis("letters", &"0".repeat(32)).expect("a genesis"));
-        let digest = seal_hash(&genesis);
-        store
-            .adopt_objects(
-                &[(digest.clone(), canonical_envelope(&genesis))].into(),
-                &digest,
-                Sender::Stranger,
-            )
-            .expect("begins");
-        store
-    }
-}
-
-impl Drop for Scratch {
-    fn drop(&mut self) {
-        let _ = fs::remove_dir_all(&self.0);
-    }
+/// A new store of files for letters, begun with the genesis that every
+/// store of a case shares.
+fn store(scratch: &Scratch) -> Store {
+    let store = directory::<Letter>(scratch, &Default::default());
+    crate::store_laws::begin(&store, "letters");
+    store
 }
 
 /// One drawn event: a letter written in parts (each clear, or boxed under
 /// one of three keys), or titled.
 #[derive(Debug, Clone)]
-enum Draft {
+pub(crate) enum Draft {
     Wrote { letter: u8, parts: Vec<Option<u8>> },
     Titled { letter: u8, title: u8 },
 }
@@ -97,17 +60,17 @@ fn a_draft() -> impl Strategy<Value = Draft> {
     ]
 }
 
-fn a_history() -> impl Strategy<Value = Vec<Draft>> {
+pub(crate) fn a_history() -> impl Strategy<Value = Vec<Draft>> {
     prop::collection::vec(a_draft(), 1..12)
 }
 
 /// Which objects of a history a case husks: a bit for each, by name order.
-fn a_choice() -> impl Strategy<Value = Vec<bool>> {
+pub(crate) fn a_choice() -> impl Strategy<Value = Vec<bool>> {
     prop::collection::vec(any::<bool>(), 16)
 }
 
 /// The events of `drafts`, a minute apart, all by `ada`.
-fn events(drafts: &[Draft]) -> Vec<Letter> {
+pub(crate) fn events(drafts: &[Draft]) -> Vec<Letter> {
     drafts
         .iter()
         .enumerate()
@@ -145,42 +108,16 @@ fn events(drafts: &[Draft]) -> Vec<Letter> {
         .collect()
 }
 
-/// Every object file of `from` copied into `to`'s `objects/`.
-fn copy_objects(from: &Path, to: &Path) {
-    let objects = to.join("objects");
-    fs::create_dir_all(&objects).expect("creates objects/");
-    for entry in fs::read_dir(from.join("objects")).expect("lists") {
-        let path = entry.expect("an entry").path();
-        fs::copy(&path, objects.join(path.file_name().expect("a file"))).expect("copies");
-    }
-}
-
-/// The files of `objects/`, by name, with their bytes.
-fn files(root: &Path) -> BTreeMap<String, Vec<u8>> {
-    fs::read_dir(root.join("objects"))
-        .expect("lists")
-        .map(|entry| {
-            let path = entry.expect("an entry").path();
-            let name = path
-                .file_name()
-                .expect("a file")
-                .to_string_lossy()
-                .into_owned();
-            (name, fs::read(&path).expect("reads"))
-        })
-        .collect()
-}
-
 /// What a holder with no key reads of a replica: its registers by object
 /// name, and each object's event with every sealed part read as its key.
 #[derive(Debug, PartialEq)]
-struct Keyless {
+pub(crate) struct Keyless {
     registers: Registers<Letter>,
     events: BTreeMap<Hash, Option<Letter>>,
     tips: BTreeSet<Hash>,
 }
 
-fn keyless(replica: &impl Replica<Letter>) -> Keyless {
+pub(crate) fn keyless(replica: &(impl Replica<Letter> + ?Sized)) -> Keyless {
     let held = replica.held().expect("reads");
     Keyless {
         registers: Registers::of(&held.folded),
@@ -194,11 +131,12 @@ fn keyless(replica: &impl Replica<Letter>) -> Keyless {
     }
 }
 
-/// The names of the changes of `store` whose events hold a box.
-fn boxed(store: &Store) -> BTreeSet<Hash> {
-    store
-        .dag()
+/// The names of the changes of `replica` whose events hold a box.
+pub(crate) fn boxed(replica: &(impl Replica<Letter> + ?Sized)) -> BTreeSet<Hash> {
+    replica
+        .held()
         .expect("reads")
+        .dag
         .objects()
         .iter()
         .filter(|(_, object)| object.event().is_some_and(Letter::boxed))
@@ -208,7 +146,7 @@ fn boxed(store: &Store) -> BTreeSet<Hash> {
 
 /// Does any event that `replica` reads, or the fold that it keeps, hold a
 /// box under one of `names`?
-fn opens_any(replica: &impl Replica<Letter>, names: &BTreeSet<Hash>) -> bool {
+pub(crate) fn opens_any(replica: &(impl Replica<Letter> + ?Sized), names: &BTreeSet<Hash>) -> bool {
     let held = replica.held().expect("reads");
     let in_objects = names
         .iter()
@@ -223,32 +161,40 @@ fn opens_any(replica: &impl Replica<Letter>, names: &BTreeSet<Hash>) -> bool {
     in_objects || in_fold
 }
 
-/// The store `drafts` makes, appended as one run, and the names chosen
-/// from its objects by `choice`.
-fn made(
-    scratch: &Scratch,
-    name: &str,
+/// `store` begun, the history of `drafts` appended to it as one run, and
+/// the names chosen from its objects by `choice`.
+pub(crate) fn made(
+    store: &dyn StoreOfRecord<Letter>,
     drafts: &[Draft],
     choice: &[bool],
-) -> (Store, BTreeSet<Hash>) {
-    let store = scratch.store(name);
+) -> BTreeSet<Hash> {
+    crate::store_laws::begin(store, "letters");
     store.append_all(events(drafts)).expect("appends");
-    let chosen = store
-        .dag()
+    store
+        .held()
         .expect("reads")
+        .dag
         .objects()
         .keys()
         .zip(choice.iter().cycle())
         .filter(|(_, chosen)| **chosen)
         .map(|(name, _)| name.clone())
-        .collect();
+        .collect()
+}
+
+/// A new store of files with the history of `drafts`, and the names
+/// chosen from its objects by `choice`.
+fn written(scratch: &Scratch, drafts: &[Draft], choice: &[bool]) -> (Store, BTreeSet<Hash>) {
+    let store = directory::<Letter>(scratch, &Default::default());
+    let chosen = made(&store, drafts, choice);
     (store, chosen)
 }
 
-/// A copy of `store`'s files, at `name`, opened afresh.
-fn copied(scratch: &Scratch, name: &str, store: &Store) -> Store {
-    copy_objects(store.root(), &scratch.at(name));
-    Store::new(scratch.at(name), Untrusted::none())
+/// A copy of `store`'s prints in a new store of files.
+fn copied(scratch: &Scratch, store: &Store) -> Store {
+    let copy = directory::<Letter>(scratch, &Default::default());
+    copy_prints(store, &copy);
+    copy
 }
 
 proptest! {
@@ -265,8 +211,8 @@ proptest! {
         choice in a_choice(),
     ) {
         let scratch = Scratch::new();
-        let (whole, chosen) = made(&scratch, "whole", &drafts, &choice);
-        let husked = copied(&scratch, "husked", &whole);
+        let (whole, chosen) = written(&scratch, &drafts, &choice);
+        let husked = copied(&scratch, &whole);
         let before = keyless(&husked);
         let done = husked.husk(chosen.clone()).expect("husks");
         prop_assert_eq!(
@@ -288,264 +234,6 @@ proptest! {
         );
     }
 
-    /// Law 72, the prune law: `husk` changes only the files of the named
-    /// objects that hold a box, each to its husk's print; every other file
-    /// is byte-identical, and the heads, the linear order and every
-    /// object's parents do not change. A second `husk` of the same names
-    /// changes nothing.
-    #[test]
-    fn a_husk_changes_only_the_named_files(drafts in a_history(), choice in a_choice()) {
-        let scratch = Scratch::new();
-        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
-        let dag = store.dag().expect("reads");
-        let order = dag.linearise().expect("orders").to_vec();
-        let heads = store.heads().expect("heads");
-        let parents: BTreeMap<Hash, Vec<Hash>> = dag
-            .objects()
-            .iter()
-            .map(|(name, object)| (name.clone(), prodrome::event::parents_of(object)))
-            .collect();
-        let before = files(store.root());
-        let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
-        let after = files(store.root());
-        prop_assert_eq!(before.keys().collect::<Vec<_>>(), after.keys().collect::<Vec<_>>());
-        for (file, bytes) in &after {
-            let name = Hash::new(file.trim_end_matches(".py")).expect("an object's name");
-            if done.contains(&name) {
-                let Envelope::Change(change) = dag.get(&name).expect("held") else {
-                    return Err(TestCaseError::fail("a husk of no change"));
-                };
-                let husk = HuskObject::of(change).expect("a box to drop");
-                prop_assert_eq!(bytes, &husk.print().into_bytes());
-            } else {
-                prop_assert_eq!(bytes, &before[file]);
-            }
-        }
-        let dag = store.dag().expect("reads");
-        prop_assert_eq!(dag.linearise().expect("orders"), &order[..]);
-        prop_assert_eq!(store.heads().expect("heads"), heads.clone());
-        prop_assert_eq!(Store::new(store.root(), Untrusted::none()).heads().expect("heads"), heads);
-        for (name, object) in dag.objects() {
-            prop_assert_eq!(&prodrome::event::parents_of(object), &parents[name]);
-        }
-        prop_assert!(store.husk(done).expect("husks").is_empty(), "a husk is passed over");
-        prop_assert_eq!(files(store.root()), after);
-        prop_assert_eq!(store.verify(), Vec::<Finding>::new());
-    }
-
-    /// Law 73, never take back: after `husk`, no sequence of operations of
-    /// any replica the law kit has makes a sealed part of a husked object
-    /// readable from it. The store on disk appends each whole event again,
-    /// one by one and as a run, and syncs, receives and adopts every whole
-    /// from a replica that holds them, as a stranger and as its keeper. A
-    /// store in memory that took the husks from the store does the same. An
-    /// overlay whose own layer holds the wholes, over a base that then takes
-    /// the husks, reads and answers the husks, and its flush keeps them.
-    /// Each husked name keeps its husk's print, and its `print` answers
-    /// nothing.
-    #[test]
-    fn a_dropped_part_is_never_taken_back(drafts in a_history(), choice in a_choice()) {
-        let scratch = Scratch::new();
-        let (whole, chosen) = made(&scratch, "whole", &drafts, &choice);
-        let husked = copied(&scratch, "husked", &whole);
-        let done: BTreeSet<Hash> = husked.husk(chosen).expect("husks").into_iter().collect();
-        let kept: BTreeMap<Hash, Vec<u8>> = done
-            .iter()
-            .map(|name| (name.clone(), husked.kept(name).expect("kept")))
-            .collect();
-        let everything = whole.tips().expect("tips");
-
-        for event in events(&drafts) {
-            husked.append(event).expect("appends");
-        }
-        husked.append_all(events(&drafts)).expect("appends");
-        sync(&whole, &husked, Sender::Stranger).expect("syncs");
-        accept(&whole, &husked, everything.clone(), Sender::Keeper).expect("accepts");
-        husked
-            .receive(done.clone(), &|name| whole.kept(name), Sender::Keeper)
-            .expect("receives");
-        for name in &done {
-            husked.adopt(&whole, name, Sender::Keeper).expect("adopts");
-        }
-        never_taken_back(&husked, &kept)?;
-        never_taken_back(&Store::new(husked.root(), Untrusted::none()), &kept)?;
-
-        let memory = MemoryStore::<Letter>::default();
-        accept(&husked, &memory, husked.tips().expect("tips"), Sender::Keeper)
-            .expect("accepts");
-        for event in events(&drafts) {
-            memory.append(event).expect("appends");
-        }
-        sync(&whole, &memory, Sender::Stranger).expect("syncs");
-        accept(&whole, &memory, everything.clone(), Sender::Keeper).expect("accepts");
-        never_taken_back(&memory, &kept)?;
-
-        let base = scratch.store("base");
-        let overlay = Overlay::new(&base);
-        accept(&whole, &overlay, everything, Sender::Keeper).expect("takes the wholes");
-        accept(&husked, &base, husked.tips().expect("tips"), Sender::Keeper)
-            .expect("the base takes the husks");
-        never_taken_back(&overlay, &kept)?;
-        overlay.flush().expect("flushes");
-        never_taken_back(&base, &kept)?;
-    }
-
-    /// Law 74, two stores agree: a replica that pulls from a store holding
-    /// husks, as from its keeper of record, on disk or in memory, holds the
-    /// husks and reads as the store does, and `verify` is clean on both
-    /// stores. A pull from the same store as from a stranger refuses every
-    /// husk and takes nothing.
-    #[test]
-    fn a_replica_of_a_husked_store_reads_as_it(drafts in a_history(), choice in a_choice()) {
-        let scratch = Scratch::new();
-        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
-        let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
-        let tips = store.tips().expect("tips");
-        let disk = Store::new(scratch.at("disk"), Untrusted::none());
-        accept(&store, &disk, tips.clone(), Sender::Keeper).expect("pulls");
-        let memory = MemoryStore::<Letter>::default();
-        accept(&store, &memory, tips.clone(), Sender::Keeper).expect("pulls");
-        prop_assert_eq!(keyless(&disk), keyless(&store));
-        prop_assert_eq!(keyless(&memory), keyless(&store));
-        let on_disk = disk.dag().expect("reads");
-        prop_assert_eq!(on_disk.husks(), &done);
-        let in_memory = memory.held().expect("reads");
-        prop_assert_eq!(in_memory.dag.husks(), &done);
-        prop_assert_eq!(store.verify(), Vec::<Finding>::new());
-        prop_assert_eq!(disk.verify(), Vec::<Finding>::new());
-        prop_assert!(accept(&store, &disk, tips, Sender::Keeper).expect("pulls").is_empty());
-        let stranger = MemoryStore::<Letter>::default();
-        prop_assert_eq!(sync(&store, &stranger, Sender::Stranger).is_err(), !done.is_empty());
-        if !done.is_empty() {
-            prop_assert!(stranger.held().expect("reads").dag.objects().is_empty());
-        }
-    }
-
-    /// Law 76: a run of appends writes the objects that one append after
-    /// another writes, and answers the same names. A run with a refused
-    /// event at any place stops there: the events before it are placed, as
-    /// one append after another places them, and none after it is.
-    #[test]
-    fn a_run_writes_what_appends_one_by_one_write(drafts in a_history(), at in 0..13_usize) {
-        let scratch = Scratch::new();
-        let run = scratch.store("run");
-        let one = scratch.store("one");
-        let names = run.append_all(events(&drafts)).expect("appends");
-        let each: Vec<Hash> = events(&drafts)
-            .into_iter()
-            .map(|event| one.append(event).expect("appends"))
-            .collect();
-        prop_assert_eq!(names, each.clone());
-        prop_assert_eq!(files(run.root()), files(one.root()));
-        prop_assert_eq!(run.heads().expect("heads"), one.heads().expect("heads"));
-
-        let at = at.min(drafts.len());
-        let mut refused = events(&drafts);
-        let mut refusal = refused[0].clone();
-        refusal.says = Says::Titled(letter::REFUSED.to_owned());
-        refused.insert(at, refusal);
-        let stopped = scratch.store("stopped");
-        let before = scratch.store("before");
-        for event in events(&drafts).into_iter().take(at) {
-            before.append(event).expect("appends");
-        }
-        match stopped.append_all(refused) {
-            Err(Stopped { placed, why }) => {
-                prop_assert_eq!(placed, each[..at].to_vec());
-                prop_assert!(why.to_string().contains("refused"), "{}", why);
-            }
-            Ok(names) => {
-                return Err(TestCaseError::fail(format!("a refused run answered {names:?}")));
-            }
-        }
-        prop_assert_eq!(files(stopped.root()), files(before.root()));
-        prop_assert_eq!(stopped.heads().expect("heads"), before.heads().expect("heads"));
-        prop_assert_eq!(stopped.verify(), Vec::<Finding>::new());
-    }
-
-    /// Law 77: for any sequence of receipts from a party whose word is not
-    /// taken, into a store in memory or on disk, no object reads as proven,
-    /// or vouched for, whose bytes the receiver did not hash to its name.
-    /// The party holds a true signature of every change, by the key
-    /// registered to its actor under a root's signature, and forged husks
-    /// under some of their names. From the keeper of record the same husks
-    /// are taken: the signature vouches for each and proves none, and the
-    /// policy that requires signatures binds each, on the keeper's word.
-    #[test]
-    fn a_signature_proves_no_husk(drafts in a_history(), choice in a_choice()) {
-        let scratch = Scratch::new();
-        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
-        let ada = Secret::new(&"1".repeat(64)).expect("a seed");
-        let dag = store.dag().expect("reads");
-        let genesis = dag.geneses().into_iter().next().expect("a genesis");
-        let mut prints: BTreeMap<Hash, Vec<u8>> = dag
-            .objects()
-            .keys()
-            .map(|name| (name.clone(), store.kept(name).expect("kept")))
-            .collect();
-        let added: Envelope<Letter> = Envelope::KeyAdded(KeyAdded {
-            genesis,
-            actor: Actor::new("ada").expect("an actor"),
-            key: ada.public(),
-        });
-        prints.insert(seal_hash(&added), canonical_envelope(&added).into_bytes());
-        let mut forged = BTreeSet::new();
-        for (name, object) in dag.objects() {
-            let Some(event) = object.event() else { continue };
-            let signed: Envelope<Letter> = Envelope::Signed(ada.sign(name));
-            prints.insert(seal_hash(&signed), canonical_envelope(&signed).into_bytes());
-            let Envelope::Change(change) = object else { continue };
-            if !chosen.contains(name) || !event.boxed() {
-                continue;
-            }
-            let husk = HuskObject::of(change).expect("a box").print();
-            let lie = husk.replacen(&format!("letter='{}'", event.letter.0), "letter='forged'", 1);
-            prints.insert(name.clone(), lie.into_bytes());
-            forged.insert(name.clone());
-        }
-        let root = Secret::new(&"9".repeat(64)).expect("a seed");
-        let rooted: Envelope<Letter> = Envelope::Signed(root.sign(&seal_hash(&added)));
-        prints.insert(seal_hash(&rooted), canonical_envelope(&rooted).into_bytes());
-        let print_of = |name: &Hash| prints.get(name).cloned();
-
-        let in_memory = MemoryStore::<Letter>::default();
-        let on_disk = Store::new(scratch.at("stranger"), Untrusted::none());
-        for stranger in [&in_memory as &dyn Replica<Letter>, &on_disk] {
-            for name in prints.keys() {
-                let _ = stranger.receive([name.clone()].into(), &print_of, Sender::Stranger);
-            }
-            let held = stranger.held().expect("reads");
-            let proof = Proof::of(&held.dag, &Registrar::Anyone);
-            for name in held.dag.objects().keys() {
-                match proof.standing(name) {
-                    Proved::Proven | Proved::Vouched => {
-                        prop_assert!(stranger.print(name).is_some(), "{} stands unhashed", name);
-                    }
-                    Proved::Unsigned => {}
-                }
-                prop_assert!(!forged.contains(name), "a stranger's husk was taken");
-            }
-        }
-
-        let in_memory = MemoryStore::<Letter>::default();
-        let on_disk = Store::new(scratch.at("keeper"), Untrusted::none());
-        let everything: BTreeSet<Hash> = prints.keys().cloned().collect();
-        for keeper in [&in_memory as &dyn Replica<Letter>, &on_disk] {
-            keeper
-                .receive(everything.clone(), &print_of, Sender::Keeper)
-                .expect("takes the keeper's word");
-            let held = keeper.held().expect("reads");
-            let proof = Proof::of(&held.dag, &Registrar::Anyone);
-            let policy = Proven::new(Everything, [root.public()], &held.dag);
-            for name in &forged {
-                prop_assert!(held.dag.husks().contains(name));
-                prop_assert_eq!(proof.standing(name), Proved::Vouched);
-                let event = held.dag.get(name).and_then(Envelope::event).expect("an event");
-                prop_assert_eq!(policy.standing(name, event), Standing::Binds);
-            }
-        }
-    }
-
     /// Law 80: no signature is made over a name whose whole the signer
     /// does not hold. `Secret::sign_whole` signs each object the history
     /// holds whole, and refuses each name held as a husk, in the history or
@@ -556,7 +244,7 @@ proptest! {
         choice in a_choice(),
     ) {
         let scratch = Scratch::new();
-        let (store, chosen) = made(&scratch, "store", &drafts, &choice);
+        let (store, chosen) = written(&scratch, &drafts, &choice);
         let done: BTreeSet<Hash> = store.husk(chosen).expect("husks").into_iter().collect();
         let ada = Secret::new(&"1".repeat(64)).expect("a seed");
         let dag = store.dag().expect("reads");
@@ -574,7 +262,7 @@ proptest! {
     #[test]
     fn a_husk_is_exactly_one_print(drafts in a_history(), comma in 0..64_usize) {
         let scratch = Scratch::new();
-        let (store, _) = made(&scratch, "store", &drafts, &[]);
+        let (store, _) = written(&scratch, &drafts, &[]);
         for name in boxed(&store) {
             let Envelope::Change(change) = store.load(&name).expect("loads") else {
                 return Err(TestCaseError::fail("a boxed change"));
@@ -607,190 +295,34 @@ proptest! {
     }
 }
 
-/// The checks of law 73 at one replica: no event of its DAG or its fold
-/// under a husked name holds a box, each husked name keeps its husk's
-/// print, and its `print` answers nothing.
-fn never_taken_back(
-    replica: &impl Replica<Letter>,
-    kept: &BTreeMap<Hash, Vec<u8>>,
-) -> Result<(), TestCaseError> {
-    let names: BTreeSet<Hash> = kept.keys().cloned().collect();
-    prop_assert!(!opens_any(replica, &names));
-    for (name, print) in kept {
-        let now = replica.kept(name);
-        prop_assert_eq!(now.as_ref(), Some(print));
-        prop_assert_eq!(replica.print(name), None);
-    }
-    Ok(())
-}
-
-/// Law 79: after a placement fails, the memory reads as a cold read of the
-/// files. A run of two appends whose second name is taken by a directory
-/// places the first and fails on the second; the decision's memory is a
-/// fresh handle's, the same append again places nothing it did not, and
-/// once the name is free the run completes as a store that never failed.
+/// Law 75's last clause, at the store of files: `husk` puts the husk under
+/// the name by a rename, and never writes the file of the whole in place.
+/// The stops between the steps of the replacement are law 75's tests in
+/// `store.rs` and `store_laws/stops.rs`.
 #[test]
-fn a_failed_placement_leaves_the_memory_as_a_cold_read() {
+fn a_husk_replaces_its_file_by_a_rename() {
+    use std::os::unix::fs::MetadataExt;
     let scratch = Scratch::new();
-    let drafts = [
-        Draft::Titled {
-            letter: 0,
-            title: 0,
-        },
-        Draft::Titled {
-            letter: 1,
-            title: 1,
-        },
-    ];
-    let clean = scratch.store("clean");
-    let names = clean.append_all(events(&drafts)).expect("appends");
-    let store = scratch.store("store");
-    let blocked = store
-        .root()
-        .join(format!("objects/{}.py", names[1].as_str()));
-    {
-        let mut decision = store.decide().expect("decides");
-        fs::create_dir(&blocked).expect("blocks the second name");
-        let stopped = decision.append_all(events(&drafts));
-        assert!(matches!(stopped, Err(Stopped { ref placed, .. }) if placed.is_empty()));
-        let cold = Store::new(store.root(), Untrusted::none());
-        assert_eq!(**decision.dag(), *cold.dag().expect("reads"));
-        assert_eq!(
-            decision.append(events(&drafts)[0].clone()).expect("a twin"),
-            names[0]
-        );
-        assert!(decision.append(events(&drafts)[1].clone()).is_err());
-        assert_eq!(**decision.dag(), *cold.dag().expect("reads"));
-    }
-    fs::remove_dir(&blocked).expect("unblocks");
-    assert_eq!(store.append_all(events(&drafts)).expect("appends"), names);
-    let objects = |root: &Path| {
-        let mut held = files(root);
-        held.retain(|file, _| file.ends_with(".py"));
-        held
-    };
-    assert_eq!(objects(store.root()), objects(clean.root()));
-    // Each failed rename left its temp, which `verify` names, as after any
-    // write cut short.
-    assert!(store
-        .verify()
-        .iter()
-        .all(|finding| matches!(finding, Finding::Garbage(file) if file.ends_with(".tmp"))));
-}
-
-/// What a stop leaves: the file under the name, and the temp, if one.
-struct Stop<'b> {
-    file: &'b [u8],
-    staged: Option<&'b [u8]>,
-    reads: Reads,
-}
-
-/// What a name reads as.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Reads {
-    Whole,
-    Husk,
-}
-
-/// Law 75, read at the store: each state that a stop of the replacement of
-/// one file can leave (`store.rs` stops the replacement itself) leaves under
-/// the name a file that reads as the whole or as the husk, never one that
-/// reads as neither. The steps are the husk written to a temp file (in
-/// full, or cut short before its sync), the rename over the whole, and the
-/// directory sync; a stop before the rename reaches the disk is the whole.
-#[test]
-fn a_stop_at_each_step_leaves_the_whole_or_the_husk() {
-    let scratch = Scratch::new();
+    let store = directory::<Letter>(&scratch, &Default::default());
     let drafts = [Draft::Wrote {
         letter: 0,
         parts: vec![Some(0), None],
     }];
-    let (store, _) = made(&scratch, "store", &drafts, &[]);
+    made(&store, &drafts, &[]);
     let name = boxed(&store).into_iter().next().expect("a boxed change");
-    let Envelope::Change(change) = store.load(&name).expect("loads") else {
-        panic!("a change");
-    };
-    let whole =
-        fs::read(store.root().join(format!("objects/{}.py", name.as_str()))).expect("reads");
-    let husk = HuskObject::of(&change)
-        .expect("a box to drop")
-        .print()
-        .into_bytes();
-    let temp = "00000000000000aa.tmp";
-    // Each state a stop can leave: before the temp is written; the temp cut
-    // short before its sync; the temp synced, before the rename reaches the
-    // disk; and after the rename, which the directory sync makes durable.
-    let states = [
-        Stop {
-            file: &whole,
-            staged: None,
-            reads: Reads::Whole,
-        },
-        Stop {
-            file: &whole,
-            staged: Some(&husk[..husk.len() / 2]),
-            reads: Reads::Whole,
-        },
-        Stop {
-            file: &whole,
-            staged: Some(&husk),
-            reads: Reads::Whole,
-        },
-        Stop {
-            file: &husk,
-            staged: None,
-            reads: Reads::Husk,
-        },
-    ];
-    for (
-        at,
-        Stop {
-            file,
-            staged,
-            reads,
-        },
-    ) in states.into_iter().enumerate()
-    {
-        let root = scratch.at(&format!("stop-{at}"));
-        copy_objects(store.root(), &root);
-        fs::write(root.join(format!("objects/{}.py", name.as_str())), file).expect("writes");
-        if let Some(staged) = staged {
-            fs::write(root.join("objects").join(temp), staged).expect("stages");
-        }
-        let reader = Store::new(&root, Untrusted::none());
-        let dag = reader.dag().expect("reads");
-        assert!(dag.get(&name).is_some(), "step {at}: the name reads");
-        assert!(dag.unread().is_empty(), "step {at}: {:?}", dag.unread());
-        let read = if dag.husks().contains(&name) {
-            Reads::Husk
-        } else {
-            Reads::Whole
-        };
-        assert_eq!(read, reads, "step {at}");
-        let expected: Vec<String> = staged
-            .map(|_| format!("objects/{temp} is not an object: a temp an interrupted write left, or a stray (SPEC §3); delete it"))
-            .into_iter()
-            .collect();
-        let findings: Vec<String> = reader.verify().iter().map(ToString::to_string).collect();
-        assert_eq!(findings, expected, "step {at}");
-    }
-    // The husking itself, from the whole: the name reads as the husk, in a
-    // file that replaced the whole by a rename and was not written over in
-    // place. The stops inside the replacement are law 75's test in
-    // `store.rs`.
-    let inode = |store: &Store| {
-        use std::os::unix::fs::MetadataExt;
-        fs::metadata(store.root().join(format!("objects/{}.py", name.as_str())))
+    let inode = || {
+        std::fs::metadata(store.root().join(format!("objects/{}.py", name.as_str())))
             .expect("a file")
             .ino()
     };
-    let before = inode(&store);
+    let before = inode();
     assert_eq!(
         store.husk([name.clone()]).expect("husks"),
         vec![name.clone()]
     );
-    assert_eq!(store.kept(&name), Some(husk));
-    assert_ne!(inode(&store), before, "a rename, not a write in place");
+    assert!(store.kept(&name).is_some());
+    assert_eq!(store.print(&name), None, "the husk is not the whole");
+    assert_ne!(inode(), before, "a rename, not a write in place");
 }
 
 /// SPEC §3: at a husking schema a print that still holds a box, or that
@@ -809,14 +341,13 @@ fn a_print_that_is_no_husk_is_tampered() {
             title: 0,
         },
     ];
-    let (store, _) = made(&scratch, "store", &drafts, &[]);
+    let (store, _) = written(&scratch, &drafts, &[]);
     let dag = store.dag().expect("reads");
     for (name, object) in dag.objects() {
         let Envelope::Change(change) = object else {
             continue;
         };
-        let path = store.root().join(format!("objects/{}.py", name.as_str()));
-        let whole = fs::read_to_string(&path).expect("reads");
+        let whole = String::from_utf8(store.kept(name).expect("kept")).expect("text");
         // A box kept beside a dropped one, or a title with nothing dropped.
         let other = if change.event.boxed() {
             whole.replacen("Boxed(key='k0', box='0000')", "Dropped(key='k0')", 1)
@@ -824,7 +355,7 @@ fn a_print_that_is_no_husk_is_tampered() {
             whole.replace("title 0", "title 9")
         };
         assert_ne!(other, whole);
-        fs::write(&path, &other).expect("writes");
+        store.replace(name, other.as_bytes());
         let reader = Store::new(store.root(), Untrusted::none());
         let read = reader.dag().expect("reads");
         assert!(
@@ -832,7 +363,7 @@ fn a_print_that_is_no_husk_is_tampered() {
             "{other}"
         );
         assert!(reader.append(events(&drafts)[1].clone()).is_err());
-        fs::write(&path, &whole).expect("restores");
+        store.replace(name, whole.as_bytes());
     }
 }
 
@@ -923,7 +454,7 @@ fn a_husk_whose_parent_is_absent_waits() {
             parts: vec![Some(0)],
         },
     ];
-    let (store, _) = made(&scratch, "store", &drafts, &[]);
+    let (store, _) = written(&scratch, &drafts, &[]);
     let name = boxed(&store).into_iter().next().expect("a boxed change");
     assert_eq!(
         store.husk([name.clone()]).expect("husks"),
@@ -933,12 +464,9 @@ fn a_husk_whose_parent_is_absent_waits() {
         panic!("a change");
     };
     let parent = change.deps.first().expect("a dep").clone();
-    let root = scratch.at("partial");
-    copy_objects(store.root(), &root);
-    let parent_file = root.join(format!("objects/{}.py", parent.as_str()));
-    let parent_print = fs::read(&parent_file).expect("reads");
-    fs::remove_file(&parent_file).expect("removes");
-    let partial = Store::new(&root, Untrusted::none());
+    let partial = copied(&scratch, &store);
+    let parent_print = partial.kept(&parent).expect("kept");
+    partial.set_aside(&parent);
     let dag = partial.dag().expect("reads");
     assert!(dag.get(&name).is_none(), "the husk waits");
     assert!(dag.husks().contains(&name), "and is held as a husk");
@@ -947,7 +475,7 @@ fn a_husk_whose_parent_is_absent_waits() {
         findings,
         vec![format!("chain broke at {parent}: missing object {parent}")]
     );
-    fs::write(&parent_file, parent_print).expect("restores");
+    partial.place(&parent, &parent_print);
     assert!(
         partial.dag().expect("reads").get(&name).is_some(),
         "the husk joins"
@@ -965,7 +493,7 @@ fn a_frontier_sends_a_husk() {
         letter: 0,
         parts: vec![Some(1)],
     }];
-    let (store, _) = made(&scratch, "store", &drafts, &[]);
+    let (store, _) = written(&scratch, &drafts, &[]);
     let name = boxed(&store).into_iter().next().expect("a boxed change");
     store.husk([name.clone()]).expect("husks");
     let dag = store.dag().expect("reads");
@@ -996,19 +524,15 @@ fn an_overlay_answers_its_own_whole_over_a_damaged_base() {
         letter: 0,
         parts: vec![None],
     }];
-    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let (whole, _) = written(&scratch, &drafts, &[]);
     let name = whole
         .tips()
         .expect("tips")
         .into_iter()
         .next()
         .expect("a tip");
-    let base = copied(&scratch, "base", &whole);
-    fs::write(
-        base.root().join(format!("objects/{}.py", name.as_str())),
-        "damaged",
-    )
-    .expect("damages");
+    let base = copied(&scratch, &whole);
+    base.replace(&name, b"damaged");
     let overlay = Overlay::new(&base);
     sync(&whole, &overlay, Sender::Stranger).expect("the overlay takes the whole");
     assert_eq!(overlay.kept(&name), whole.kept(&name));
@@ -1037,7 +561,7 @@ fn writing_a_waiting_object_again_writes_nothing() {
             title: 2,
         },
     ];
-    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let (whole, _) = written(&scratch, &drafts, &[]);
     let [first, middle, last] = drafts.map(|draft| {
         let event = events(&[draft])[0].clone();
         whole
@@ -1049,19 +573,18 @@ fn writing_a_waiting_object_again_writes_nothing() {
             .map(|(name, _)| name.clone())
             .expect("appended")
     });
-    let store = copied(&scratch, "store", &whole);
-    fs::remove_file(store.root().join(format!("objects/{}.py", middle.as_str())))
-        .expect("removes the parent");
+    let store = copied(&scratch, &whole);
+    store.set_aside(&middle);
     assert!(store.dag().expect("reads").get(&last).is_none(), "it waits");
     let merged = store
         .merge(Some(&[first.clone(), last.clone()]), None)
         .expect("merges");
-    let files_once = files(store.root());
+    let files_once = store.prints();
     let again = store
         .merge(Some(&[first, last]), None)
         .expect("a merge again writes nothing");
     assert_eq!(again, merged);
-    assert_eq!(files(store.root()), files_once);
+    assert_eq!(store.prints(), files_once);
 }
 
 /// SPEC §3: an overlay whose own layer holds a whole answers the base's husk
@@ -1074,11 +597,11 @@ fn an_overlay_answers_the_base_s_husk_without_a_read_between() {
         letter: 0,
         parts: vec![Some(0)],
     }];
-    let (whole, _) = made(&scratch, "whole", &drafts, &[]);
+    let (whole, _) = written(&scratch, &drafts, &[]);
     let name = boxed(&whole).into_iter().next().expect("a boxed change");
-    let husked = copied(&scratch, "husked", &whole);
+    let husked = copied(&scratch, &whole);
     husked.husk([name.clone()]).expect("husks");
-    let base = scratch.store("base");
+    let base = store(&scratch);
     let overlay = Overlay::new(&base);
     sync(&whole, &overlay, Sender::Stranger).expect("the overlay takes the whole");
     let tips = husked.tips().expect("tips");
