@@ -3,8 +3,9 @@
 This note answers issue #92. It measures the public face of the crate
 `prodrome-core`, and it proposes how to make what one task must read
 smaller, in stages. Section 7 records stage 1, which the same pull request
-as this note makes. The later stages are proposals. For what is
-implemented, see `SPEC.md` and `CHANGELOG.md`.
+as this note made. Section 8 records stage 3, the data crate, which a
+later pull request made before stage 2. The other stages are proposals.
+For what is implemented, see `SPEC.md` and `CHANGELOG.md`.
 
 Terms used below:
 
@@ -234,13 +235,13 @@ candidates:
   without the feature breaks at compile time.
 
 This crate is public, and its version is below 1.0, so Semantic Versioning
-lets a minor release break the API. Each narrowing still follows three
-steps. First, a release marks each item `#[deprecated]`, with a note that
-names the replacement, and the `CHANGELOG.md` lists it under "Deprecated".
-Second, the next minor release makes the change and lists it under
-"Changed" or "Removed". Third, an item that moves to the internal module
-keeps a re-export at its old path for one release, also deprecated.
-Narrowing changes no stored byte, no conformance vector and no law.
+lets a minor release break the API. A narrowing therefore happens in one
+release: the `CHANGELOG.md` lists each narrowed item under "Changed" or
+"Removed", with its new path where it has one. No item is kept
+`#[deprecated]` for a release, and no re-export is kept at an old path,
+except the re-exports by which `prodrome-core` keeps the paths of the
+items that move to another crate of the library. Narrowing changes no
+stored byte, no conformance vector and no law.
 
 ## 4. How the core divides into crates
 
@@ -362,6 +363,7 @@ So the stages of section 5 have these targets, in the line measure:
 | 1, the doc comments (done) | 113,381 | 23,295 (estimate) | 45,588 (estimate) |
 | 2, the narrowing | 100,000 | 19,000 | 36,000 |
 | 3, the data crate | | 15,000 | |
+| 3, as made (section 8) | 92,381 without the data crate | 22,260 | |
 | 4, each further crate | | | under 25,000 in each of two crates |
 
 Stage 2 reaches its numbers by removing `pub` from items that only their
@@ -381,17 +383,18 @@ Each stage is one pull request that lands alone.
 1. **The doc comments, by the rule of section 2.** Words only. A program
    changes nothing. The conformance vectors and the law tests do not
    change, and the words-only check of section 7 proves that no code
-   changed. Done in this pull request: the line measure fell from 131,100
-   to 113,381 tokens.
+   changed. Done in the pull request of this note: the line measure fell
+   from 131,100 to 113,381 tokens.
 2. **The narrowing of section 3,** with the target of "The targets"
-   above. The release marks each candidate
-   `#[deprecated]` first, and the next release narrows it. A program that
-   names a narrowed item changes its import to `prodrome::internal::...`,
-   or turns on a feature. No test changes its assertions; a test that
-   names a narrowed item changes its import.
-3. **The data crate.** The pull request first cuts the edges of section 4
-   that touch the data crate, inside `prodrome-core`, as moves of items
-   between modules with re-exports at the old paths. Then it moves the
+   above. A program that names a narrowed item changes its import to the
+   item's new path, or turns on a feature. No test changes its
+   assertions; a test that names a narrowed item changes its import.
+   Each crate's stage narrows the items that its move touches, so this
+   stage narrows only what remains in the facade at the end.
+3. **The data crate.** Made before stage 2, because it is the stage that
+   lowers what most units read; section 8 records it. The pull request
+   first cut the edges of section 4 that touch the data crate, inside
+   `prodrome-core`, as moves of items between modules. Then it moved the
    files to `prodrome-data`, and `prodrome-core` re-exports them at the
    same paths. A program that depends on `prodrome-core` changes nothing.
    A program that wants only the data crate changes its dependency and
@@ -399,11 +402,17 @@ Each stage is one pull request that lands alone.
    The conformance suites stay in `prodrome-core`'s tests, which read every
    crate through the re-exports, so every vector and every law test runs
    unchanged.
-4. **Each further crate,** in the order memo, store, fpl, digest, reading,
-   todo, one pull request each, by the same method as stage 3. The derive
-   macro writes `::prodrome::...` paths today; the stage that moves
-   `literal` makes the macro name the data crate, or keeps the facade's
-   path and requires the facade.
+4. **Each further crate,** one pull request each, by the same method as
+   stage 3, in this order:
+   1. the store crate, next, because its face is the largest (45,588
+      tokens estimated in section 4). It depends on `memo`, so that stage
+      moves `memo` to its own crate first, in its first commit, or a pull
+      request before it does. Stage 4 of "The targets" then divides the
+      store crate in two;
+   2. fpl;
+   3. digest;
+   4. reading;
+   5. todo.
 
 `SPEC.md` names no Rust module, so no stage changes it. `CHANGELOG.md`
 announces each stage under "Changed", with the paths a program may change.
@@ -414,7 +423,8 @@ announces each stage under "Changed", with the paths a program may change.
   boundary stops inlining without `#[inline]` and costs a separate
   metadata pass. The generic code of the core (`Schema`, the folds) is
   monomorphised in the application anyway, so the loss is small, but it is
-  not zero, and nobody has measured it.
+  not zero. Section 8 measures it for the data crate: a clean build of the
+  workspace takes about 0.6 seconds more.
 - **Version skew.** Eight crates mean eight versions. An application that
   depends on `prodrome-data` 0.10 and on `prodrome-store` 0.11 gets two
   copies of `Hash`, and the compiler reports that a `Hash` is not a
@@ -528,3 +538,99 @@ ambiguous intra-doc links), and the first pass fixed them by rewording.
 §9 has two items numbered 40. SPEC §5 cites law 41 for a proof that is a
 reading of the history, which is law 42. SPEC §3 cites law 39 for the
 restricted join of `accept`, but law 39 is about nests.
+
+## 8. Stage 3, as made
+
+Stage 3 made the crate `prodrome-data` in three commits that each build
+and pass the three commands of `AGENTS.md`.
+
+**The cuts.** The first commit moved the items that the data crate holds
+into a private module `data` of the core, and left each old path as a
+module that re-exports them. `scripts/edges.py core/src data` then
+showed that no module under `data` named a module outside it. The second
+commit moved `core/src/data/` to `data/src/`. The CI's lint check runs
+`python3 scripts/edges.py data/src`, which shows that the data crate
+names no other crate of the workspace. Each edge of the table of
+section 4 was cut by a move, as follows:
+
+| Edge | The cut, as made |
+|---|---|
+| `event` to `sign` | `Signed`, `KeyAdded`, `KeyRevoked`, `PublicKey` and `Signature` moved to the data crate. `Secret` stays in the core, because `Secret::sign_whole` reads a `Dag`, and an inherent method cannot be in another crate than its type. The data crate holds `public_of` and `signed_by`, the two bodies of `Secret`'s methods that build a key and a signature. |
+| `event` to `term`, `payload` | The todo schema's events and their `mk_*` stay in the core's `event`. The names, `Envelope` and the hashing moved. |
+| `schema` to `fold` | The register algebra moved. `fold::read` and `fold::readings` stay in the core, because they read a `Policy`, an `fpl::Instant` and a `Schedule`, which are not data. `registers::Stamp` moved with the algebra, because `Product` names it, and so did `BitSet`, which a `Stamp`'s place holds. |
+| `schema` to `store` | `store/husk.rs` moved whole, as the module `husk`. |
+| `schema` to `fpl`, `policy` | `Price`, `History`, `Bind` and `Row` stay in the core's `schema`. |
+| `snapshot` to `dag` | `attest` and `Attestation` stay in the core's `snapshot`. |
+| `payload` to `term` | `Payload`, `RECORD_PREFIX`, `record_signature` and `spec_field` stay in the core's `payload`. The field reads moved. |
+
+No edge needed a new trait. `prodrome-core` re-exports each moved module
+with a glob, so a program that depends on it changes nothing. `cli/`,
+`wasm/`, `github/` and every test build with no change of an import. Two
+tests include the example of `schema::headed` by its file path, and that
+path changed. The example names `prodrome_data`, because the data
+crate's documentation shows it, and the fixture `dag-sizes` depends on
+the data crate for it.
+
+**The dependencies of the data crate.** chrono (the calendar check of
+`literal::Datetime`), ed25519-dalek (a public key must be a point, and
+`Signed::verifies`), memchr (the parser of `literal`), sha2 (the name of
+an object), thiserror (`ProdromeError`) and prodrome-derive (the derive
+that `literal::codec` re-exports).
+
+**The derive.** The derive writes `::prodrome::…` by default, so a program
+that depends on `prodrome-core` changes nothing. A program that depends
+on `prodrome-data` alone writes `#[literal(crate = prodrome_data)]`, an
+option that the derive already had. The types that derive inside the
+data crate write `crate = crate`. `data/tests/alone.rs` derives through
+the data crate, and `core/tests/all/derive.rs` derives through the
+facade.
+
+**The narrowing.** The move narrowed four items: `literal::print_float`
+became crate-visible, and `newtype_str!`, `BitSet` and `topo::Topo` became
+`#[doc(hidden)]`. Nineteen items that were crate-visible became public and
+`#[doc(hidden)]` in the data crate, because the core uses them and
+`pub(crate)` does not reach across crates: `Stamp::position`,
+`Stamp::ancestry`, `Stamp::placed`, `Stamp::open`, `Place` and
+`Place::open`, `Scope`, `Hash::of_bytes`, `Hash::of_digest`,
+`Hash::digest`, `ProdromeError::io`, the functions `field`, `hashes`,
+`hashes_value`, `sorted_distinct` and `rests_on` of `event`, and `bytes`,
+`public_of` and `signed_by` of `sign`. Each is marked where it is
+declared: a method cannot move to a separate module, so one rule serves
+every item.
+
+**The face.** "Before" is the merge base `6364741`, with the line measure
+of the time.
+
+| Measure | `prodrome-core` before | `prodrome-core` after, without the data crate | `prodrome-data` |
+|---|--:|--:|--:|
+| lines (`scripts/face.py --lines`) | 113,539 | 92,381 | 22,260 |
+| rustdoc, default features | 52,026 | 38,346 | 14,083 |
+| rustdoc, with `laws` | 55,848 | 42,168 | |
+
+The two crates together are 1,102 tokens more than the core before by
+the line measure, and 403 more by the rustdoc measure: the heads of the
+modules that re-export, the root of the data crate and its hidden items.
+A unit that only builds and reads events reads 22,260 tokens, which is
+under the budget of 25,000 and over the target of 15,000 in "The
+targets". The rest of that target needs stage 2 and the third pass of
+words over `literal`, `schema` and `event`. The largest modules of the
+data crate by the line measure are `literal` (8,455 tokens) and `fold`
+(4,946).
+
+**Compile time.** A clean build in the dev profile, with four cores,
+twice each:
+
+| Build | Before | After |
+|---|--:|--:|
+| the workspace | 18.5 s, 19.3 s | 19.0 s, 20.1 s |
+| `prodrome-core` | 14.8 s, 14.2 s | 14.2 s, 14.1 s |
+| `prodrome-data` alone | | 5.9 s, 6.7 s |
+
+**The tests.** The law tests and the conformance vectors stay in
+`prodrome-core`'s tests and run unchanged through the re-exports. The
+unit tests and doc tests of the moved files run in the data crate: 87
+unit tests and 12 doc tests before, and 75 and 8 in the core with 12 and
+4 in the data crate after. The new test `data/tests/alone.rs` builds an
+event and two objects, prints them, parses them back, and checks their
+names against `sha256sum`, with the data crate as its only crate of the
+workspace.

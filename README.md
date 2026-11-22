@@ -44,6 +44,15 @@ dependency at a fixed commit:
 prodrome = { package = "prodrome-core", git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
+A program that only builds, prints, parses and hashes events can depend on
+the smaller crate `prodrome-data` instead, which holds the literals, the
+events, the objects and their names:
+
+```toml
+[dependencies]
+prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
+```
+
 The library needs Rust 1.85 or later. The command-line tool is called
 `prodrome`, and it is in the crate `prodrome-cli`. Install it with cargo or
 build it with nix:

@@ -71,7 +71,7 @@ pub enum Unread {
 ```
 
 Use a newtype only where code checks or constrains the value. `TodoId`,
-`Hash`, `Actor` and `Name` in `core/src/event.rs` are newtypes with a
+`Hash`, `Actor` and `Name` in `data/src/event.rs` are newtypes with a
 private field, because each one has its own rule for valid text.
 
 **Exceptions.** `observe::NextChange` encodes three states with
@@ -209,12 +209,12 @@ number when you change one of these tests.
 ### 9. Put one concept in each file
 
 Name each file for its concept, and put the main type first.
-`core/src/topo.rs`, `core/src/fold/frontier.rs` and
+`data/src/topo.rs`, `data/src/fold/frontier.rs` and
 `core/src/dag/finding.rs` are good examples.
 
 **Exception.** Some large files contain several concepts:
 `core/src/fpl.rs` (about 1460 lines), `wasm/exports/src/lib.rs`,
-`core/src/literal.rs`, `core/src/store.rs` and `core/src/event.rs`. If you
+`data/src/literal.rs`, `core/src/store.rs` and `data/src/event.rs`. If you
 add a new concept to one of these files, put it in a new file instead.
 
 ### 10. Do not program defensively
