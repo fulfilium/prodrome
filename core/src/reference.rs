@@ -8,11 +8,12 @@
 //! module of the core reads a field of this payload. The default feature
 //! `reference` enables the module.
 
-use crate::event::{mk_record, newtype_str, Name, TodoEvent};
+use crate::event::{mk_record, Name, TodoEvent};
 use crate::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
 use crate::literal::{Datetime, ProdromeError};
 use crate::payload::Payload;
 use crate::term::Term;
+use prodrome_data::newtype_str;
 
 newtype_str! {
     /// Typst markup source: the inside of a `[..]` block. The core stores and

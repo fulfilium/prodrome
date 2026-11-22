@@ -491,12 +491,24 @@ dependencies = [
  "ed25519-dalek",
  "memchr",
  "prodrome-core",
- "prodrome-derive",
+ "prodrome-data",
  "proptest",
  "rustix",
  "sha2",
  "thiserror",
  "unicode-general-category",
+]
+
+[[package]]
+name = "prodrome-data"
+version = "0.9.0"
+dependencies = [
+ "chrono",
+ "ed25519-dalek",
+ "memchr",
+ "prodrome-derive",
+ "sha2",
+ "thiserror",
 ]
 
 [[package]]

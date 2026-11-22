@@ -13,15 +13,15 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-pub use crate::data::bitset::BitSet;
-pub use crate::data::stamp::Stamp;
+pub use prodrome_data::bitset::BitSet;
+pub use prodrome_data::stamp::Stamp;
 
-use crate::data::stamp::{Place, Scope};
 use crate::event::{Envelope, Hash};
 use crate::fold::{read, Product};
 use crate::literal::ProdromeError;
 use crate::policy::Everything;
 use crate::schema::Schema;
+use prodrome_data::stamp::{Place, Scope};
 
 /// The state the fold carries, compared by value.
 #[derive(Debug, Clone, PartialEq)]

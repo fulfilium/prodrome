@@ -3,7 +3,7 @@
 //! defined in `prodrome-data` and re-exported here, with its module
 //! [`headed`].
 
-pub use crate::data::schema::*;
+pub use prodrome_data::schema::*;
 
 use crate::fpl::{Env, FplError};
 use crate::policy::Policy;

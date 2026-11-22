@@ -12,7 +12,7 @@ mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use crate::data::fold::*;
+pub use prodrome_data::fold::*;
 pub use write::{Kind, Write};
 
 use crate::event::{Authored, TodoEvent, TodoId};

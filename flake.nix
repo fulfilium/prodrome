@@ -61,6 +61,7 @@
             ./Cargo.lock
             ./cli/Cargo.toml
             ./core/Cargo.toml
+            ./data/Cargo.toml
             ./derive/Cargo.toml
             ./github/Cargo.toml
             ./wasm/Cargo.toml
@@ -85,7 +86,7 @@
         # edit. Everything native below starts from its target directory.
         cargoArtifacts = craneLib.buildDepsOnly (common // {
           pname = "prodrome";
-          src = rustSrc [ ./cli ./core ./derive ./github ./wasm ];
+          src = rustSrc [ ./cli ./core ./data ./derive ./github ./wasm ];
           doCheck = false;
           # One cargo invocation per consumer below: features unify across
           # the packages an invocation selects, so each needs its own build.
@@ -119,7 +120,7 @@
         # time, and pinning only one of them would make that failure a
         # `nix flake update` away.
         wasmArgs = profile: common // {
-          src = rustSrc [ ./core/src ./derive/src ./wasm/src ./wasm/exports/src ];
+          src = rustSrc [ ./core/src ./data/src ./derive/src ./wasm/src ./wasm/exports/src ];
           nativeBuildInputs = [ pkgs.lld ];
           doCheck = false;
           buildPhaseCargoCommand = ''
@@ -378,7 +379,7 @@
         # and the mirror compiles only its own crate.
         cliArtifacts = craneLib.cargoBuild (common // {
           pname = "prodrome-cli";
-          src = rustSrc [ ./core/src ./derive/src ./cli/src ];
+          src = rustSrc [ ./core/src ./data/src ./derive/src ./cli/src ];
           inherit cargoArtifacts;
           cargoExtraArgs = "--locked -p prodrome-cli";
           doCheck = false;
@@ -388,7 +389,7 @@
         # roadmap. Its tests ran in `prodrome-workspace`, not again here.
         prodrome-cli = craneLib.buildPackage (common // {
           pname = "prodrome-cli";
-          src = rustSrc [ ./core/src ./derive/src ./cli/src ];
+          src = rustSrc [ ./core/src ./data/src ./derive/src ./cli/src ];
           cargoArtifacts = cliArtifacts;
           cargoExtraArgs = "--locked -p prodrome-cli";
           doCheck = false;
@@ -404,7 +405,7 @@
         # `prodrome-workspace`.
         prodrome-github = craneLib.buildPackage (common // {
           pname = "prodrome-github";
-          src = rustSrc [ ./core/src ./derive/src ./cli/src ./github/src ];
+          src = rustSrc [ ./core/src ./data/src ./derive/src ./cli/src ./github/src ];
           cargoArtifacts = cliArtifacts;
           cargoExtraArgs = "--locked -p prodrome-github";
           doCheck = false;
@@ -432,7 +433,7 @@
           # and they run no slower.
           prodrome-workspace = craneLib.mkCargoDerivation (common // {
             pname = "prodrome-workspace";
-            src = rustSrc [ ./cli ./core ./derive ./github ./wasm ./conformance ];
+            src = rustSrc [ ./cli ./core ./data ./derive ./github ./wasm ./conformance ];
             inherit cargoArtifacts;
             nativeBuildInputs = [ pkgs.rustfmt pkgs.clippy ];
             buildPhaseCargoCommand = ''

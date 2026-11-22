@@ -8,7 +8,7 @@
 //! (see [`crate::payload`]); the conformance vectors were taken with the
 //! payload `crate::reference`.
 
-pub use crate::data::event::*;
+pub use prodrome_data::event::*;
 
 use crate::literal::codec::headed;
 use crate::literal::{Datetime, ProdromeError, Value};

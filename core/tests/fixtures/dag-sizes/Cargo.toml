@@ -9,6 +9,8 @@ publish = false
 
 [dependencies]
 prodrome-core = { path = "../../.." }
+# The note schema that `src/main.rs` includes names the data crate.
+prodrome-data = { path = "../../../../data" }
 
 [profile.release]
 opt-level = "z"

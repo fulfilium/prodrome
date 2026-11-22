@@ -21,7 +21,7 @@ use prodrome::schema::headed::{Constructors, Event};
 use prodrome::store::Sender;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 
-#[path = "../../src/data/schema/headed/example.rs"]
+#[path = "../../../data/src/schema/headed/example.rs"]
 mod schema;
 
 pub use schema::*;

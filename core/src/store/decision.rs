@@ -10,12 +10,12 @@ use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
 use super::{replace, sync_dir, EventStore};
 use crate::dag::Dag;
-use crate::data::husk::{HuskObject, Husking};
 use crate::event::{Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::policy::Policy;
 use crate::registers::Folded;
 use crate::schema::Schema;
+use prodrome_data::husk::{HuskObject, Husking};
 
 /// The store of record under its lock, which [`EventStore::decide`] returns.
 ///

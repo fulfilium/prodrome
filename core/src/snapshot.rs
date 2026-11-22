@@ -1,7 +1,7 @@
 //! The snapshot object of SPEC §3, which `prodrome-data` defines and this
 //! module re-exports, and what a writer attests of a prodrome's DAG.
 
-pub use crate::data::snapshot::*;
+pub use prodrome_data::snapshot::*;
 
 use crate::dag::Dag;
 use crate::event::{Envelope, Hash};

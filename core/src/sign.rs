@@ -11,10 +11,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use ed25519_dalek::SigningKey;
 
-pub use crate::data::sign::*;
+pub use prodrome_data::sign::*;
 
 use crate::dag::Dag;
-use crate::data::sign::{bytes, public_of, signed_by};
 use crate::event::{Actor, Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::registers::Genesis;

@@ -1,0 +1,144 @@
+//! A sum whose variant names the constructor of a record that holds it.
+//!
+//! `#[derive(Literal)]` implements [`Sum`] for an enum. A record that marks
+//! one field `#[literal(sum)]` prints as the constructor of that field's
+//! variant, with the record's other fields first and the variant's own
+//! fields after them: `Opened(at=…, actor=…, title=…)`. The `const`
+//! functions here build the record's table of constructors when the
+//! program compiles, from the record's fields and the sum's table.
+
+#![warn(clippy::pedantic)]
+
+use super::{Constructor, Literal};
+use crate::literal::{Call, ProdromeError, Value};
+
+/// An enum whose variants are constructors. `#[derive(Literal)]` implements
+/// it for an enum.
+pub trait Sum: Literal {
+    /// The constructor of the variant of `self`, and the values of the
+    /// variant's fields, in print order.
+    fn arm(&self) -> (Constructor, Vec<Value>);
+
+    /// Reads the variant that the name of `call` names, from the fields of
+    /// `call`. A field of `call` that the variant does not name is not read.
+    ///
+    /// # Errors
+    ///
+    /// No variant has the name of `call`, or a field of the variant is
+    /// missing or does not read.
+    fn from_arm(call: &Call) -> Result<Self, ProdromeError>;
+}
+
+/// The number of field names in the table of a record whose other fields
+/// are `head` and whose sum has the constructors `arms`.
+#[must_use]
+pub const fn headed_len(head: &[&str], arms: &[Constructor]) -> usize {
+    let mut total = 0;
+    let mut arm = 0;
+    while arm < arms.len() {
+        total += head.len() + arms[arm].1.len();
+        arm += 1;
+    }
+    total
+}
+
+/// The field names of each constructor of the record, one after the other:
+/// `head`, then the fields of the arm, for each arm in order.
+#[must_use]
+pub const fn headed_names<const TOTAL: usize>(
+    head: &[&'static str],
+    arms: &[Constructor],
+) -> [&'static str; TOTAL] {
+    let mut names = [""; TOTAL];
+    let mut at = 0;
+    let mut arm = 0;
+    while arm < arms.len() {
+        let mut field = 0;
+        while field < head.len() {
+            names[at] = head[field];
+            at += 1;
+            field += 1;
+        }
+        let own = arms[arm].1;
+        let mut field = 0;
+        while field < own.len() {
+            names[at] = own[field];
+            at += 1;
+            field += 1;
+        }
+        arm += 1;
+    }
+    names
+}
+
+/// The constructors of the record: each arm's name, with its slice of
+/// `names` ([`headed_names`]), whose first `head` names are the record's.
+#[must_use]
+pub const fn headed_table<const ARMS: usize>(
+    names: &'static [&'static str],
+    head: usize,
+    arms: &[Constructor],
+) -> [Constructor; ARMS] {
+    let mut table: [Constructor; ARMS] = [("", &[]); ARMS];
+    let mut rest = names;
+    let mut arm = 0;
+    while arm < ARMS {
+        let (fields, after) = rest.split_at(head + arms[arm].1.len());
+        table[arm] = (arms[arm].0, fields);
+        rest = after;
+        arm += 1;
+    }
+    table
+}
+
+/// Whether a constructor of `arms` has a field named `name`.
+#[must_use]
+pub const fn names_field(arms: &[Constructor], name: &str) -> bool {
+    let mut arm = 0;
+    while arm < arms.len() {
+        let fields = arms[arm].1;
+        let mut field = 0;
+        while field < fields.len() {
+            if same(fields[field], name) {
+                return true;
+            }
+            field += 1;
+        }
+        arm += 1;
+    }
+    false
+}
+
+/// Whether the constructors of `table` have distinct names. A derived sum
+/// whose variant holds a record checks its table with it when the program
+/// compiles.
+#[must_use]
+pub const fn distinct(table: &[Constructor]) -> bool {
+    let mut one = 0;
+    while one < table.len() {
+        let mut other = one + 1;
+        while other < table.len() {
+            if same(table[one].0, table[other].0) {
+                return false;
+            }
+            other += 1;
+        }
+        one += 1;
+    }
+    true
+}
+
+const fn same(a: &str, b: &str) -> bool {
+    let (a, b) = (a.as_bytes(), b.as_bytes());
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut at = 0;
+    while at < a.len() {
+        if a[at] != b[at] {
+            return false;
+        }
+        at += 1;
+    }
+    true
+}

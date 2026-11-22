@@ -13,7 +13,7 @@
 //! The reads of a stored call's fields, such as [`string_field`], are
 //! defined in `prodrome-data` and re-exported here.
 
-pub use crate::data::payload::*;
+pub use prodrome_data::payload::*;
 
 use std::fmt::Debug;
 

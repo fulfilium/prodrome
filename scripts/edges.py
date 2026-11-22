@@ -20,11 +20,9 @@ the set is every module of the directory, so the script prints only the
 uses of the facade.
 
 The script does not read comments, the `#[cfg(test)]` module at the end
-of a file, the file `lib.rs`, which declares the modules, or a file that
-the code includes as text with `include_str!`. A test module may name any
-module, because a crate's tests are not part of its face. A file included
-as text is an example in a doc comment, which names the crate as a
-program that uses it does.
+of a file, or the file `lib.rs`, which declares the modules. A test
+module may name any module, because a crate's tests are not part of its
+face.
 """
 
 import re
@@ -54,15 +52,7 @@ def code_lines(path):
 
 def main():
     src = Path(sys.argv[1])
-    texts = set()
-    for path in src.rglob("*.rs"):
-        for name in re.findall(r'include_str!\("([^"]+)"\)', path.read_text(encoding="utf-8")):
-            texts.add((path.parent / name).resolve())
-    files = sorted(
-        p
-        for p in src.rglob("*.rs")
-        if p.relative_to(src).parts != ("lib.rs",) and p.resolve() not in texts
-    )
+    files = sorted(p for p in src.rglob("*.rs") if p.relative_to(src).parts != ("lib.rs",))
     modules = {module_of(src, p) for p in files}
     chosen = set(sys.argv[2:]) or modules
     unknown = chosen - modules
