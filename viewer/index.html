@@ -5,8 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <!-- Scripts come from this site only, and never inline: typeset HTML is put
      in the page, so an inline handler that slipped past the sanitiser still
-     would not run. Typst's inline SVG needs inline styles. -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https: http://localhost:* http://127.0.0.1:*; object-src 'none'; base-uri 'none'; form-action 'none'">
+     would not run. Typst's inline SVG needs inline styles. The page fetches
+     stores from https hosts, and from this machine only in a build for
+     tests: viewer/build.sh writes the list of hosts below. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src __CONNECT__; object-src 'none'; base-uri 'none'; form-action 'none'">
 <!-- A store's host learns that a page fetched its objects, and not which
      page: the address of the page, and the stores in it, stay here. -->
 <meta name="referrer" content="no-referrer">

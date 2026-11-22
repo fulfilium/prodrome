@@ -59,13 +59,17 @@ prices nothing.
 A person writes one of two forms:
 
 - **A base URL**, under which `objects/` lies:
-  `https://example.org/stores/team/`. The scheme is `https`. Plain `http`
-  is accepted only for `localhost`, `127.0.0.1` and `[::1]`, for tests.
-  The URL holds no user, query or fragment.
+  `https://example.org/stores/team/`. The scheme is `https`. The URL holds
+  no user, query or fragment. A build for tests
+  (`VIEWER_LOOPBACK=1 viewer/build.sh`) also accepts plain `http` from
+  `localhost` and `127.0.0.1`; the hosted page does not.
 - **A repository on GitHub**: `gh:owner/repository[@ref][/dir…]`. The page
   turns it into `https://raw.githubusercontent.com/owner/repository/ref/dir/`.
   With no `@ref`, the page asks for `HEAD`, the repository's default
-  branch. Other git hosts use the base URL form.
+  branch. A ref may hold `/` (`feature/x`), but no part of it may be
+  empty, `.` or `..`, and no directory may be `.` or `..`, so the URL that
+  the page fetches stays in the repository that the address names. Other
+  git hosts use the base URL form.
 
 The addresses go in the fragment of the page's address, after a `?`. A
 browser never sends the fragment to a host, so the viewer's host never
@@ -88,8 +92,12 @@ genesis  = 64 lowercase hex
   the second one.
 - **A pin** (`!genesis`) says which store the link expects. If the store
   does not hold that genesis (or, for a legacy chain, that least root), the
-  page refuses the store and says why. A pin is 64 hex characters, because
-  a shorter prefix can be found by a hostile host with enough work.
+  page refuses the store and says why. A pin checks only that the address
+  holds that genesis. It does not check that the address holds nothing
+  else, or that it holds every object of that store: anyone can write
+  objects that rest on a genesis, and a listing can leave objects out. A
+  pin is 64 hex characters, because a shorter prefix can be found by a
+  hostile host with enough work.
 - **Routes.** `#/` and `#/todo/<id>` keep their meaning, so every present
   link keeps working. `#/in/<label>` lists one store. With several stores,
   an item's route names its store: `#/todo/<label>/<id>`. A route with no
@@ -111,6 +119,10 @@ every build of the viewer:
 2. For every text `t` that parses, `parse(print(parse(t))) = parse(t)`.
 3. The parser never throws: a store's text that is not an address is a
    value that names the text and the reason.
+4. The address printed is the address fetched: for every `gh:` text that
+   parses, generated `.` and `..` attacks included, the URL that the page
+   fetches is one that a browser does not rewrite, under the owner and
+   repository that the address names.
 
 ## 2. How the page finds a store's objects
 
@@ -204,13 +216,20 @@ serve any bytes, and only the listing can change.
   other stores.
 - **Names in a listing** are read once, at the edge: a text that is not 64
   lowercase hex is not fetched, and the page counts it.
+- **Bytes as the host sent them.** The page decodes an object as UTF-8 and
+  keeps a leading byte-order mark, so the core hashes what the host sent.
 
 ## 4. Several stores, one list
 
-- **Each store is read on its own.** The page reads each store's own
-  objects with the core's `entries` and `fold`, as it read one store
+- **Each prodrome is read on its own.** An address can hold several
+  prodromes. The page splits a store into one part for each prodrome: the
+  objects on which that prodrome's heads rest, as the core's `since` finds
+  them, labelled `<store>-<first 8 hex of its genesis>`. The page reads each
+  part's objects with the core's `entries` and `fold`, as it read one store
   before. The rows, the records, the text of each item and its history
-  come from that reading.
+  come from that reading. So two prodromes of one address that use one id
+  give two rows. An object of one prodrome that rests on a legacy write is
+  read with that write.
 - **The list is the core's.** The page reads the union of all stores'
   kept objects once with `Todos.entries`. The core keys every row by its
   genesis and its id, prices a qualified reference through the set of
@@ -232,17 +251,20 @@ serve any bytes, and only the listing can change.
   "waits on `<genesis>…/<id>`, in a store not loaded", and the core reads
   its price as `∅`. A `RefIn` to an item that a loaded store does not hold
   is shown as such, and also reads `∅`.
-- **One store at two addresses.** Two addresses whose objects hold the same
-  genesis (or least root) are one store. The store holds the union of
-  their kept objects, as a merge does, so where the copies differ, the
-  store holds every object that either copy holds. The first address names
-  the store.
+- **One store at two addresses.** Addresses that hold the same genesis (or
+  least root), directly or through another address, are one store: an
+  address joins every earlier store with which it shares a prodrome, and
+  those stores become one, so the grouping does not depend on the order of
+  the addresses. The store holds the union of their kept objects, as a
+  merge does, so where the copies differ, the store holds every object
+  that either copy holds. The first address names the store. The page says
+  that it joined the addresses, and names the objects that come from only
+  one of them.
+- **One store's failure stays its own.** A store whose listing, objects or
+  reading fails is a notice, and the page shows the other stores.
 - **Legacy chains.** The core reads every legacy object as one prodrome
   with no genesis. So the page shows at most one legacy chain in a list,
   and refuses another one with a notice.
-- **A limit that remains.** Inside one store, the page reads with the free
-  exports (`entries`, `fold`), which key a row by its id. A store that
-  holds two geneses with the same id in each shows one of the two rows.
 
 ## 5. What it costs a host
 
@@ -252,21 +274,70 @@ serve any bytes, and only the listing can change.
   `raw.githubusercontent.com` sends `*` and `Cache-Control: max-age=300`,
   and it serves the ref `HEAD`; GitHub Pages sends `*` and `max-age=600`;
   `api.github.com` sends `*`. Other hosts were not checked.
-- **The page's own policy.** The page's Content Security Policy allows
-  `connect-src` to any `https:` host and to this machine. The page sends no
-  `Referer`, so a store's host does not learn the page's address.
+- **The page's own policy.** The hosted page's Content Security Policy
+  allows `connect-src` to any `https:` host; a build for tests adds this
+  machine. Each fetch omits credentials (`credentials: "omit"`), so no
+  cookie of the visitor goes to a store's host, and sends no `Referer`, so
+  a store's host does not learn the page's address. A fetch follows a
+  redirect: wherever the bytes come from, the core checks them against
+  their name, and the policy allows only https.
 - **Caching.** An object's name is the hash of its bytes, so an object
-  never changes. The service worker keeps each object, from any host, in a
-  cache that it never empties. It asks the network first for a listing,
-  `index.json` or the tree listing, and uses its cached copy only when the
-  network fails. A host's own cache can keep an old listing for some
-  minutes (300 s for raw.githubusercontent.com). The page then shows the
-  store as it was, and never a wrong object.
+  never changes. From this site, the service worker keeps each object in a
+  cache for good. From another host, it keeps nothing itself: the page
+  puts an object in a cache only after the core has kept it, and at most
+  20,000 such objects, and the worker serves an object of another host
+  from that cache or from the network. So a host that serves wrong bytes
+  once is not remembered, and a link cannot fill the browser's quota with
+  unchecked bytes. The worker does not cache a listing of another host. A
+  host's own cache can keep an old listing for some minutes (300 s for
+  raw.githubusercontent.com). The page then shows the store as it was, and
+  never a wrong object.
+- **Bounds.** For one address, the page reads at most 20,000 objects, an
+  object of at most 1 MiB, at most 64 MiB of objects, and a listing of at
+  most 16 MiB. It sends at most 16 requests at once, and stops after 60 s.
+  At each bound, the page says which bound the store met, and shows what
+  it read.
 - **Load.** A load of a store costs one listing and one request for each
   object that the browser does not hold. A second load costs the listing
   only.
 
-## 6. Writing, later
+## 6. What a link can do to a visitor
+
+Anyone can write a link that makes this page load a store that they host.
+The page keeps these promises to the person who opens such a link:
+
+1. **No text of a store that a link names is run.** An item's text can be
+   Typst markup, and markup is code: it can spell any HTML element, loop
+   for ever, and read the data of every loaded store. So the page typesets
+   the text of a store that this site does not serve as written, and says
+   so. Only this site's own store, on a page that shows nothing else, has
+   its text read as Typst. (In the viewer, an item's markup runs inside the
+   package's `eval`, where `/data.json` names a file of the package, so it
+   cannot read the data today; the rule does not rest on that.)
+2. **The typeset part holds no script, style or form.** For every store,
+   this site's own included, the page drops scripts, frames, plugins,
+   forms and their controls, `<style>`, media, SVG animations and foreign
+   objects; every handler `on…`; every `style` and `id` but Typst's own on
+   its drawings; and every `name`, `ping`, `formaction`, `srcset`, `srcdoc`
+   and `target`. A link must go to `#`, http(s) or this site. The page's
+   policy forbids inline script as well.
+3. **The page says where each store comes from.** Above the list, outside
+   the typeset part, the page names every store with every address it was
+   loaded from, whole, and marks each store that this site does not serve.
+   A link's label cannot pass a store off as this site's own.
+4. **Only checked objects are shown and kept.** See section 3 and the
+   caching above.
+5. **A link costs a known amount.** See the bounds above.
+6. **Nothing goes to the viewer's own host.** The addresses are in the
+   fragment, and every fetch goes to a store's host, with no credentials
+   and no `Referer`.
+
+`viewer/test/stores.mjs` checks each of these with a store, `gamma`, whose
+items are crafted to attack the page: a style element that hides the
+notices, a fixed layer with one link, a read of the data file, an endless
+loop, and an element named `createElement`.
+
+## 7. Writing, later
 
 Stage 1 writes nothing. The smallest honest interaction for a store kept
 in a public repository is this:
@@ -296,7 +367,7 @@ the person's own action.
 - `viewer/src/address.ts`: the grammar, its parser and printer.
 - `viewer/src/fetch.ts`: the listing and the fetch of a store's objects.
 - `viewer/src/stores.ts`: the check by the core, the grouping by genesis,
-  and the one list.
+  the split into prodromes, and the one list.
 - `wasm/src/reference.rs`: the export `link_in`.
 - `typst/lib.typ`: a row's key, its store and its waits. Each new field is
   optional, so the package's examples render as before.
@@ -304,5 +375,5 @@ the person's own action.
   before.
 
 The size of the viewer's script, built with the same tools before and
-after: `app.js` grew from 138,105 to 153,995 bytes (39,921 to 45,847
-bytes compressed with gzip -9), and `sw.js` from 1,561 to 1,749 bytes.
+after: `app.js` grew from 138,105 to 159,812 bytes (39,921 to 47,802
+bytes compressed with gzip -9), and `sw.js` from 1,561 to 1,743 bytes.

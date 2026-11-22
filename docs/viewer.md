@@ -45,9 +45,15 @@ the row says so and links to that item, and that item's page links back.
 An item waits on an item of another store when its spec is
 `RefIn(store='<the other store's genesis>', entity='<id>')` (SPEC §7.2).
 
-To be sure that a link shows the store you mean, add `!` and the store's
-genesis, the 64 hex characters of its first object's name. The page then
-refuses a store that does not hold that genesis.
+A link can pin a store's genesis: add `!` and the 64 hex characters of the
+name of the store's first object. The page then refuses an address that
+does not hold that genesis. A pin does not check that the address holds
+nothing else, or every object of the store: anyone can write objects that
+rest on a genesis, and a listing can leave objects out.
+
+The page shows the text of a store that this site does not serve as
+written. It runs no text of such a store as Typst. Above the list, the
+page names every store and the whole address it was loaded from.
 
 The page needs the names of the store's objects. It reads them from
 `index.json` beside `objects/`, a JSON array of the names. For a store on
@@ -119,11 +125,14 @@ $ python3 -m http.server -d site 8000     # then open http://localhost:8000/
 your own store. If Playwright is installed, the command
 `node viewer/test/smoke.mjs site <todo>` opens the list and one item in
 headless Chromium and checks them. The command
-`node viewer/test/stores.mjs result-viewer viewer/test/stores` serves the
-two small stores in `viewer/test/stores/` from a second local origin, and
-checks a page of both: one list, the wait from one to the other, a changed
-object, an object that the host does not serve, a pinned genesis, and two
-addresses of one store. `node viewer/test/measure.mjs` measures what a
+`node viewer/test/stores.mjs APP viewer/test/stores` serves the three small
+stores in `viewer/test/stores/` from a second local origin, and checks
+pages of them: one list, the wait from one store to another, a changed
+object, an object that the host does not serve, a pinned genesis, joined
+addresses, two prodromes with one id, and text crafted to attack the page.
+APP is a build that reads stores from this machine:
+`VIEWER_LOOPBACK=1 sh viewer/build.sh APP …`, with the arguments that
+`flake.nix` passes. The hosted build reads https alone. `node viewer/test/measure.mjs` measures what a
 store costs to fetch (see the design note).
 
 ## GitHub Pages

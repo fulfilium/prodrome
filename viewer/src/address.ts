@@ -24,8 +24,14 @@ const GENESIS = /^[0-9a-f]{64}$/;
 /** GitHub's rules for an owner and for a repository's name. */
 const OWNER = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,38})$/;
 const REPO = /^[A-Za-z0-9._-]{1,100}$/;
-/** Hosts that may be read over plain http: only this machine, for tests. */
-const LOCAL = new Set(["localhost", "127.0.0.1", "[::1]"]);
+/**
+ * Whether this build reads plain http from this machine. Only a build for
+ * tests does (`VIEWER_LOOPBACK=1 viewer/build.sh`); the hosted page reads
+ * https alone.
+ */
+declare const __LOOPBACK__: boolean;
+/** Hosts that may be read over plain http: none, or this machine in a build for tests. */
+const LOCAL = new Set(__LOOPBACK__ ? ["localhost", "127.0.0.1"] : []);
 
 /** The most stores one link can name. */
 export const MOST_STORES = 8;
@@ -107,10 +113,18 @@ function unescape(text: string): Result<string> {
 
 // --- one store -----------------------------------------------------------------
 
+/**
+ * A ref, whose `/` separates parts of its name (`feature/x`). A part that is
+ * empty, `.` or `..` is refused, so that the URL the page fetches stays in
+ * the repository that the address names.
+ */
 function parseRef(text: string): Result<Ref> {
   const name = unescape(text);
   if (name.kind === "refused") return name;
   if (name.value === "") return refused("the ref after @ is empty");
+  if (name.value.split("/").some((part) => part === "" || part === "." || part === "..")) {
+    return refused(`the ref ${JSON.stringify(name.value)} has an empty part, or a part . or ..`);
+  }
   return ok({ kind: "named", name: name.value });
 }
 
@@ -171,7 +185,7 @@ function parseBase(text: string): Result<Where> {
     return refused(`${JSON.stringify(text)} is not a URL`);
   }
   if (url.protocol !== "https:" && !(url.protocol === "http:" && LOCAL.has(url.hostname))) {
-    return refused("a base URL is https (plain http only for this machine)");
+    return refused(__LOOPBACK__ ? "a base URL is https (plain http only for this machine)" : "a base URL is https");
   }
   if (url.username !== "" || url.password !== "") return refused("a base URL holds no user or password");
   const segments: string[] = [];

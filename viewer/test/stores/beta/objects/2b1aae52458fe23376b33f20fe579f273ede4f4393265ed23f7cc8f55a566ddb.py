@@ -1,1 +1,0 @@
-Genesis(label='beta', nonce='1cf502953223362de87087b5a4c68dc5')

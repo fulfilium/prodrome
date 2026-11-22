@@ -1,11 +1,13 @@
 // The service worker: the app shell cached per build, the objects forever.
 //
 // An object's name is the SHA-256 of its bytes, so `objects/<name>.py` can
-// never change: once fetched, from this site or from any store's host, it
-// is served from the cache for good, and the core checks it again anyway.
-// The shell (page, script, wasm, fonts) lives in a cache named after the
-// build, so a new build is a new cache and the old one is dropped. A listing
-// (`index.json`, or a git host's tree listing) is the one mutable file of a
+// never change: once fetched from this site, it is served from the cache
+// for good, and the core checks it again anyway. An object from another
+// host is served from a cache that only the page fills, with the objects
+// the core has checked, up to a bound (main.ts); this worker keeps nothing
+// from another host itself. The shell (page, script, wasm, fonts) lives in
+// a cache named after the build, so a new build is a new cache and the old
+// one is dropped. This site's `index.json` is the one mutable file of its
 // store, so it is asked of the network first and read from the cache only
 // offline.
 
@@ -64,18 +66,25 @@ async function networkFirst(request: Request): Promise<Response> {
   }
 }
 
-/** A store's object, by its name, on any host. */
+/** A store's object, by its name, on another host. */
 const OBJECT = /\/objects\/[0-9a-f]{64}\.py$/;
-/** A store's listing on any host: its `index.json`, or GitHub's tree listing. */
-const LISTING = /(\/index\.json|^\/repos\/[^/]+\/[^/]+\/git\/trees\/.+)$/;
+/** The objects from other hosts that the page checked and kept (main.ts). */
+const CHECKED = "prodrome-checked";
+
+async function checked(request: Request): Promise<Response> {
+  const hit = await (await caches.open(CHECKED)).match(request);
+  return hit ?? fetch(request);
+}
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   const url = new URL(request.url);
   if (request.method !== "GET") return;
+  // From another host, an object is served from the cache only once the
+  // page put it there, after the core checked it; anything else goes to the
+  // network and is not kept.
   if (url.origin !== self.location.origin) {
-    if (OBJECT.test(url.pathname)) event.respondWith(cacheFirst(OBJECTS, request));
-    else if (LISTING.test(url.pathname)) event.respondWith(networkFirst(request));
+    if (OBJECT.test(url.pathname)) event.respondWith(checked(request));
     return;
   }
   const scope = new URL(self.registration.scope);

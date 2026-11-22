@@ -86,28 +86,79 @@ export function compile(typst: Typst, source: string, view: Page): Compiled {
 }
 
 /**
- * Compile a page with the items' text read as Typst, and again verbatim if
- * that fails: nothing promises a store's text is Typst, and one item's stray
- * `#` should cost that reading, not the page.
+ * How a page reads its items' text: as Typst markup, which only this
+ * site's own store may have, or as written. The text of a store that a
+ * link names is never run: Typst markup is code, and it can read every
+ * loaded store's data and spell any element.
+ */
+export type Texts = { kind: "markup" } | { kind: "verbatim" };
+
+/** How a page's text was read in the end; see `compilePage`. */
+export type TextRead = "markup" | "invalid" | "foreign";
+
+/**
+ * Compile a page. With `markup`, the items' text is read as Typst, and
+ * again verbatim if that fails: nothing promises a store's text is Typst,
+ * and one item's stray `#` should cost that reading, not the page.
  */
 export function compilePage(
   typst: Typst,
   document: (markup: boolean) => string,
   view: Page,
-): Compiled & { markup: boolean } {
+  texts: Texts,
+): Compiled & { read: TextRead } {
+  if (texts.kind === "verbatim") return { ...compile(typst, document(false), view), read: "foreign" };
   const typeset = compile(typst, document(true), view);
-  if (typeset.html !== null) return { ...typeset, markup: true };
-  return { ...compile(typst, document(false), view), markup: false };
+  if (typeset.html !== null) return { ...typeset, read: "markup" };
+  return { ...compile(typst, document(false), view), read: "invalid" };
 }
 
-const DROPPED = new Set(["SCRIPT", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE", "FORM"]);
+/**
+ * Elements a typeset page never keeps: scripts, frames, plugins, forms and
+ * their controls, styles, media, and SVG's animations and foreign objects,
+ * which can set an attribute or hold HTML.
+ */
+const DROPPED = new Set(
+  [
+    "script", "iframe", "frame", "frameset", "object", "embed", "portal", "link", "meta", "base",
+    "form", "button", "input", "select", "textarea", "dialog", "style", "template",
+    "audio", "video", "source", "track",
+    "foreignobject", "animate", "animatemotion", "animatetransform", "set", "discard",
+  ],
+);
+
+/** Attributes a typeset page never keeps, besides the handlers `on…`. */
+const STRIPPED = new Set([
+  "name", "ping", "formaction", "srcset", "srcdoc", "form", "target", "attributename",
+  "poster", "background", "data", "popover", "popovertarget",
+]);
+
+const SVG = "http://www.w3.org/2000/svg";
+/** The one `style` Typst writes: an inline SVG's root, sized in em. */
+const FRAME_STYLE = /^overflow: visible; width: [0-9.]+em; height: [0-9.]+em;( display: block)?$/;
+/** The ids Typst writes: a glyph's or a gradient's, a letter and hex digits. */
+const TYPST_ID = /^[a-z][0-9A-F]{16,}$/;
+
+/** Whether an element keeps an attribute: Typst's own `style` and `id` in SVG, and safe links. */
+function kept(el: Element, name: string, raw: string): boolean {
+  const value = raw.trim().toLowerCase();
+  if (name.startsWith("on") || STRIPPED.has(name)) return false;
+  const svg = el.namespaceURI === SVG;
+  if (name === "style") return svg && el.localName === "svg" && FRAME_STYLE.test(raw.trim());
+  if (name === "id") return svg && TYPST_ID.test(raw);
+  if (svg && (name === "href" || name === "xlink:href")) return value.startsWith("#") || el.localName === "a";
+  const url = name === "href" || name === "src" || name === "xlink:href" || name === "action";
+  return !url || /^(#|https?:|objects\/|[a-z0-9._-]+(\/|$))/.test(value);
+}
 
 /**
  * The body of a compiled document, as nodes safe to put in the page. Typst
- * escapes text, but `html.elem` can spell any element, and an item's text is
- * typeset as markup; so scripts, frames and handlers are dropped, and only
- * links within the site or to http(s) survive. The page's Content Security
- * Policy forbids inline script as well — this is the second lock.
+ * escapes text, but `html.elem` can spell any element where an item's text
+ * is typeset as markup, which the page allows only for this site's own
+ * store. So every page drops scripts, frames, forms, styles and animations,
+ * every handler, every `style` and `id` but Typst's own on its drawings,
+ * every `name`, and every link that does not go to `#`, http(s) or this
+ * site. The page's Content Security Policy forbids inline script as well.
  */
 export function body(html: string): DocumentFragment {
   const doc = new DOMParser().parseFromString(html, "text/html");
@@ -115,17 +166,12 @@ export function body(html: string): DocumentFragment {
   const doomed: Element[] = [];
   for (let node = walker.nextNode(); node; node = walker.nextNode()) {
     const el = node as Element;
-    if (DROPPED.has(el.tagName.toUpperCase())) {
+    if (DROPPED.has(el.localName.toLowerCase())) {
       doomed.push(el);
       continue;
     }
     for (const attr of Array.from(el.attributes)) {
-      const name = attr.name.toLowerCase();
-      const value = attr.value.trim().toLowerCase();
-      const url = name === "href" || name === "src" || name === "xlink:href" || name === "action";
-      if (name.startsWith("on") || (url && !/^(#|https?:|objects\/|[a-z0-9._-]+(\/|$))/.test(value))) {
-        el.removeAttribute(attr.name);
-      }
+      if (!kept(el, attr.name.toLowerCase(), attr.value)) el.removeAttribute(attr.name);
     }
   }
   for (const el of doomed) el.remove();

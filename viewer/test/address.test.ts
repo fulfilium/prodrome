@@ -6,12 +6,17 @@
 //    parses to the same value, so a page that rewrites its address never
 //    moves it.
 // 3. Refusal is a value: the parser never throws, whatever the text.
+// 4. The address printed is the address fetched: for every `gh:` text that
+//    parses, `.` or `..` in it attacks included, the URL the page fetches is
+//    one that a browser does not rewrite, under the owner and repository
+//    that the address names.
 //
 // `viewer/build.sh` bundles this file with esbuild and runs it with node, so
 // `nix build .#prodrome-viewer` fails when a law fails. The generator is a
 // fixed-seed PRNG, so a failure names its case and repeats.
 
 import {
+  baseOf,
   parseAddress,
   parseFragment,
   printAddress,
@@ -73,7 +78,7 @@ function aGithub(): Where {
     kind: "github",
     owner,
     repo,
-    ref: random() < 0.5 ? { kind: "default" } : { kind: "named", name: word(ANY, 1, 16) },
+    ref: random() < 0.5 ? { kind: "default" } : { kind: "named", name: [aSegment(), ...many(2, aSegment)].join("/") },
     dir: many(3, aSegment),
   };
 }
@@ -86,7 +91,7 @@ function aBaseText(): string {
     "https://stores.example.net:8443",
     "http://localhost:8000",
     "http://127.0.0.1:9",
-    "https://[::1]",
+    "http://localhost",
   ]);
   const path = many(4, aSegment)
     .map((segment) => (random() < 0.5 ? encodeURIComponent(segment) : segment.replace(/[%?#]/g, "")))
@@ -139,6 +144,24 @@ for (let n = 0; n < CASES; n++) {
   check(again.kind === "ok" && same(again.value, first.value), "a parsed address has one form", { text, first, again });
 }
 
+/** A `gh:` text whose ref and directory mix plain parts with `.`, `..` and escapes of them. */
+function aWalk(): string {
+  const part = () => pick(["..", ".", "%2E%2E", "%2e", "x", "main", "%2F", "..%2F..", "a%2F..%2F..%2Fb"]);
+  const ref = random() < 0.8 ? `@${Array.from({ length: 1 + int(4) }, part).join(pick(["%2F", "/"]))}` : "";
+  return `gh:ada/stores${ref}${many(3, part).map((p) => `/${p}`).join("")}`;
+}
+
+for (let n = 0; n < CASES; n++) {
+  const text = random() < 0.5 ? aWalk() : printAddress({ label: { kind: "derived" }, where: aGithub(), pin: aPin() });
+  const read = parseAddress(text);
+  if (read.kind !== "ok" || read.value.where.kind !== "github") continue;
+  const where = read.value.where;
+  const base = baseOf(where);
+  const url = new URL(base);
+  const prefix = `/${encodeURIComponent(where.owner)}/${encodeURIComponent(where.repo)}/`;
+  check(url.href === base && url.pathname.startsWith(prefix), "the address printed is the address fetched", { text, base });
+}
+
 for (let n = 0; n < CASES; n++) {
   const text = `#${word([...ANY, "/", "?", "&", "="], 0, 80)}`;
   let threw = false;
@@ -151,4 +174,4 @@ for (let n = 0; n < CASES; n++) {
 }
 
 if (failures > 0) throw new Error(`address laws: ${failures} cases failed`);
-console.log(`address laws: ${3 * CASES} cases hold`);
+console.log(`address laws: ${4 * CASES} cases hold`);

@@ -21,8 +21,8 @@ import initProdrome, * as prodrome from "prodrome-wasm";
 import initTypst, * as typstWasm from "typst-wasm";
 import { parseFragment, printStores, type Address, type Read, type Route } from "./address";
 import { editor } from "./editor";
-import { fetchObjects, list } from "./fetch";
-import { check, hrefOf, readStores, SITE, sources, type Checked, type Notice, type Page, type Source } from "./stores";
+import { BOUNDS, fetchObjects, list } from "./fetch";
+import { check, hrefOf, readStores, SITE, sources, type Checked, type Notice, type Page, type Shelf, type Source } from "./stores";
 import { wall, type Naive } from "./time";
 import { body, compilePage, itemDocument, listDocument, scratchDocument, type Typst } from "./typst";
 import type { Entry } from "./view";
@@ -66,15 +66,59 @@ function asked(read: Read): Source[] {
   return read.stores.length === 0 ? [SITE] : sources(storesOf(read));
 }
 
-/** Every store of the address, fetched and checked by the core: one value per address. */
+/**
+ * Every store of the address, fetched and checked by the core: one value per
+ * address. Each address has its own deadline (`BOUNDS.deadline`), and its
+ * own failure: one address that fails is a notice, and the others load.
+ */
 async function load(stores: Source[]): Promise<Checked[]> {
   return Promise.all(
-    stores.map(async (source) => {
-      const listing = await list(source.lister, source.base);
-      const fetched = listing.kind === "listed" ? await fetchObjects(source.base, listing.names) : [];
-      return check(prodrome, source, listing, fetched);
+    stores.map(async (source): Promise<Checked> => {
+      const deadline = new AbortController();
+      const timer = setTimeout(() => deadline.abort(), BOUNDS.deadline);
+      try {
+        const listing = await list(source.lister, source.base, deadline.signal);
+        const fetched = listing.kind === "listed" ? await fetchObjects(source.base, listing.names, deadline.signal) : [];
+        return check(prodrome, source, listing, fetched);
+      } catch (error) {
+        const why = error instanceof Error ? error.message : String(error);
+        return { kind: "refused", source, notice: { label: source.label, shown: source.shown, lines: [`the page could not load this store: ${why}`] } };
+      } finally {
+        clearTimeout(timer);
+      }
     }),
   );
+}
+
+/** The cache of objects from other hosts that the core has checked; the service worker reads it. */
+const CHECKED = "prodrome-checked";
+/** The most objects from other hosts that the page keeps in the browser. */
+const MOST_CACHED = 20_000;
+
+/**
+ * Keep the objects from other hosts that the core kept, so that a second
+ * visit fetches only the listing. Nothing is kept before the core checked
+ * it, and nothing once the cache holds `MOST_CACHED` objects. A failure of
+ * the cache costs a fetch, never the page.
+ */
+async function remember(checked: Checked[]) {
+  if (!("caches" in self)) return;
+  try {
+    const cache = await caches.open(CHECKED);
+    let room = MOST_CACHED - (await cache.keys()).length;
+    for (const c of checked) {
+      if (c.kind !== "kept" || c.source.lister.kind === "site") continue;
+      for (const object of c.objects) {
+        if (room <= 0) return;
+        const url = new URL(`${c.source.base}objects/${object.hash}.py`, location.href).href;
+        if (await cache.match(url)) continue;
+        await cache.put(url, new Response(object.text, { headers: { "content-type": "text/plain; charset=utf-8" } }));
+        room--;
+      }
+    }
+  } catch {
+    return;
+  }
 }
 
 async function loadTypst(): Promise<Typst> {
@@ -119,10 +163,16 @@ function plain(view: Page): HTMLElement {
   return list;
 }
 
-/** The links to each store's own list, when the page shows several. */
-function showStores(view: Page, route: Route) {
+/**
+ * Where every store of the page comes from, outside the typeset part: each
+ * store's label, every address that it was loaded from, whole, and a mark
+ * on a store that this site does not serve. With several stores, each
+ * label links to that store's own list. Nothing on a page of this site's
+ * own store alone.
+ */
+function showStores(view: Page, shelves: Shelf[], route: Route) {
   storesNav.replaceChildren();
-  storesNav.hidden = view.stores.length < 2;
+  storesNav.hidden = shelves.every((shelf) => shelf.from === "site");
   if (storesNav.hidden) return;
   const current = route.within.kind === "store" ? route.within.label : null;
   const link = (text: string, href: string, here: boolean) => {
@@ -130,11 +180,23 @@ function showStores(view: Page, route: Route) {
     if (here) a.setAttribute("aria-current", "page");
     return a;
   };
-  storesNav.append(
-    "Stores: ",
-    link("all", `#/${view.query}`, current === null && route.page === "list"),
-    ...view.stores.flatMap((label) => [" · ", link(label, `#/in/${label}${view.query}`, current === label)]),
-  );
+  const several = shelves.length > 1;
+  const list = document.createElement("ul");
+  for (const shelf of shelves) {
+    const li = document.createElement("li");
+    const name = several ? link(shelf.label, `#/in/${shelf.label}${view.query}`, current === shelf.label) : document.createElement("strong");
+    if (!several) name.textContent = shelf.label;
+    li.append(name, shelf.from === "site" ? " (this site's store): " : " (not this site's store), from ");
+    shelf.addresses.forEach((address, at) => {
+      const code = document.createElement("code");
+      code.textContent = address;
+      li.append(...(at > 0 ? [" and ", code] : [code]));
+    });
+    list.append(li);
+  }
+  const head = document.createElement("p");
+  head.append(several ? link("All stores", `#/${view.query}`, current === null && route.page === "list") : "Store", ":");
+  storesNav.append(head, list);
 }
 
 /** What the page left out of each store, and why. Nothing when every object was kept. */
@@ -210,12 +272,13 @@ async function main() {
       if (ticket !== current) return;
       checked = fetched;
       loadedFor = asking;
+      void remember(checked);
       now = wall(new Date());
     }
     const at = read.route;
-    const { page: view, notices: found } = readStores(prodrome, checked, now, at, query);
+    const { page: view, notices: found, shelves, texts } = readStores(prodrome, checked, now, at, query);
     home.href = `#/${query}`;
-    showStores(view, at);
+    showStores(view, shelves, at);
     showNotices([...refusals(read), ...found]);
     const objects = checked.reduce((n, c) => n + (c.kind === "kept" ? c.objects.length : 0), 0);
     const where = view.stores.length > 1 ? ` in ${view.stores.length} stores` : "";
@@ -226,7 +289,7 @@ async function main() {
 
     const engine = await typst;
     if (ticket !== current) return;
-    const compiled = compilePage(engine, at.page === "list" ? listDocument : itemDocument, shown);
+    const compiled = compilePage(engine, at.page === "list" ? listDocument : itemDocument, shown, texts);
     if (compiled.html === null) {
       const errors = compiled.diagnostics.map((d) => d.message).join("; ");
       say(`Typst could not typeset this page: ${errors}`);
@@ -236,10 +299,13 @@ async function main() {
     }
     const content = document.createDocumentFragment();
     content.append(body(compiled.html));
-    if (!compiled.markup) {
+    if (compiled.read !== "markup") {
       const note = document.createElement("p");
       note.className = "note";
-      note.textContent = "This text is not valid Typst, so it is shown as written.";
+      note.textContent =
+        compiled.read === "foreign"
+          ? "The text of a store that this site does not serve is shown as written, and never run as Typst."
+          : "This text is not valid Typst, so it is shown as written.";
       content.append(note);
     }
     if (at.page === "item" && shown.entries.some((e) => e.key === shown.focus)) {

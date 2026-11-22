@@ -14,6 +14,7 @@ import { DAY, iso, naive, plus, type Naive } from "./time";
 /** The part of prodrome-wasm's `Todos` class this reads: one set of objects, read once. */
 export interface Replica {
   tips(): string;
+  since(tips: string): string;
   entries(at: string | null | undefined, untrusted: string): string;
   prices(at: string | null | undefined, untrusted: string): string;
   free(): void;

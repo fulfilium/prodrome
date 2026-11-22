@@ -66,6 +66,9 @@ hr.capsule {
 /* The stores of a page of several, and what the page left out of each. */
 #stores, #notices { font-size: .85rem; margin: .6rem 0 0; color: var(--muted); }
 #stores a[aria-current] { color: var(--ink); font-weight: 700; text-decoration: none; }
+#stores p, #stores ul { margin: .2rem 0; }
+#stores ul { padding-left: 1.2rem; }
+#stores li, #stores code { overflow-wrap: anywhere; }
 #notices details { border-left: 3px solid var(--notice); padding: .2rem .6rem; margin: .3rem 0; }
 #notices summary { color: var(--notice); cursor: pointer; overflow-wrap: anywhere; }
 #notices li { overflow-wrap: anywhere; }

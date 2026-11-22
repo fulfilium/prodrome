@@ -12,7 +12,17 @@
 # typechecked against the glues' own `.d.ts` and bundled by esbuild, and the
 # stylesheet's tokens are read from the design system by typst.
 # `nix build .#prodrome-viewer` runs this.
+#
+# With VIEWER_LOOPBACK=1 the app also reads stores over plain http from this
+# machine (localhost, 127.0.0.1), as `test/stores.mjs` serves them.
+# The hosted app is built without it, and reads https alone.
 set -eu
+loopback=false
+connect="'self' https:"
+if [ "${VIEWER_LOOPBACK:-0}" = 1 ]; then
+  loopback=true
+  connect="$connect http://localhost:* http://127.0.0.1:*"
+fi
 
 out=$1 prodrome=$2 typst=$3 packages=$4
 shift 4
@@ -51,7 +61,7 @@ tsc -p "$here/tsconfig.json"
 tsc -p "$here/tsconfig.sw.json"
 # THE ADDRESS GRAMMAR'S LAWS, over generated addresses (test/address.test.ts):
 # a build whose parser and printer do not round-trip fails here.
-esbuild "$here/test/address.test.ts" --bundle --platform=node --format=esm \
+esbuild "$here/test/address.test.ts" --bundle --platform=node --format=esm --define:__LOOPBACK__=true \
   --outfile="$here/vendor/address.test.mjs" --log-level=warning
 node "$here/vendor/address.test.mjs"
 
@@ -75,7 +85,7 @@ tokens=$(typst eval --ignore-system-fonts --package-path "$packages" \
   'query(<tokens>).first().value' --in "$here/tokens.typ" | jq -r .)
 case $tokens in ":root {"*) ;; *) echo "tokens.typ: no :root rule" >&2; exit 1 ;; esac
 printf '/* From typst-design, by viewer/tokens.typ. */\n%s\n\n' "$tokens" | cat - "$here/style.css" > "$out/style.css"
-cp "$here/index.html" "$out/"
+sed "s|__CONNECT__|$connect|" "$here/index.html" > "$out/index.html"
 
 # THE BUILD'S NAME: a hash of everything the app is made of, so a change to any
 # of it is a new service-worker cache and new URLs for the shell.
@@ -88,7 +98,7 @@ esbuild "$here/src/main.ts" --bundle --format=esm --target=es2022 --minify \
   --alias:prodrome-wasm="$here/vendor/prodrome/prodrome.js" \
   --alias:typst-wasm="$here/vendor/typst/typst.js" \
   --alias:typst-packages="$here/vendor/packages.ts" \
-  --define:__BUILD__="\"$build\"" \
+  --define:__BUILD__="\"$build\"" --define:__LOOPBACK__=$loopback \
   --outfile="$out/app.js" --log-level=warning
 
 shell=$(cd "$out" && {

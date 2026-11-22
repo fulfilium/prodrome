@@ -22,6 +22,12 @@ constructor's fields never change, in any release.
   an item that waits on an item of another loaded store reads that item's
   price and links to it. With no store in its address, the page shows the
   site's own store as before. The page sends no address to its own host.
+  The page runs no text of a store that a link names as Typst, names every
+  address above the list, caches only objects that the core checked, and
+  bounds what one address costs (docs/design-viewer-stores.md, section 6).
+  For every store, the sanitiser of typeset HTML also drops styles, forms,
+  SVG animations, `name` and other attributes that a store's text can
+  spell.
 - **prodrome-wasm exports `link_in(term, specs, stores)`** (SPEC §7.2, law
   41). It links a term as `link` does, and binds each qualified reference
   in `stores`, the `prices` answer of a set of stores. No stored byte
