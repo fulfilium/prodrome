@@ -13,7 +13,6 @@ pub trait Register: Default {
 /// A grow-only set, joined by union: the tendings, which never conflict.
 pub type GrowSet<T> = BTreeSet<T>;
 
-/// Union never shrinks a set.
 impl<T: Ord> Inflationary for GrowSet<T> {}
 
 impl<T: Ord> Register for GrowSet<T> {
@@ -24,14 +23,10 @@ impl<T: Ord> Register for GrowSet<T> {
     }
 }
 
-/// One register's type in a schema: its values under their order, and the
-/// value a write gives it.
+/// One register's type in a schema: its values, and the value a write gives.
 pub trait RegisterType<E: Schema> {
-    /// The register's values, under their order.
     type Value<'e>: Order;
 
-    /// The value that `event` writes to this register, or `None`.
-    ///
     /// An implementation must return `Some` exactly for the events whose
     /// [`Schema::writes`] names the register.
     fn value(event: &E) -> Option<Self::Value<'_>>;

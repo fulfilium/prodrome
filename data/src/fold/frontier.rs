@@ -18,7 +18,6 @@ impl<E: Schema> Default for Frontier<'_, E> {
 impl<'a, E: Schema> Register for Frontier<'a, E> {
     type Write = &'a Stamp<E>;
 
-    /// The maximal writes of the union, whatever order they arrive in.
     fn join(&mut self, write: &'a Stamp<E>) {
         if self
             .0
@@ -46,29 +45,25 @@ impl<'a, E: Schema> Frontier<'a, E> {
         self.0.len() > 1
     }
 
-    /// The register's reading: the writes whose values are maximal, each
-    /// value named by the least write that carries it.
+    /// The writes whose values are maximal, each value named by the least
+    /// write that carries it (law 31).
     pub fn read<V: Order>(&self, value: impl Fn(&'a Stamp<E>) -> V) -> Vec<&'a Stamp<E>> {
         maximal(&self.0, value)
     }
 
-    /// The reading under the register's type `R`.
     #[must_use]
     pub fn reading<R: RegisterType<E>>(&self) -> Vec<&'a Stamp<E>> {
         self.read(|stamp| value::<E, R>(stamp))
     }
 
-    /// The reading under the discrete order on whole events, which the todo
-    /// registers use: twins are one candidate.
-    ///
-    /// The value is the whole event and not the field that the register
-    /// reads, so two events that agree only on a spec stay two candidates.
+    /// The reading under the discrete order on whole events: twins are one
+    /// candidate, and two events that agree only on the field that the
+    /// register reads stay two candidates.
     pub fn candidates(&self) -> Vec<&'a Stamp<E>> {
         self.read(|stamp| Discrete::<&E>(&stamp.event))
     }
 }
 
-/// The value a write to a register of `R` holds.
 pub(super) fn value<E: Schema, R: RegisterType<E>>(stamp: &Stamp<E>) -> R::Value<'_> {
     R::value(&stamp.event).expect("a write joins only the registers it writes")
 }

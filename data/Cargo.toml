@@ -16,7 +16,8 @@ path = "src/lib.rs"
 
 # Each dependency is here because a module of this crate needs it.
 [dependencies]
-# `literal::Datetime` checks a calendar date with `chrono::NaiveDate`.
+# `literal::Datetime` checks a calendar date with `chrono::NaiveDate`, and
+# `instant` converts a `Datetime` to a `chrono::NaiveDateTime` and back.
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 # `sign`: an Ed25519 public key must be a point on the curve, and
 # `Signed::verifies` checks a signature. Pure Rust, so the browser's build

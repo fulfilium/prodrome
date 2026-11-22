@@ -1,19 +1,14 @@
 //! A pin of a schema's stored names: a test that fails when a constructor
-//! or a field changes its name or its place.
-//!
-//! The name of a constructor and the names and the order of its fields are
-//! in every stored object, so a schema pins them in a test. The test holds
-//! the constructors as text, one `Name(field, …)` on each line, and
-//! [`assert_pinned`] compares the text with the constructors that the
-//! schema declares, for example [`Literal::CONSTRUCTORS`](super::Literal).
+//! or a field changes its name or its place, because every stored object
+//! holds the names and the order of the fields.
 
 #![warn(clippy::pedantic)]
 
 use super::Constructor;
 
 /// Checks that `constructors` spell `pinned`: one `Name(field, …)` on each
-/// line, in order. A line with no field is `Name()`. Spaces at the start
-/// and the end of a line, and empty lines, do not count.
+/// line, in order, with `Name()` for no field; outer spaces and empty lines
+/// do not count.
 ///
 /// ```
 /// use prodrome_data::literal::codec::assert_pinned;
@@ -29,9 +24,7 @@ use super::Constructor;
 ///
 /// # Panics
 ///
-/// The constructors do not spell `pinned`. The message gives both texts,
-/// so that a reader sees the change. A test calls this function, and the
-/// panic is the test's failure.
+/// The constructors do not spell `pinned`; the message gives both texts.
 #[track_caller]
 pub fn assert_pinned(constructors: &[Constructor], pinned: &str) {
     let declared = spell(constructors);

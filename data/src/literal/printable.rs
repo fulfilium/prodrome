@@ -1,9 +1,8 @@
 //! The characters that a string's print writes as themselves (SPEC §2,
 //! "The printable set").
 //!
-//! The set is a table in this crate, generated once by
-//! `scripts/printable.py`, so that the print of a string does not depend on
-//! the Unicode data that a build links.
+//! `scripts/printable.py` generates the table once, so that the print of a
+//! string does not depend on the Unicode data that a build links.
 
 mod table;
 
@@ -31,8 +30,8 @@ pub fn is_printable(c: char) -> bool {
         .is_ok()
 }
 
-/// The SHA-256 of the printable set, over the text that SPEC §2, "The
-/// printable set", defines: one line `FIRST..LAST` for each range.
+/// The SHA-256 of the printable set, over the lines that SPEC §2, "The
+/// printable set", defines.
 pub fn digest() -> Hash {
     let mut text = String::new();
     for (first, last) in RANGES {

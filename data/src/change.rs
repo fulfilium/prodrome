@@ -32,8 +32,7 @@ impl<E: Schema> Change<E> {
         )
     }
 
-    /// Parses a `Change` call, and parses its event at the vocabulary
-    /// `schema`.
+    /// Parses the event at the vocabulary `schema`.
     pub fn from_call(schema: &E::Vocabulary, call: &Call) -> Result<Change<E>, ProdromeError> {
         mk_change(
             Hash::new(string_field(call, "genesis")?)?,

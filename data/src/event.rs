@@ -2,14 +2,10 @@
 //! the hashing of objects.
 //!
 //! Never change the field set of a shipped kind: a new field changes the
-//! canonical print, so no stored object would match its hash any more. Store
-//! new data in a new kind.
-//!
-//! The `mk_*` constructors are the parse boundary: [`Envelope::from_value`]
-//! builds every value through them, so later code does not check again.
-//! On a shipped string field, `""` means absent. Where an absent value is not
-//! a shipped string (`Sealed.prev` at a legacy root, `Woven.event`), the field
-//! is an `Option`, and the printer writes `''` or `None` for `None`.
+//! canonical print, so no stored object would match its hash. The `mk_*`
+//! constructors are the parse boundary. On a shipped string field, `""` means
+//! absent; `Sealed.prev` and `Woven.event` are `Option`s, printed `''` and
+//! `None` for `None`.
 
 use sha2::{Digest, Sha256};
 
@@ -26,9 +22,7 @@ use crate::snapshot::Snapshot;
 
 // --- the names, as types ----------------------------------------------------
 
-/// A string newtype with a private field, `as_str`, `into_string`,
-/// `AsRef<str>` and `Display`. The crates of this workspace declare their
-/// names with it.
+/// For the core; no promise. Declares a string newtype with a private field.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! newtype_str {
@@ -62,10 +56,7 @@ macro_rules! newtype_str {
 }
 
 /// An object's name: the sha256 of its canonical print, as 64 lowercase hex
-/// digits.
-///
-/// A name orders as its text does, and two names are equal exactly when
-/// their texts are equal.
+/// digits. It orders and compares as its text does.
 #[derive(Clone)]
 pub struct Hash {
     words: [u64; 4],
@@ -115,7 +106,6 @@ impl std::hash::Hash for Hash {
     }
 }
 
-/// As a newtype of its text prints: `Hash("…")`.
 impl std::fmt::Debug for Hash {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_tuple("Hash").field(&self.text).finish()
@@ -135,18 +125,17 @@ impl std::fmt::Display for Hash {
 }
 
 newtype_str! {
-    /// A todo's identifier, which matches `^[a-z0-9_-]+$`. Its literal is
-    /// its text, and a read checks the text with [`TodoId::new`].
+    /// A todo's identifier, which matches `^[a-z0-9_-]+$`; its literal is
+    /// its text.
     #[derive(Literal)]
     #[literal(crate = crate, new = TodoId::new)]
     TodoId
 }
 
 newtype_str! {
-    /// The writer of an event, which matches `^[a-z][a-z0-9_-]*$`. The host's
-    /// policy decides which actors it trusts (SPEC §5, `prodrome::policy`).
-    /// Its literal is its text, and a read checks the text with
-    /// [`Actor::new`].
+    /// The writer of an event, which matches `^[a-z][a-z0-9_-]*$`; its
+    /// literal is its text. The host's policy decides which actors it trusts
+    /// (SPEC §5).
     #[derive(Literal)]
     #[literal(crate = crate, new = Actor::new)]
     Actor
@@ -165,8 +154,7 @@ pub(crate) fn lower_hex(text: &str, len: usize) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-/// The four big-endian words that 64 lowercase hex digits spell, or `None`
-/// for any other text.
+/// The four big-endian words that 64 lowercase hex digits spell.
 fn hex_words(text: &str) -> Option<[u64; 4]> {
     if text.len() != 64 {
         return None;
@@ -220,13 +208,13 @@ impl Hash {
         }
     }
 
+    /// For the core; no promise. The name of `bytes`: their sha256.
     #[doc(hidden)]
     pub fn of_bytes(bytes: &[u8]) -> Hash {
         Hash::of_digest(Sha256::digest(bytes).into())
     }
 
-    /// The name whose digest is `digest`. Every 32 bytes are a digest, so
-    /// every 32 bytes are a name.
+    /// For the core; no promise. The name that `digest` spells; any 32 bytes are a name.
     #[doc(hidden)]
     pub fn of_digest(digest: [u8; 32]) -> Hash {
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -240,9 +228,7 @@ impl Hash {
         Hash { words, text }
     }
 
-    /// The 32 bytes of the digest that the name spells. A cache file
-    /// holds a name so (`prodrome::memo::file`), and there is no file off
-    /// unix.
+    /// For the core; no promise. The digest, as a cache file (unix only) holds it.
     #[cfg(unix)]
     #[doc(hidden)]
     pub fn digest(&self) -> [u8; 32] {
@@ -291,7 +277,7 @@ impl Literal for Hash {
 }
 
 impl Name {
-    /// A required identifier; `field` names the field in the error.
+    /// `field` names the field in the error.
     pub fn new(field: &str, text: impl Into<String>) -> Result<Name, ProdromeError> {
         let text = text.into();
         if matches_name(&text) {
@@ -303,7 +289,7 @@ impl Name {
         }
     }
 
-    /// An identifier that may be absent: `""` gives `None`.
+    /// `""` gives `None`.
     pub fn optional(field: &str, text: impl Into<String>) -> Result<Option<Name>, ProdromeError> {
         let text = text.into();
         if text.is_empty() {
@@ -330,7 +316,6 @@ pub enum Envelope<E> {
     Genesis(Genesis),
     Change(Change<E>),
     Snapshot(Snapshot),
-    /// A detached signature of another object ([`crate::sign`]).
     Signed(Signed),
     KeyAdded(KeyAdded),
     KeyRevoked(KeyRevoked),
@@ -363,8 +348,8 @@ impl<E> Envelope<E> {
         }
     }
 
-    /// The genesis that a change, a snapshot or a key names. A signature
-    /// names none, because it belongs to the prodrome of the object it signs.
+    /// A signature names no genesis, because it belongs to the prodrome of
+    /// the object that it signs.
     pub fn genesis(&self) -> Option<&Hash> {
         match self {
             Envelope::Change(change) => Some(&change.genesis),
@@ -392,18 +377,13 @@ impl<E> Envelope<E> {
     }
 }
 
-/// The names that an object rests on (SPEC §3), sorted and distinct: the
-/// edges it names and the genesis it names.
-///
-/// This set defines the causal order that every reader uses. A change rests
-/// on its genesis as on its deps, so a genesis is never a head of a prodrome
-/// that holds an object begun from it.
+/// The names that an object rests on, sorted and distinct: the causal order
+/// that every reader uses (SPEC §3).
 pub fn parents_of<E>(envelope: &Envelope<E>) -> Vec<Hash> {
     rests_on(envelope).into_iter().cloned().collect()
 }
 
-/// [`parents_of`], borrowed from the object: what a walk over many objects
-/// reads, so that it copies no name.
+/// For the core; no promise. [`parents_of`], borrowed, so a walk copies no name.
 #[doc(hidden)]
 pub fn rests_on<E>(envelope: &Envelope<E>) -> Vec<&Hash> {
     let mut names: Vec<&Hash> = match envelope {
@@ -427,8 +407,7 @@ pub fn mk_sealed<E: Schema>(prev: Option<Hash>, event: E) -> Envelope<E> {
     Envelope::Sealed { prev, event }
 }
 
-/// Sorted, so a set of names is one print wherever it is made; a name twice
-/// is refused, since it would let two objects mean one set.
+/// For the core; no promise. Sorts `names` and refuses a duplicate, so a set has one print.
 #[doc(hidden)]
 pub fn sorted_distinct(
     field: &str,
@@ -445,8 +424,8 @@ pub fn sorted_distinct(
     Ok(names)
 }
 
-/// Refuses fewer than two parents (one parent is a `Sealed`, and none is a
-/// legacy root) and a parent named twice; sorts the parents.
+/// Refuses fewer than two parents (one is a `Sealed`, none is a legacy root)
+/// and a parent named twice.
 pub fn mk_woven<E: Schema>(
     parents: Vec<Hash>,
     event: Option<E>,
@@ -465,8 +444,7 @@ pub fn mk_woven<E: Schema>(
 
 // --- the vocabulary ----------------------------------------------------------
 
-/// The envelope constructors and their fields in declared order, the same
-/// for every schema.
+/// The envelope constructors and their fields in declared order.
 pub const ENVELOPE_SIGNATURES: &[(&str, &[&str])] = &[
     ("Sealed", &["prev", "event"]),
     ("Woven", &["parents", "event"]),
@@ -478,18 +456,13 @@ pub const ENVELOPE_SIGNATURES: &[(&str, &[&str])] = &[
     ("KeyRevoked", &["genesis", "deps", "actor", "key"]),
 ];
 
-/// The whole vocabulary that a stored object may use: the envelopes, then
-/// the schema's own (`prodrome::todo::TodoVocabulary` for the todo schema).
-///
-/// `datetime` and `timedelta` belong to the grammar and need no entry. The
-/// envelopes take precedence: a schema kind with an envelope's name, such as
-/// `Change`, is unreachable.
+/// The vocabulary that a stored object may use: the envelopes, then the
+/// schema's own. A schema kind with an envelope's name is unreachable (SPEC §2).
 pub struct EventVocabulary<'v, E: Schema> {
     schema: &'v E::Vocabulary,
 }
 
 impl<'v, E: Schema> EventVocabulary<'v, E> {
-    /// The envelopes' vocabulary, then the vocabulary `schema`.
     pub fn new(schema: &'v E::Vocabulary) -> EventVocabulary<'v, E> {
         EventVocabulary { schema }
     }
@@ -505,16 +478,19 @@ impl<E: Schema> Vocabulary for EventVocabulary<'_, E> {
 
 // --- the literal round trip --------------------------------------------------
 
+/// For the core; no promise. A keyword field of a call.
 #[doc(hidden)]
 pub fn field(name: &str, value: Value) -> (String, Value) {
     (name.to_owned(), value)
 }
 
+/// For the core; no promise. The tuple of `names`, as stored.
 #[doc(hidden)]
 pub fn hashes_value(names: &[Hash]) -> Value {
     Value::Tuple(names.iter().map(|name| Value::str(name.as_str())).collect())
 }
 
+/// For the core; no promise. Reads the tuple of names in the field `name`.
 #[doc(hidden)]
 pub fn hashes(call: &Call, name: &str) -> Result<Vec<Hash>, ProdromeError> {
     let context = format!("{}.{name}", call.name);
@@ -559,8 +535,7 @@ impl<E: Schema> Envelope<E> {
         }
     }
 
-    /// Parses a literal into an envelope through every `mk_*` rule, and
-    /// parses its event at the vocabulary `schema`.
+    /// Parses a literal through every `mk_*` rule, its event at `schema`.
     pub fn from_value(schema: &E::Vocabulary, value: &Value) -> Result<Envelope<E>, ProdromeError> {
         let call = value
             .as_call()
@@ -592,8 +567,7 @@ impl<E: Schema> Envelope<E> {
 
 // --- hashing and printing -----------------------------------------------------
 
-/// The canonical print of an event; a fold sorts by it to break a tie
-/// deterministically.
+/// A fold sorts by this print to break a tie deterministically.
 pub fn canonical<E: Schema>(event: &E) -> String {
     print_literal(&event.to_value())
 }
@@ -604,23 +578,19 @@ pub fn event_id<E: Schema>(event: &E) -> Hash {
     Hash::of_bytes(canonical(event).as_bytes())
 }
 
-/// The canonical print of an envelope: the object's bytes, which its file
-/// holds and whose sha256 is its name.
+/// The object's bytes, whose sha256 is its name.
 pub fn canonical_envelope<E: Schema>(envelope: &Envelope<E>) -> String {
     print_literal(&envelope.to_value())
 }
 
-/// The sha256 of the canonical print, which names an object at append time.
-///
-/// Verification hashes the stored bytes instead (`store::EventStore::load`)
-/// and never a reprint, so that a change to the printer cannot report the
+/// The name of an object at append time. Verification hashes the stored
+/// bytes and never a reprint, so a change to the printer cannot report the
 /// whole store as tampered.
 pub fn seal_hash<E: Schema>(envelope: &Envelope<E>) -> Hash {
     Hash::of_bytes(canonical_envelope(envelope).as_bytes())
 }
 
-/// Parses the text of one stored object through the closed vocabulary (the
-/// envelopes, then `schema`) and every `mk_*` rule.
+/// Parses one stored object through [`EventVocabulary`] and every `mk_*` rule.
 pub fn parse_envelope<E: Schema>(
     schema: &E::Vocabulary,
     text: &str,
@@ -629,9 +599,7 @@ pub fn parse_envelope<E: Schema>(
     Envelope::from_value(schema, &parse_literal(text, &vocabulary)?)
 }
 
-/// Parses one event's canonical print, the inverse of [`canonical`], through
-/// the same closed vocabulary as [`parse_envelope`]. Use it for a bare event
-/// print, such as the input of a fold.
+/// The inverse of [`canonical`], through the vocabulary of [`parse_envelope`].
 pub fn parse_event<E: Schema>(schema: &E::Vocabulary, text: &str) -> Result<E, ProdromeError> {
     let vocabulary = EventVocabulary::<E>::new(schema);
     E::from_value(schema, &parse_literal(text, &vocabulary)?)
