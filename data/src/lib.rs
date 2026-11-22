@@ -18,6 +18,7 @@ pub mod event;
 pub mod fold;
 pub mod genesis;
 pub mod husk;
+pub mod instant;
 pub mod literal;
 pub mod payload;
 pub mod schema;

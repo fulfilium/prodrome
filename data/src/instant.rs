@@ -2,8 +2,8 @@
 //! its ISO text (SPEC §2). The grammar's time records carry no arithmetic,
 //! and `chrono`'s do.
 
+use crate::literal::{Datetime, ProdromeError};
 use chrono::{Datelike, NaiveDate, NaiveDateTime, Timelike};
-use prodrome_data::literal::{Datetime, ProdromeError};
 use thiserror::Error;
 
 /// A naive local time: a stored instant never carries a time zone (SPEC §2).

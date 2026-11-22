@@ -1,6 +1,7 @@
 //! A program whose only crate of this workspace is `prodrome-data`: it
 //! builds an event and an object, prints them, parses them back and hashes
-//! them, and it derives `Literal` for a type of its own.
+//! them, converts an event's instant, and it derives `Literal` for a type of
+//! its own.
 
 #[path = "../src/schema/headed/example.rs"]
 mod note;
@@ -12,9 +13,11 @@ use prodrome_data::event::{
     Envelope, Hash,
 };
 use prodrome_data::genesis::mk_genesis;
+use prodrome_data::instant::{datetime_of, instant_of, iso, parse_iso};
 use prodrome_data::literal::codec::Literal;
 use prodrome_data::literal::{parse_literal, print_literal, Datetime, Table};
 use prodrome_data::schema::headed::Constructors;
+use prodrome_data::schema::Schema;
 
 fn at() -> Datetime {
     Datetime::new(2026, 9, 8, 9, 0, 0, 0).expect("a real instant")
@@ -66,6 +69,20 @@ fn an_object_prints_parses_back_and_hashes() {
         assert_eq!(&back, object);
         assert_eq!(seal_hash(&back), Hash::new(name).expect("a name"));
     }
+}
+
+/// An event's instant converts to a `chrono` time and back, and its ISO
+/// text parses back to it.
+#[test]
+fn an_instant_converts_and_reads_back() {
+    let event = by_ada("n1", at(), Entry::Viewed);
+    let instant = instant_of(event.at());
+    assert_eq!(iso(instant), "2026-09-08T09:00:00");
+    assert_eq!(parse_iso(&iso(instant)), Ok(instant));
+    assert_eq!(datetime_of(instant), Ok(at()));
+    let later = instant + chrono::Duration::microseconds(5);
+    assert_eq!(iso(later), "2026-09-08T09:00:00.000005");
+    assert_eq!(parse_iso(&iso(later)), Ok(later));
 }
 
 /// A record that a program defines, with the path of the data crate given

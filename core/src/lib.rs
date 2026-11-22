@@ -133,7 +133,6 @@ pub mod digest;
 pub mod event;
 pub mod fold;
 pub mod fpl;
-mod instant;
 #[cfg(feature = "laws")]
 pub mod laws;
 pub mod memo;

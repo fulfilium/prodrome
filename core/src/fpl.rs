@@ -19,7 +19,7 @@ use crate::term::schema::{self, signatures, Field, FieldSource, Fields, Slot};
 use crate::term::{normalize, CurvePoint, Term, TermF};
 use crate::topo::Topo;
 
-pub use crate::instant::{datetime_of, instant_of, iso, parse_iso, FplError, Instant};
+pub use prodrome_data::instant::{datetime_of, instant_of, iso, parse_iso, FplError, Instant};
 /// A signed span, printed as `timedelta(...)` (SPEC §2).
 pub type Delta = Duration;
 
