@@ -20,13 +20,15 @@ Terms used below:
 
 ### Method
 
-`scripts/face.py` measures the face. It reads the JSON that rustdoc writes
-for the crate, walks every item that is reachable from the crate root, and
-counts two numbers for each item: the characters of its signature, and the
-characters of its doc comment. The script's own doc comment says what it
-counts as a signature. It does not count trait impls, such as
-`impl Display for Hash`, because their methods have no doc comment of
-their own. Run it from the repository root:
+This note uses two measures. Both count four characters as a token.
+
+**The rustdoc measure.** `scripts/face.py` reads the JSON that rustdoc
+writes for the crate, walks every item that is reachable from the crate
+root, and counts two numbers for each item: the characters of its
+signature, and the characters of its doc comment. The script's own doc
+comment says what it counts as a signature. It does not count trait impls,
+such as `impl Display for Hash`, because their methods have no doc comment
+of their own. This measure is what the rendered documentation shows.
 
 ```console
 $ RUSTC_BOOTSTRAP=1 nix develop -c cargo rustdoc -p prodrome-core --lib \
@@ -39,55 +41,76 @@ is an unstable output format. Add `--all-features` to the first command to
 count the module `laws`, which is behind a feature, and add `--by-file` to
 the second command to count by source file.
 
-This count gives about half the number that an application's own tool
-reported for the same crate, about 140,000 tokens. This note could not
-reproduce that tool's rule. For comparison, every doc line of `core/src`,
-public or private, counted with its `///` prefix and its indentation, is
-about 368,000 characters, or 92,000 tokens. Both counts find that doc
-comments are most of the face, and the plan below depends on the
-proportions between the modules more than on the total.
+**The line measure.** An application gives each dependency a reading
+budget with a tool that reads source lines, not rustdoc. The tool counts
+every module doc line, and every `pub` item whatever the visibility of its
+module, with its doc lines and its attributes as written (the prefix and
+the indentation count). It cuts a function at its first `{`, and it counts
+the body of a type or a trait without the bodies of its methods. That tool
+reported 140.2 thousand tokens at the merge base, and 121.7 thousand after
+the first pass of stage 1. `scripts/face.py --lines` follows that rule:
+
+```console
+$ python3 scripts/face.py --lines
+```
+
+To come close to the tool's numbers, the script also counts `pub(crate)`
+and `pub(super)` items and the methods of `impl` blocks. It gives 131.1
+thousand tokens at the merge base and 119.4 thousand after the first pass,
+which is within 7 and 2 percent of the tool's numbers. The rest of the
+difference is in details of the tool that this note could not see. The
+line measure is about twice the rustdoc measure, because it counts private
+and crate-visible items, the prefix and the indentation of each doc line,
+and whole bodies of types.
+
+The budget and the targets of this note are stated in the line measure,
+because the application spends its budget by that measure.
 
 ### The numbers
 
-The columns "before" are measured at the merge base `85e5083`. The table
-counts every module with the feature `laws` on. The columns "after" are the result of stage 1 (section 7), measured in the same way on
-the branch of this note. The module `lib` is the crate root, whose doc
-comment holds the quick-start example.
+The columns "before" are measured at the merge base `85e5083`. The columns
+"after" are measured after both passes of stage 1 (section 7). The table
+counts every module with the feature `laws` on. The module `lib` is the
+crate root, whose doc comment holds the quick-start example.
 
-| Module | Items | Signature chars | Doc chars before | Doc chars after | Tokens before | Tokens after |
-|---|--:|--:|--:|--:|--:|--:|
-| `store` | 162 | 6,341 | 37,734 | 31,586 | 11,018 | 9,481 |
-| `literal` | 156 | 5,574 | 17,275 | 13,663 | 5,712 | 4,809 |
-| `memo` | 103 | 2,598 | 18,655 | 14,551 | 5,313 | 4,287 |
-| `fold` | 109 | 5,061 | 13,845 | 12,145 | 4,726 | 4,301 |
-| `laws` | 125 | 3,182 | 13,750 | 12,106 | 4,233 | 3,822 |
-| `schema` | 47 | 2,182 | 12,510 | 11,139 | 3,673 | 3,330 |
-| `fpl` | 105 | 4,297 | 10,099 | 9,089 | 3,599 | 3,346 |
-| `nest` | 61 | 2,279 | 9,053 | 6,565 | 2,833 | 2,211 |
-| `event` | 106 | 3,824 | 7,219 | 5,276 | 2,760 | 2,275 |
-| `dag` | 101 | 2,408 | 8,219 | 6,965 | 2,656 | 2,343 |
-| `digest` | 39 | 1,207 | 9,016 | 7,890 | 2,555 | 2,274 |
-| `sign` | 53 | 1,703 | 7,687 | 6,307 | 2,347 | 2,002 |
-| `declared` | 97 | 1,629 | 7,586 | 6,354 | 2,303 | 1,995 |
-| `policy` | 21 | 720 | 7,421 | 3,187 | 2,035 | 976 |
-| `tags` | 50 | 2,046 | 6,005 | 5,454 | 2,012 | 1,875 |
-| `registers` | 36 | 1,526 | 5,407 | 4,713 | 1,733 | 1,559 |
-| `lib` (the crate root) | 1 | 0 | 6,443 | 5,294 | 1,610 | 1,323 |
-| `chain` | 31 | 869 | 5,288 | 3,521 | 1,539 | 1,097 |
-| `view` | 36 | 1,058 | 5,064 | 3,678 | 1,530 | 1,184 |
-| `observe` | 16 | 682 | 5,257 | 3,160 | 1,484 | 960 |
-| `payload` | 18 | 1,186 | 4,152 | 2,444 | 1,334 | 907 |
-| `term` | 117 | 2,550 | 2,309 | 2,298 | 1,214 | 1,212 |
-| `reference` | 53 | 1,987 | 2,793 | 2,032 | 1,195 | 1,004 |
-| `schedule` | 22 | 1,019 | 2,917 | 2,473 | 984 | 873 |
-| `todo` | 9 | 491 | 995 | 892 | 371 | 345 |
-| `breaks` | 14 | 347 | 1,135 | 1,217 | 370 | 391 |
-| `topo` | 5 | 292 | 862 | 812 | 288 | 276 |
-| `snapshot` | 14 | 421 | 702 | 737 | 280 | 289 |
-| `genesis` | 11 | 336 | 152 | 178 | 122 | 128 |
-| `change` | 8 | 278 | 180 | 195 | 114 | 118 |
-| total, with `laws` | 1,726 | 58,093 | 229,730 | 185,921 | 71,955 | 61,003 |
-| total, default features | 1,601 | 54,911 | 215,980 | 173,815 | 67,722 | 57,181 |
+| Module | Items | Signature chars | Doc chars before | Doc chars after | Tokens before | Tokens after | Line tokens before | Line tokens after |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| `store` | 162 | 6,341 | 37,734 | 20,915 | 11,018 | 6,814 | 27,128 | 22,066 |
+| `laws` | 125 | 3,182 | 13,750 | 12,106 | 4,233 | 3,822 | 11,651 | 11,220 |
+| `literal` | 156 | 5,574 | 17,275 | 13,588 | 5,712 | 4,790 | 9,436 | 8,449 |
+| `memo` | 103 | 2,598 | 18,655 | 14,551 | 5,313 | 4,287 | 8,732 | 7,678 |
+| `dag` | 101 | 2,408 | 8,219 | 6,965 | 2,656 | 2,343 | 8,442 | 8,124 |
+| `fold` | 109 | 5,061 | 13,845 | 12,251 | 4,726 | 4,328 | 7,125 | 6,737 |
+| `digest` | 39 | 1,207 | 9,016 | 3,998 | 2,555 | 1,301 | 5,046 | 3,707 |
+| `fpl` | 105 | 4,297 | 10,099 | 7,748 | 3,599 | 3,011 | 4,959 | 4,348 |
+| `declared` | 97 | 1,629 | 7,586 | 6,354 | 2,303 | 1,995 | 4,766 | 4,446 |
+| `nest` | 61 | 2,279 | 9,053 | 6,565 | 2,833 | 2,211 | 4,764 | 4,096 |
+| `tags` | 50 | 2,046 | 6,005 | 5,454 | 2,012 | 1,875 | 4,163 | 4,016 |
+| `schema` | 47 | 2,182 | 12,510 | 8,770 | 3,673 | 2,738 | 3,889 | 2,886 |
+| `event` | 106 | 3,824 | 7,219 | 5,282 | 2,760 | 2,276 | 3,785 | 3,297 |
+| `sign` | 53 | 1,703 | 7,687 | 4,500 | 2,347 | 1,550 | 3,744 | 2,908 |
+| `policy` | 21 | 720 | 7,421 | 2,051 | 2,035 | 692 | 2,731 | 1,277 |
+| `registers` | 36 | 1,526 | 5,407 | 4,713 | 1,733 | 1,559 | 2,658 | 2,489 |
+| `term` | 117 | 2,550 | 2,309 | 2,298 | 1,214 | 1,212 | 2,653 | 2,658 |
+| `observe` | 16 | 682 | 5,257 | 3,160 | 1,484 | 960 | 2,007 | 1,451 |
+| `lib` (the crate root) | 1 | 0 | 6,443 | 5,294 | 1,610 | 1,323 | 1,944 | 1,604 |
+| `schedule` | 22 | 1,019 | 2,917 | 2,473 | 984 | 873 | 1,854 | 1,739 |
+| `view` | 36 | 1,058 | 5,064 | 3,678 | 1,530 | 1,184 | 1,804 | 1,441 |
+| `chain` | 31 | 869 | 5,288 | 3,521 | 1,539 | 1,097 | 1,787 | 1,357 |
+| `reference` | 53 | 1,987 | 2,793 | 2,032 | 1,195 | 1,004 | 1,555 | 1,354 |
+| `payload` | 18 | 1,186 | 4,152 | 2,444 | 1,334 | 907 | 1,433 | 983 |
+| `todo` | 9 | 491 | 995 | 892 | 371 | 345 | 1,223 | 1,197 |
+| `breaks` | 14 | 347 | 1,135 | 1,217 | 370 | 391 | 520 | 545 |
+| `topo` | 5 | 292 | 862 | 812 | 288 | 276 | 506 | 497 |
+| `snapshot` | 14 | 421 | 702 | 737 | 280 | 289 | 340 | 350 |
+| `spread` (private) | 0 | 0 | 0 | 0 | 0 | 0 | 178 | 178 |
+| `change` | 8 | 278 | 180 | 195 | 114 | 118 | 146 | 152 |
+| `genesis` | 11 | 336 | 152 | 178 | 122 | 128 | 120 | 120 |
+| total, with `laws` | 1,726 | 58,093 | 229,730 | 164,742 | 71,955 | 55,708 | 131,100 | 113,381 |
+| total, default features | 1,601 | 54,911 | 215,980 | 152,636 | 67,722 | 51,886 | | |
+
+The line measure reads every source file, whatever the features, so it
+has one total.
 
 Doc comments are 80 percent of the face before stage 1: 229,730 of
 287,823 characters. Code blocks in doc comments, which are doc tests, are
@@ -152,11 +175,13 @@ the doc of `schema` is the module head of `schema::headed`, which is a doc
 test, and the contracts of trait methods that a host implements, which the
 rule keeps.
 
-Applied to the whole default face, a cut of 28 percent of the doc
-characters estimated a face of 52,700 tokens. The whole pass cut 20
-percent, to 57,181 tokens, because the modules of files, locks and crashes
-(`store`, `memo`, `digest`) keep many hazard and crash sentences.
-Section 7 gives the measured result of the whole pass.
+These are the cuts of the first pass. Applied to the whole default face, a
+cut of 28 percent of the doc characters estimated a face of 52,700 tokens
+in the rustdoc measure. The first pass over the whole crate cut 20
+percent, to 57,181 tokens. A review then found that the largest modules
+still repeated the specification, and a second pass over `store`,
+`digest`, `schema`, `fpl`, `sign` and `policy` brought the face to 51,886
+tokens. Section 7 gives the measured result of both passes.
 
 ## 3. What is public that no outside program needs
 
@@ -271,21 +296,24 @@ new abstraction with one user.
 
 The face of each proposed crate is the sum of its items' faces. A small
 script in the same manner as `scripts/face.py` assigned each reachable item
-to a crate by its file and its name, as the table above says.
+to a crate by its file and its name, as the table above says. For the line
+measure, the script scaled each item by the ratio of its module's line
+measure to its module's rustdoc measure, so the line columns are
+estimates.
 
 The counts are with the feature `laws`, which a split would keep as a
 feature of the facade.
 
-| Crate | Tokens before stage 1 | Tokens after stage 1 |
-|---|--:|--:|
-| `prodrome-data` | 17,121 | 14,814 |
-| `prodrome-memo` | 5,313 | 4,287 |
-| `prodrome-digest` | 2,555 | 2,274 |
-| `prodrome-store` | 25,453 | 21,036 |
-| `prodrome-fpl` | 9,192 | 7,880 |
-| `prodrome-reading` | 3,393 | 2,989 |
-| `prodrome-todo` | 3,081 | 2,576 |
-| `prodrome-core` (the facade's root doc and `laws`) | 5,843 | 5,145 |
+| Crate | Rustdoc, before | Rustdoc, after stage 1 | Lines, before | Lines, after stage 1 |
+|---|--:|--:|--:|--:|
+| `prodrome-data` | 17,121 | 14,132 | 25,867 | 23,295 |
+| `prodrome-memo` | 5,313 | 4,287 | 8,732 | 7,678 |
+| `prodrome-digest` | 2,555 | 1,301 | 5,046 | 3,707 |
+| `prodrome-store` | 25,453 | 17,816 | 54,925 | 45,588 |
+| `prodrome-fpl` | 9,192 | 7,545 | 13,782 | 12,101 |
+| `prodrome-reading` | 3,393 | 2,903 | 4,299 | 3,834 |
+| `prodrome-todo` | 3,081 | 2,577 | 4,673 | 4,174 |
+| `prodrome-core` (the facade's root doc and `laws`) | 5,843 | 5,145 | 13,594 | 12,824 |
 
 ### Which crates a unit reads
 
@@ -304,19 +332,47 @@ data. Most of its units use `event` and `literal` and little else.
 `text_literal` and `word_literal` are macros of `literal`. So 58 percent of
 the application's uses of the core need only the data crate.
 
-The target has two parts: no crate's face is over 25,000 tokens, and a
-unit that only builds and reads events reads under 15,000 tokens. After
-stage 1 and the split, both parts hold by the measure of section 1: the
-largest crate, `prodrome-store`, has 21,036 tokens, and `prodrome-data`
-has 14,814. The margin of the second part is small. A unit that uses the
-store reads three crates, 40,137 tokens in all, but each crate is under
-the budget for one dependency.
+### The targets
 
-By the measure of the application, which counts about twice as many
-characters, the targets do not hold: `prodrome-data` would be about 31,000
-tokens. So the stages after the split must still narrow the data crate
-(section 3) and shorten its longest docs, mainly `literal`, `schema` and
-the module head of `schema::headed`.
+The target has two parts, both in the line measure:
+
+- no crate's face is over 25,000 tokens;
+- a unit that only builds and reads events reads under 15,000 tokens.
+
+After stage 1 and the split of the table above, neither part holds. The
+data crate is 23,295 tokens, which is 8,300 over its target, and the store
+crate is 45,588 tokens, which is 20,600 over. In the rustdoc measure both
+parts would hold (14,132 and 17,816), so the gap is mostly in what the line
+measure counts and rustdoc does not show.
+
+Most of that gap is items that are not public to an application. In the
+script's line measure, 9,500 of the 22,066 tokens of the module `store`
+are `pub(crate)` and `pub(super)` items and the private methods of `impl`
+blocks, and so are 2,700 of the 8,449 tokens of `literal` and 5,000 of the
+8,124 tokens of `dag`. The line measure counts an item whatever its
+visibility, so `pub(crate)` does not remove an item from it, and
+`#[doc(hidden)]` does not either. An item leaves the line measure when it
+loses `pub` altogether, or when it moves to a crate that the unit does not
+depend on.
+
+So the stages of section 5 have these targets, in the line measure:
+
+| After stage | The whole core | `prodrome-data` | `prodrome-store` |
+|---|--:|--:|--:|
+| 1, the doc comments (done) | 113,381 | 23,295 (estimate) | 45,588 (estimate) |
+| 2, the narrowing | 100,000 | 19,000 | 36,000 |
+| 3, the data crate | | 15,000 | |
+| 4, each further crate | | | under 25,000 in each of two crates |
+
+Stage 2 reaches its numbers by removing `pub` from items that only their
+own module uses, and by a third pass of words over the data modules
+(`literal`, `schema`, `event`). Stage 3 reaches 15,000 when the data crate
+holds only the data modules, and the items of `literal` that only its
+parser and its printer use have lost `pub`. Stage 4 divides the store
+crate in two: `prodrome-dag` (`dag`, `registers`, `policy` and the proof
+of `sign`, about 15,000 tokens today) and `prodrome-store` (`store`,
+`nest`, `declared` and `tags`), whose module `store` must lose about a
+third of its count by stage 2.
 
 ## 5. The stages
 
@@ -325,8 +381,10 @@ Each stage is one pull request that lands alone.
 1. **The doc comments, by the rule of section 2.** Words only. A program
    changes nothing. The conformance vectors and the law tests do not
    change, and the words-only check of section 7 proves that no code
-   changed.
-2. **The narrowing of section 3.** The release marks each candidate
+   changed. Done in this pull request: the line measure fell from 131,100
+   to 113,381 tokens.
+2. **The narrowing of section 3,** with the target of "The targets"
+   above. The release marks each candidate
    `#[deprecated]` first, and the next release narrows it. A program that
    names a narrowed item changes its import to `prodrome::internal::...`,
    or turns on a feature. No test changes its assertions; a test that
@@ -352,12 +410,12 @@ announces each stage under "Changed", with the paths a program may change.
 
 ## 6. What argues against the split
 
-- **Compile time.** Seven crates compile in parallel, but each crate
+- **Compile time.** Eight crates compile in parallel, but each crate
   boundary stops inlining without `#[inline]` and costs a separate
   metadata pass. The generic code of the core (`Schema`, the folds) is
   monomorphised in the application anyway, so the loss is small, but it is
   not zero, and nobody has measured it.
-- **Version skew.** Seven crates mean seven versions. An application that
+- **Version skew.** Eight crates mean eight versions. An application that
   depends on `prodrome-data` 0.10 and on `prodrome-store` 0.11 gets two
   copies of `Hash`, and the compiler reports that a `Hash` is not a
   `Hash`. The crates must release in lock step, with exact version
@@ -365,22 +423,23 @@ announces each stage under "Changed", with the paths a program may change.
   release must check.
 - **The cost to a small program.** A program that wants the whole core
   today adds one dependency. After the split it still adds one, the
-  facade, but its error messages and its documentation name seven crates,
-  and `cargo tree` shows seven.
+  facade, but its error messages and its documentation name eight crates,
+  and `cargo tree` shows eight.
 - **Cuts that cost design.** Section 4 found that twenty modules form one
   cycle. Each cut in its table is a decision about where a type belongs,
   and two of them move items out of the files that hold their concept
   today (`event.rs` holds both the envelope and the todo events). A cut
   made only to split a crate can make the code harder to read.
 - **Words and narrowing might be enough.** If the face of the whole core
-  fitted the budget, one crate would be simpler than seven for every
-  reader. After stage 1 the whole face is 57,181 tokens by the measure of
-  section 1, which is more than twice the budget, and narrowing removes at
-  most 17 percent. So this argument does not hold today.
+  fitted the budget, one crate would be simpler than eight for every
+  reader. After stage 1 the whole face is 113,381 tokens in the line
+  measure and 51,886 in the rustdoc measure, which are more than four and
+  two times the budget. So this argument does not hold today.
 
 Stage 1 would have been enough if it had brought the whole face under
-25,000 tokens. It cut 16 percent, and the rule keeps most of what remains,
-so no further pass of words alone reaches the budget. The work should stop
+25,000 tokens. It cut 14 percent in the line measure and 23 percent in the
+rustdoc measure, and the rule keeps most of what remains, so no further
+pass of words alone reaches the budget. The work should stop
 after stage 2 if a later count finds that most of an application's units
 use the store or the evaluator as well as the data, because then most
 units would read most crates and the split would save them little.
@@ -390,32 +449,58 @@ units would read most crates and the split would save them little.
 Stage 1 changed the doc comments of the public items of `core/src` by the
 rule of section 2, and nothing else.
 
-**The face.** The default face fell from 67,722 to 57,181 tokens, a cut of
-16 percent. The doc characters fell from 215,980 to 173,815, a cut of 20
-percent; the doc tests did not change. With the feature `laws`, the face
-fell from 71,955 to 61,003 tokens. The table of section 1 gives each
-module.
+**Two passes.** The first pass covered every public doc comment of
+`core/src`. A review found that it cut the docs of items by only about a
+tenth, so a second pass went over `store`, `digest`, `schema`, `fpl`,
+`sign` and `policy` again with the same rule.
 
-**What the pass kept.** The pass kept, as one sentence each, about 61
-hazards, about 106 invariants or obligations of a caller, about 72 outside
-facts (formats, units, system calls, file systems, rules of CPython and of
-other standards), and about 77 citations of a law by its number. These
-counts are the sums of the counts that each part of the pass reported.
+**The face.**
 
-**The review of the deletions.** A second reader read every deleted line
-against the list of section 2, and restored four sentences that were the
-only place where their reason was written:
+| Measure | Before | After the first pass | After the second pass |
+|---|--:|--:|--:|
+| rustdoc, default features | 67,722 | 57,181 | 51,886 |
+| rustdoc, with `laws` | 71,955 | 61,003 | 55,708 |
+| doc characters, default features | 215,980 | 173,815 | 152,636 |
+| lines (`scripts/face.py --lines`) | 131,100 | 119,376 | 113,381 |
+| lines, the application's own tool | 140,200 | 121,700 | not measured |
+
+The doc tests did not change. The table of section 1 gives each module.
+
+**What the passes kept.** The first pass kept, as one sentence each, about
+61 hazards, about 106 invariants or obligations of a caller, about 72
+outside facts (formats, units, system calls, file systems, rules of CPython
+and of other standards), and about 77 citations of a law by its number.
+These counts are the sums of the counts that each part of the pass
+reported. The second pass deleted a kept sentence only where `SPEC.md`, a
+design note or the remaining doc still states it, and each part of the
+pass listed those sentences and where they are still stated.
+
+**The review of the deletions.** After each pass, a second reader read
+every deleted line against the list of section 2. The readers and the
+review of the pull request restored these sentences, which were the only
+place where their reason was written:
 
 - why `Product::climbed` passes for a subset read under the policy where
   everything binds (`fold/product.rs`);
+- why a write below what it rests on cannot lower the reading of a
+  `Climb` (`fold/climb.rs`);
 - why the heap of `topo::linear` orders keys correctly (`topo.rs`);
 - why a named actor's lifecycle events claim under `Untrusted`: such an
   actor reads input that an attacker can control (`policy.rs`);
-- why `tags::alias::unaliased` never returns an error (`tags/alias.rs`).
+- that a husk binds under `Proven` where the proof vouches for it
+  (`policy.rs`);
+- why the policy of a store defaults to `Untrusted` (`store.rs`);
+- why a husk reads as its whole for good: keys are only destroyed
+  (`store/husk.rs`);
+- why `tags::alias::unaliased` never returns an error (`tags/alias.rs`);
+- that the `Least` of a price is neither a register's join nor FPL's
+  `Conj` (`schema.rs`).
 
-The reader also corrected three new sentences that were false
-(`registers::deps_for`, `store::MemoryStore`, and the law number in
-the head of `policy`).
+The readers also corrected five new sentences that were false
+(`registers::deps_for`, `store::MemoryStore`, `HuskObject::of`, the law
+number in the head of `policy`, and the width of a content record in
+`event`), and the second pass removed advice to delete `.heads`, which
+SPEC §3, "The record of heads", calls no remedy.
 
 **The check that only words changed.** With every blank line and every
 line whose first characters are `//` removed, each file of `core/src`
@@ -435,10 +520,11 @@ The loop prints nothing.
 **Links.** `cargo doc` with warnings denied passes with the default
 features, with `--all-features` and with `--no-default-features`. At the
 merge base it failed with 12 errors with the default features (broken and
-ambiguous intra-doc links), and the pass fixed them by rewording.
+ambiguous intra-doc links), and the first pass fixed them by rewording.
 
-**Errors found in `SPEC.md`.** The pass found three, and did not change
-`SPEC.md`, because this pull request changes words of the code only. SPEC
+**Errors found in `SPEC.md`.** The passes found three, and did not change
+`SPEC.md`, because this pull request changes words of the code only. Issue
+#95 lists them. SPEC
 §9 has two items numbered 40. SPEC §5 cites law 41 for a proof that is a
 reading of the history, which is law 42. SPEC §3 cites law 39 for the
 restricted join of `accept`, but law 39 is about nests.

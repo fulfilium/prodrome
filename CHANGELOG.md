@@ -226,7 +226,8 @@ constructor's fields never change, in any release.
   that the code does not show, and cites the section of `SPEC.md` for the
   rest. The public face of `prodrome-core` is the signatures and doc
   comments of its public items. Measured with `scripts/face.py`, it falls
-  from 67,722 to 57,181 tokens. No code, name, signature or stored byte
+  from 67,722 to 51,886 tokens, and in the line measure of
+  `scripts/face.py --lines` from 131,100 to 113,381 tokens. No code, name, signature or stored byte
   changes. `docs/design-core-face.md` proposes the next stages: narrowing
   what is public, and dividing the core into crates.
 - **Every door that takes prints from another party takes a `Sender`

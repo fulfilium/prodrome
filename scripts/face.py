@@ -29,6 +29,24 @@ is an unstable output format. The script counts:
 It does not count trait impls (`impl Display for Hash`), because their
 methods carry no doc comment of their own. It collapses each run of white
 space in a signature to one space. A token is four characters.
+
+The second mode, `--lines`, needs no rustdoc. It reads the source files
+under `core/src` line by line, in the manner of a tool that an application
+uses to give each dependency a reading budget:
+
+    python3 scripts/face.py --lines [repository root]
+
+It counts each line as written, with its prefix and its indentation, and
+one character for its line end:
+
+- every module doc line (`//!`);
+- every item that starts with `pub` (also `pub(crate)` and `pub(super)`)
+  or `impl`, whatever the visibility of its module, with the doc lines and
+  the attributes above it;
+- for a function or a one-line item, the text up to its first `{` or `;`;
+- for a struct, an enum, a trait, a union or an impl block, its whole
+  body, with each method's signature and doc but without the method's
+  body.
 """
 
 import json
@@ -152,7 +170,87 @@ def walk(index, root):
     return seen
 
 
+def by_lines(root):
+    """The `--lines` measure: characters by top-level module."""
+    total = defaultdict(int)
+    src = Path(root, "core", "src")
+    for path in sorted(src.rglob("*.rs")):
+        lines = path.read_text(encoding="utf-8").split("\n")
+        name = path.relative_to(src).parts[0]
+        module = name[:-3] if name.endswith(".rs") else name
+        above = 0
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            text = line.strip()
+            if text.startswith("//!"):
+                total[module] += len(line) + 1
+            elif text.startswith(("///", "#[")):
+                above += len(line) + 1
+            elif re.match(r"(pub[\s(]|impl\b)", text):
+                found = re.search(r"\b(struct|enum|trait|union)\b", text)
+                if text.startswith("impl") or found:
+                    size, i = body(lines, i)
+                else:
+                    size, i = head_of(lines, i)
+                total[module] += above + size
+                above = 0
+                continue
+            else:
+                above = 0
+            i += 1
+    return total
+
+
+def head_of(lines, i):
+    """The text of lines from `i` up to the first `{` or `;`."""
+    size = 0
+    while i < len(lines):
+        line = lines[i]
+        stops = [at for at in (line.find("{"), line.find(";")) if at != -1]
+        if stops:
+            return size + min(stops) + 2, i + 1
+        size += len(line) + 1
+        i += 1
+    return size, i
+
+
+def body(lines, i):
+    """A type's, a trait's or an impl's lines, without method bodies."""
+    size = 0
+    depth = 0
+    while i < len(lines):
+        line = lines[i]
+        text = line.strip()
+        if depth == 1 and re.search(r"\bfn\b", text) and "{" in text:
+            size += line.index("{") + 1
+            open_ = line.count("{") - line.count("}")
+            i += 1
+            while open_ > 0 and i < len(lines):
+                open_ += lines[i].count("{") - lines[i].count("}")
+                i += 1
+            continue
+        size += len(line) + 1
+        depth += line.count("{") - line.count("}")
+        i += 1
+        if depth <= 0 and ("}" in line or line.rstrip().endswith(";")):
+            break
+    return size, i
+
+
+def main_lines(root):
+    total = by_lines(root)
+    print(f"{'module':<14}{'chars':>10}{'tokens':>9}")
+    for m in sorted(total, key=lambda m: -total[m]):
+        print(f"{m:<14}{total[m]:>10}{total[m] // TOKEN:>9}")
+    print(f"{'total':<14}{sum(total.values()):>10}"
+          f"{sum(total.values()) // TOKEN:>9}")
+
+
 def main():
+    if sys.argv[1:2] == ["--lines"]:
+        main_lines(sys.argv[2] if len(sys.argv) > 2 else ".")
+        return
     data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     by_file = sys.argv[2:] == ["--by-file"]
     index = data["index"]
