@@ -52,9 +52,9 @@ pub fn aliased<S: Tagging>(
 ///
 /// # Errors
 ///
-/// None: the schema refuses only an alias of itself. The result is the
-/// type of [`Event::new`], the schema's one constructor, which asks
-/// [`Body::admits`] of every event.
+/// None, because the schema refuses only an alias of itself. The result has
+/// the type of [`Event::new`], which checks every event with
+/// [`Body::admits`].
 pub fn unaliased<S: Tagging>(
     tag: S::Tag,
     at: Datetime,

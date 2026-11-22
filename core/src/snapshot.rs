@@ -61,10 +61,12 @@ pub enum Attestation {
     Fresh(Snapshot),
 }
 
-/// What a writer attests of the prodrome `genesis` begins in `dag` (SPEC
-/// §3's `snapshot()`): the prodrome's tips, without the last snapshot
-/// among them, which is the new snapshot's `previous`. With no other tip,
-/// that snapshot is the answer and nothing new is attested.
+/// What a writer attests of the prodrome that `genesis` begins in `dag`
+/// (SPEC §3, `snapshot()`).
+///
+/// A new snapshot names the prodrome's tips without the last snapshot among
+/// them, and names that snapshot as its `previous`. If no other tip is left,
+/// the answer is that snapshot, and nothing new is attested.
 ///
 /// # Errors
 ///

@@ -7,10 +7,10 @@ use super::index::Index;
 use crate::event::Hash;
 
 /// A set of objects of one DAG, held as one bit for each position of the
-/// DAG's linear order ([`super::Dag::linearise`]). A frontier's reach is
-/// one: the objects that its tips rest on, the tips included. The walks
-/// over a reach work on positions, through the DAG's [`Index`], so a reach
-/// of 30,000 objects is under 4 KB and its closure compares no names.
+/// order of [`super::Dag::linearise`].
+///
+/// The walks over a reach use positions through an index of the DAG, so a
+/// reach of 30,000 objects is under 4 KB and its closure compares no names.
 #[derive(Clone)]
 pub struct Reach<'d> {
     order: &'d [Hash],
@@ -36,13 +36,13 @@ impl<'d> Reach<'d> {
         self.len
     }
 
-    /// Does the set hold no object?
+    /// Whether the set holds no object.
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
-    /// Does the set hold the object `name`?
+    /// Whether the set holds the object `name`.
     #[must_use]
     pub fn contains(&self, name: &Hash) -> bool {
         self.index

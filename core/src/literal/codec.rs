@@ -1,8 +1,6 @@
-//! A codec between a Rust value and a literal of §2, for the values an
-//! application's events carry.
+//! A codec between Rust values and the literals of SPEC §2.
 //!
-//! A type implements [`Literal`] when it has one stored form that reads back
-//! exactly: `from_value(&x.to_value()) == Ok(x)`. The forms compose:
+//! The stored forms compose:
 //!
 //! - A record prints as a call of one [`Constructor`], with every field in
 //!   the constructor's order, so its print is canonical by construction.
@@ -23,10 +21,6 @@
 //!   from the type's declaration. [`Record`], [`read`] and [`read_or_default`]
 //!   are the reads that a derived impl makes, and [`text_field`] and
 //!   [`blank_field`] are two field codecs for `#[literal(with = ...)]`.
-//!
-//! The module depends on no schema. A schema's `to_value` and `from_value`
-//! ([`crate::schema::Schema`]) can use it to print and read their events'
-//! fields.
 
 #![warn(clippy::pedantic)]
 
@@ -48,25 +42,21 @@ pub use prodrome_derive::Literal;
 pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
 pub use sum::{distinct, headed_len, headed_names, headed_table, names_field, Sum};
 
-/// A constructor's name and its fields in printed order. A [`super::Table`]
-/// is a list of them.
+/// A constructor's name and its fields in printed order.
 pub type Constructor = (&'static str, &'static [&'static str]);
 
 /// A type with one stored literal form, which reads back exactly:
 /// `from_value(&x.to_value()) == Ok(x)`.
 ///
-/// A read has two forms. [`Literal::from_value`] reads a value on its own.
-/// [`Literal::from_field`] reads the value of a field whose context, such
-/// as `Note.lines`, the caller gives. A derived impl and [`Fields::get`]
-/// read each field this way, so their refusals are the core's (SPEC §4).
-/// The two forms accept the same values, and read each one as the same
-/// value. Only the words of a refusal differ.
+/// The two reads, [`Literal::from_value`] and [`Literal::from_field`], must
+/// accept the same values and read each one as the same value. Only the words
+/// of a refusal differ.
 pub trait Literal: Sized {
     /// The constructors that the type declares, each with its fields in
-    /// print order: one for a record, and one for each variant of a sum. A
-    /// leaf, a container and a newtype declare none. A schema pins the
-    /// constructors of its types in a test with [`assert_pinned`], so that a
-    /// renamed constructor or field fails the test.
+    /// print order: one for a record, one for each variant of a sum, and none
+    /// for a leaf, a container or a newtype. Pin them in a test with
+    /// [`assert_pinned`], so that a renamed constructor or field fails the
+    /// test.
     const CONSTRUCTORS: &'static [Constructor] = &[];
 
     /// The literal of `self`.
@@ -78,14 +68,11 @@ pub trait Literal: Sized {
     /// A [`ProdromeError`] that names the part of `value` that does not read.
     fn from_value(value: &Value) -> Result<Self, ProdromeError>;
 
-    /// Reads a value back from its literal, the value of the field
-    /// `context`. Every refusal names the context. A leaf that words its own
-    /// read names it in its words, as `Note.lines must be a tuple`. The
-    /// default reads with [`Literal::from_value`], and leads its refusal
-    /// with the context, as `Heads.count: expected a natural number …`. A
-    /// refusal inside a nested record therefore reads as a path:
-    /// `Thread.first: Review.remark must be a string, got …`. The refusal
-    /// keeps its kind ([`ProdromeError::within`]).
+    /// Reads the value of the field `context`, and names the context in every
+    /// refusal. The default reads with [`Literal::from_value`] and puts the
+    /// context before the refusal ([`ProdromeError::within`]), so a refusal
+    /// inside a nested record reads as a path, as
+    /// `Thread.first: Review.remark must be a string, got …`.
     ///
     /// # Errors
     /// A [`ProdromeError`] that names the field and the part of `value`
@@ -108,9 +95,8 @@ pub fn record(constructor: Constructor, values: Vec<Value>) -> Value {
 /// The call of `body`'s constructor with the fields of `head` first, and then
 /// `values`, one value for each field of `body`, in its order.
 ///
-/// An event schema uses it when every event starts with the same fields (for
-/// example the entity, the instant and the actor) and each event kind adds
-/// its own. Debug builds check that `values` has one value for each field.
+/// A caller passes exactly one value for each field of `body`. Debug builds
+/// check the count.
 #[must_use]
 pub fn headed(head: Vec<(&'static str, Value)>, body: Constructor, values: Vec<Value>) -> Value {
     let (name, fields) = body;
@@ -125,12 +111,8 @@ pub fn headed(head: Vec<(&'static str, Value)>, body: Constructor, values: Vec<V
 }
 
 /// The fields of a call of one constructor, read by name, for a
-/// hand-written impl.
-///
-/// The reads are the ones that a derived impl makes: [`call`],
-/// [`call_of`] and [`read`] with the field type's [`Literal::from_field`],
-/// and [`no_arm`] for a constructor that a sum does not have. So a
-/// hand-written read and a derived one refuse a value in the same words.
+/// hand-written impl. Its reads are those of a derived impl, so the two
+/// refuse a value in the same words.
 #[derive(Debug, Clone, Copy)]
 pub struct Fields<'v> {
     call: &'v Call,
@@ -138,8 +120,7 @@ pub struct Fields<'v> {
 
 impl<'v> Fields<'v> {
     /// Reads `value` as a call of one of `constructors`, the constructors
-    /// of the sum `sum`. A reader of a sum uses it, for example of an event
-    /// schema's events.
+    /// of the sum `sum`.
     ///
     /// # Errors
     /// The value is not a call, or it calls a constructor that is not in

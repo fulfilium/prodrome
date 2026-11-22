@@ -11,34 +11,35 @@ use super::language::{Event, Form, Poset, Type};
 use super::order::{Closure, Interpreted};
 use super::Slot;
 
-/// A law of admission, in the order they are asked.
+/// A law of admission. The variants are in the order that admission checks
+/// them, and a refusal names the first law that fails.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Law {
     /// The text is one `Schema(...)` of the schema language.
     Grammar,
-    /// It prints back the same: the text is its own canonical print, so a
-    /// schema's text is its identity and its name the hash of that text, as
-    /// an object's is (§3).
+    /// The text is its own canonical print, so the schema's name is the hash
+    /// of its text, as an object's is (SPEC §3).
     Canonical,
-    /// Names are unique: events (and none an envelope's or the grammar's
-    /// own), fields within an event, registers, an enum's alternatives, a
-    /// machine's covers, and the writes into a register, one per event.
+    /// Names are unique: events (and no event has an envelope's name or the
+    /// grammar's own), fields within an event, registers, an enum's
+    /// alternatives, a machine's covers, and the writes into a register, one
+    /// per event.
     Unique,
-    /// The key exists: every event has the key field, a text.
+    /// Every event has the key field, a text.
     Key,
-    /// Every event says when and who: an `at` instant and an `actor` text.
+    /// Every event has `at`, an instant, and `actor`, a text.
     Stamp,
     /// Every register is written, by fields that exist, of one type, the
     /// type its order reads: an integer for a total order, a list for
     /// inclusion, an enum naming every state of a machine.
     Typed,
-    /// Every order is a partial order: a machine's covering relation is
-    /// acyclic, so its transitive closure is antisymmetric. The other orders
-    /// are partial orders by construction.
+    /// A machine's covering relation is acyclic, so its transitive closure
+    /// is a partial order. The other orders are partial orders by
+    /// construction.
     PartialOrder,
-    /// An inflationary register's order has a bottom: its reading is a
-    /// homomorphism of semilattices with units, so the empty history must
-    /// read as the least value.
+    /// An inflationary register's order has a bottom, because its reading is
+    /// a homomorphism of semilattices with units, and so the empty history
+    /// must read as the least value.
     Bottom,
 }
 

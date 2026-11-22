@@ -12,17 +12,14 @@ use crate::event::{parents_of, Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
 
-/// A NEST: one level's history, each object at its entity's key, and the
-/// nest each of its pointers holds, at the pointer's path. A tree of
-/// content-addressed histories, whose [`Nest::name`] covers the whole tree
-/// as a git tree's does.
+/// A tree of content-addressed histories: one level's history, each object
+/// at its entity's key, and the nest that each of its pointers holds, at
+/// the pointer's path.
 ///
-/// A pointer's history is everything that ANY write to it in this level's
-/// history named: what the level holds of an inner history grows with the
-/// level, as a commit reaches every tree its ancestors named, so
-/// [`Nest::flatten`] is a function of the object sets alone. The pointer's
-/// current value, the heads of its maximal writes, is its register's
-/// reading ([`super::pointer`]).
+/// A pointer's history is everything that any write to it in this level's
+/// history named, so [`Nest::flatten`] is a function of the object sets
+/// alone. The pointer's current value is its register's reading
+/// ([`super::pointer`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nest {
     name: Hash,
@@ -37,14 +34,14 @@ pub struct Nest {
 /// One level of a nest: a replica's objects at one schema, and how its
 /// pointers are read.
 pub trait Level {
-    /// The nest of the history `heads` rest on, at this level.
+    /// The nest of the history that `heads` rest on, at this level.
     ///
     /// # Errors
     ///
     /// A head, or a parent of an object of the history, that this level
-    /// does not hold: an object of one level rests only on objects of its
-    /// own, so a name it lacks is missing, never an object of another
-    /// level. A key that is not a path segment.
+    /// does not hold: an object rests only on objects of its own level, so
+    /// a name that the level lacks is missing. A key that is not a path
+    /// segment.
     fn nest(&self, heads: &BTreeSet<Hash>) -> Result<Nest, ProdromeError>;
 }
 
@@ -119,13 +116,13 @@ impl<E: Nests> Level for Holding<'_, E> {
     }
 }
 
-/// A SET OF PRODROMES (design §6.3.1): a replica's prodromes, each the nest
-/// its member level reads, held at its genesis. A set is a nest keyed by
-/// genesis: it has no objects of its own, so its join ([`Nest::flatten`])
-/// puts each member's objects at `genesis/key`, and since no edge crosses
-/// geneses (§3), no member's nest reaches another's objects. A genesis is
-/// a global name, so a member's key is its own, never one the set gives it:
-/// two sets are joined by union, and a prodrome in both is one member.
+/// A set of prodromes: a level whose nest holds each prodrome of a replica,
+/// as its member level reads it, at its genesis (design §6.3.1, law 41).
+///
+/// The set has no objects of its own, so [`Nest::flatten`] puts each
+/// member's objects at `genesis/key`. No edge crosses geneses (SPEC §3), so
+/// no member's nest reaches another's objects. A genesis is a global name,
+/// so two sets join by union, and a prodrome in both is one member.
 pub struct Set<'l, E: Schema> {
     dag: Arc<Dag<E>>,
     member: &'l dyn Level,
@@ -251,9 +248,9 @@ impl Nest {
         crate::memo::name(&bytes, held.values().map(|nest| &nest.name))
     }
 
-    /// The nest's content name: its own objects, the paths it holds, and
-    /// the names of the nests held there, so it changes exactly when
-    /// something in the tree below it does.
+    /// The nest's content name, over its own objects, the paths that it
+    /// holds and the names of the nests held there, so that it changes
+    /// exactly when something in the tree below it changes.
     #[must_use]
     pub fn name(&self) -> &Hash {
         &self.name
@@ -271,10 +268,9 @@ impl Nest {
         &self.held
     }
 
-    /// THE JOIN: every object of the tree at its path, this level's at
-    /// their keys and each held nest's under the path that held it. No
-    /// object is renamed and no dep rewritten, since a name is global; only
-    /// keys gain a prefix.
+    /// The join: every object of the tree at its path, this level's at
+    /// their keys and each held nest's under the path that held it. A name
+    /// is global, so the join renames no object and rewrites no dep.
     #[must_use]
     pub fn flatten(&self) -> History<Hash> {
         std::iter::once((Path::root(), self.own.clone()))
@@ -287,9 +283,9 @@ impl Nest {
             .join()
     }
 
-    /// What `heads` rest on in this nest, they among it: this level's
-    /// objects beneath them, and in each nest a pointer among those names,
-    /// what it named, at every depth.
+    /// What `heads` rest on in this nest, the heads included: this level's
+    /// objects beneath them and, at every depth, what each pointer among
+    /// those objects named.
     #[must_use]
     pub fn below(&self, heads: &BTreeSet<Hash>) -> BTreeSet<Hash> {
         let mut found = BTreeSet::new();
@@ -309,12 +305,12 @@ impl Nest {
         found
     }
 
-    /// HAPPENS-BEFORE ACROSS LEVELS: everything that happened before the
-    /// object `name`, wherever it sits in the nest, or `None` where it is
-    /// nowhere in it. Its own level's ancestors, and through every pointer
-    /// among it and them, the inner history that pointer named: an inner
-    /// object's deps are inner, so causality crosses a level only where a
-    /// write names the inner heads it saw.
+    /// Everything that happened before the object `name`, wherever it sits
+    /// in the nest, or `None` where it is not in the nest. The past holds
+    /// the object's ancestors in its own level and, through every pointer
+    /// among the object and those ancestors, the inner history that the
+    /// pointer named. Causality crosses a level only where a write names the
+    /// inner heads that it saw, because an inner object's deps are inner.
     #[must_use]
     pub fn past(&self, name: &Hash) -> Option<BTreeSet<Hash>> {
         let Some(parents) = self.parents.get(name) else {

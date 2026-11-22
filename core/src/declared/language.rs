@@ -26,11 +26,7 @@ const SIGNATURES: &[(&str, &[&str])] = &[
     ("Write", &["event", "field"]),
 ];
 
-/// A declared schema as written, before any law is asked of it: the
-/// entity KEY every event names, the EVENTS (closed constructors with their
-/// typed fields in declared order) and the REGISTERS, each with its order,
-/// whether it is inflationary, and which field of which event writes it.
-/// No valuation: a price is Rust's (design §4).
+/// A declared schema as written, before admission checks any law.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Form {
     pub key: String,
@@ -38,8 +34,7 @@ pub struct Form {
     pub registers: Vec<Register>,
 }
 
-/// One event constructor: its name and its fields, IN ORDER, which is the
-/// order its print holds them in.
+/// One event constructor; its fields are in printed order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event {
     pub name: String,
@@ -52,42 +47,43 @@ pub struct Field {
     pub ty: Type,
 }
 
-/// A field's type, from a closed set: what its literal must be.
+/// A field's type, which constrains its literal.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     /// A string.
     Text,
-    /// An integer a signed 64-bit word holds.
+    /// A signed 64-bit integer.
     Integer,
-    /// A §2 `datetime`.
+    /// A `datetime` of SPEC §2.
     Instant,
-    /// A content name: 64 lowercase hex, an object's name (§3).
+    /// An object's name (SPEC §3): 64 lowercase hex digits.
     Reference,
-    /// One of the alternatives, a string: a closed set of names.
+    /// A string that is one of the alternatives.
     Enum(Vec<String>),
     /// A tuple of values of one type.
     List(Box<Type>),
 }
 
-/// A register's order, from a closed vocabulary (design §3). Each is a
-/// partial order by construction but the machine, whose covering relation
-/// admission checks is acyclic.
+/// A register's order (design §3). Each order except `Machine` is a
+/// partial order by construction; admission checks that a machine's
+/// covering relation is acyclic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Poset {
-    /// `a ≤ b` iff `a = b`: every distinct value is a candidate.
+    /// `a ≤ b` if and only if `a = b`, so every distinct value is a
+    /// candidate.
     Discrete,
-    /// The integers' order: the reading is the greatest.
+    /// The order of the integers; the reading is the greatest value.
     Total,
     /// A finite state machine over an enum's alternatives, given by its
-    /// COVERING relation, `(lower, upper)` pairs: `≤` is its reflexive and
-    /// transitive closure, "further along".
+    /// covering relation as `(lower, upper)` pairs; `≤` is the reflexive and
+    /// transitive closure of the relation.
     Machine(Vec<(String, String)>),
     /// Lists read as sets, under inclusion.
     Inclusion,
 }
 
 /// A register: its name, its order, whether a write must climb it
-/// (design §3.1), and the route into it, each a field of an event.
+/// (inflationary, design §3.1), and the event fields that write it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Register {
     pub name: String,
@@ -96,7 +92,7 @@ pub struct Register {
     pub writes: Vec<Write>,
 }
 
-/// The route's one combinator: event `event` writes its field `field`.
+/// The event `event` writes its field `field` to the register.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Write {
     pub event: String,
@@ -135,7 +131,7 @@ fn name(call: &Call, field: &str) -> Result<String, Refusal> {
 }
 
 impl Form {
-    /// The form `text` spells, in the schema language and nothing else.
+    /// Parses `text` in the closed vocabulary of the schema language.
     ///
     /// # Errors
     ///
@@ -151,11 +147,10 @@ impl Form {
         })
     }
 
-    /// The CANONICAL print: the form with every set sorted (its events and
-    /// registers by name, an enum's alternatives, a machine's covers, a
-    /// register's writes), so that two forms of one schema print as one
-    /// text, and printed as §2 prints any literal. A field order is not a
-    /// set and is kept.
+    /// The canonical print, with every set sorted (events and registers by
+    /// name, an enum's alternatives, a machine's covers, a register's
+    /// writes), so that two forms of one schema print as one text. The
+    /// print keeps the order of the fields, which is not a set.
     #[must_use]
     pub fn print(&self) -> String {
         print_literal(&self.normalized().to_value())

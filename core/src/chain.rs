@@ -1,24 +1,11 @@
-//! §7.1 — the chain compiler: `After` and `Recur` erased against a snapshot.
+//! The chain compiler (SPEC §7.1): it rewrites a term against a snapshot of
+//! the environment, so that no `After` or `Recur` is left.
 //!
-//! See ../../SPEC.md §7.1. `After` and `Recur` are the terms that read history
-//! (§7): every other constructor is a function of `now` and its subterms, so a
-//! term with neither anywhere in it can be evaluated against no environment at
-//! all. This module is that erasure, and its whole justification is §9.13 —
-//! the compiled term, read against the EMPTY environment, answers what the
-//! interpreted one answered against the real one, at every instant.
-//!
-//! An OPTIMISATION, not a semantics change, and the difference is the point.
-//! Nothing here is a second evaluator (§10): [`Compiled::fulfillment`] and
-//! [`Compiled::explain`] are `fpl`'s own, called on a term this module
-//! rewrote. The interpreted path stays exactly as it was, a host that never
-//! compiles reads exactly what it read before, and no stored byte and no
-//! conformance vector moves.
-//!
-//! WHAT IT BUYS. The interpreter consults the environment once per `After`
-//! node per evaluation, and `Within` is 65 evaluations of its subterm — so one
-//! link under a window costs 65 lookups and a chain of `d` links under one
-//! costs 65·d, at EVERY query. The compiler pays one walk of the term once and
-//! every evaluation afterwards pays none.
+//! Law 13: the compiled term, read against the empty environment, has the
+//! fulfillment of the original term read against the real environment, at
+//! every instant. The readers of a compiled term call the evaluator of `fpl`,
+//! so this module is not a second evaluator (SPEC §10). For the cost that the
+//! compiler saves, see SPEC §7.1, "The cost."
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
@@ -33,31 +20,31 @@ use crate::term::schema::{Fields, Slot};
 use crate::term::{normalize, Term, TermF};
 use crate::topo::Topo;
 
-/// A refusal from [`compile_chain`] or [`chain_order`]. One inhabitant, and it
-/// is a VALUE: a chain that depends on itself is a modelling error the host
-/// must be told about, never a partial answer and never a crash.
+/// A refusal from [`compile_chain`] or [`chain_order`].
+///
+/// A chain that depends on itself gets this refusal, never a partial answer
+/// (SPEC §7.1, "Cycles are a value").
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ChainError {
-    /// The dependency graph the links draw over the todos closes on itself.
-    /// The path names the loop, first node repeated at the end.
+    /// The links draw a dependency graph over the todos, and the graph has a
+    /// cycle. The path holds the loop, with its first todo repeated at the end.
     #[error("the chain depends on itself: {}", .0.join(" → "))]
     Cycle(Vec<String>),
 }
 
 /// One `After` node, as the compiler resolved it against the snapshot.
-///
-/// The three constructors are the three readings of §7's `After` and they mean
-/// OPPOSITE things downstream — a moot link is a 1.0 nobody earned — so they
-/// are an ADT and never a bound-or-not boolean with fields hanging off it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
-    /// The snapshot says nothing about the upstream: the link is its pending
-    /// branch at every instant, and it will re-compile differently later.
+    /// The snapshot holds no binding of the upstream, so the link reads its
+    /// pending branch at every instant. A later snapshot can compile the link
+    /// differently.
     Pending { event: String },
-    /// The upstream completed at `at`, `slip` behind the `anchor` the link was
-    /// authored against, so the body slides by that much from `at` on.
-    /// `ready` is `at + needs` where the link declared a lead time (§7.1:
-    /// `needs` is the COMPILER's field — the evaluator has never read it).
+    /// The upstream completed at `at`, `slip` after the link's `anchor`, so
+    /// the body slides by `slip` from `at` on.
+    ///
+    /// `ready` is `at + needs` where the link declares a lead time. Only the
+    /// compiler reads `needs`, never the evaluator (SPEC §7.1, "`needs` is the
+    /// COMPILER's field, not the evaluator's").
     Completed {
         event: String,
         at: Instant,
@@ -65,10 +52,11 @@ pub enum Link {
         needs: Option<Delta>,
         ready: Option<Instant>,
     },
-    /// The upstream was CANCELLED at `at`: from there the link prices as moot.
-    /// Surfacing this is a requirement and not a courtesy (§7) — a 1.0 from a
-    /// cancellation is indistinguishable from a 1.0 from a demand met, and
-    /// this note is the only thing that tells them apart.
+    /// The upstream was cancelled at `at`, and from `at` the link reads 1.0.
+    ///
+    /// A reader must report this link, because a 1.0 from a cancellation looks
+    /// the same as a 1.0 from a demand met (SPEC §7.1, "Cancellation is
+    /// reported, never silent").
     Moot { event: String, at: Instant },
 }
 
@@ -82,10 +70,8 @@ impl Link {
         }
     }
 
-    /// The link's GRADED OFFSET δ ∈ [0, 1], applied with §7's corrected form:
-    /// 1 where the upstream was cancelled — `x·(1 − |1|) + max(0, 1) = 1` for
-    /// every `x`, which is the moot constant written as an offset — and 0
-    /// everywhere else, where `offset(x, 0) = x` and the compiler elides it.
+    /// The link's graded offset δ ∈ [0, 1]: 1 where the upstream was
+    /// cancelled, and 0 elsewhere (SPEC §7.1, "Per link.").
     pub fn grade(&self) -> f64 {
         match self {
             Link::Moot { .. } => 1.0,
@@ -93,7 +79,8 @@ impl Link {
         }
     }
 
-    /// The instant the link binds, where the snapshot binds it at all.
+    /// The instant at which the link binds, or `None` where the snapshot does
+    /// not bind it.
     pub fn at(&self) -> Option<Instant> {
         match self {
             Link::Pending { .. } => None,
@@ -137,16 +124,13 @@ impl Link {
     }
 }
 
-/// A term with every `After` and `Recur` resolved, beside the [`Link`]s the
-/// `After`s were resolved from.
+/// A term with every `After` and `Recur` resolved, and the [`Link`]s that the
+/// compiler resolved the `After` nodes from.
 ///
-/// A NEWTYPE and not a bare `Term`, for one reason that is worth the type: its
-/// readers take NO ENVIRONMENT. That is the claim being made — a compiled term
-/// cannot consult one, because the constructors that would are gone — and a
-/// bare `Term` would let a caller pass an environment that silently did
-/// nothing, which is exactly the confusion this is meant to end. The links
-/// ride along because a cancellation compiles to a value no reader could
-/// otherwise recognise (§7).
+/// Its readers take no environment, because the compiled term holds no
+/// constructor that reads one. A bare `Term` would let a caller pass an
+/// environment that the term ignores. The links are kept because a reader
+/// cannot otherwise tell a cancellation from a demand met.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Compiled {
     term: Closed,
@@ -154,8 +138,8 @@ pub struct Compiled {
 }
 
 impl Compiled {
-    /// The compiled term. Storable and printable like any other (§7): it is
-    /// one expression of §2's grammar, and it holds no `After`.
+    /// The compiled term, which holds no `After` or `Recur` and prints like
+    /// any other term.
     pub fn term(&self) -> &Closed {
         &self.term
     }
@@ -165,41 +149,39 @@ impl Compiled {
         self.term
     }
 
-    /// Every link the compiler resolved, in the order it met them (pre-order
-    /// over the term).
+    /// Every link that the compiler resolved, in pre-order over the term.
     pub fn links(&self) -> &[Link] {
         &self.links
     }
 
-    /// The links that priced as MOOT — the cancellations §7 says must be
-    /// surfaced by reporting and never silently.
+    /// The links that read as moot, which a reader must report.
     pub fn moot(&self) -> impl Iterator<Item = &Link> {
         self.links
             .iter()
             .filter(|link| matches!(link, Link::Moot { .. }))
     }
 
-    /// What the compiled term is worth at an instant. §7's ONE evaluator,
-    /// against the empty environment — the argument is absent because there is
-    /// nothing left in the term that could read it.
+    /// The fulfillment of the compiled term at `now`, from the one evaluator
+    /// of SPEC §7, against the empty environment.
     pub fn fulfillment(&self, now: Instant) -> Option<f64> {
         fpl::fulfillment(&self.term, now, &Env::new())
     }
 
-    /// §7's explanation of the compiled term: the same decoration, over the
-    /// shape the compiler produced, so the reader still sees a tree. The chain
-    /// notes are merged into the ROOT — a `Piecewise` whose piece reads 1.0
-    /// because an upstream was cancelled looks exactly like one that reads 1.0
-    /// because its demand was met, and `moot` is what distinguishes them.
+    /// The explanation of the compiled term (SPEC §7, "Explain"), with the
+    /// chain notes of `notes` merged into the root.
+    ///
+    /// Only the `moot` note tells a piece that reads 1.0 because an upstream
+    /// was cancelled from a piece that reads 1.0 because its demand was met.
     pub fn explain(&self, now: Instant) -> Explanation {
         let mut explanation = fpl::explained(&self.term, now, &Env::new());
         explanation.notes.extend(self.notes());
         explanation
     }
 
-    /// The chain as notes, in §7's own `Note` vocabulary: `links`, one map per
-    /// link, and `moot`, the cancelled upstreams by name, present only when
-    /// there are some. Empty for a term that held no `After` at all.
+    /// The chain as notes: `links`, with one map for each link, and `moot`,
+    /// with the names of the cancelled upstreams if there are any.
+    ///
+    /// The map is empty for a term that held no `After`.
     pub fn notes(&self) -> BTreeMap<String, Note> {
         let mut notes = BTreeMap::new();
         if self.links.is_empty() {
@@ -225,8 +207,8 @@ impl Compiled {
     }
 }
 
-/// §7.1: `term` against the environment as of one instant, normalized so a
-/// chain of links is one schedule at the root.
+/// The term compiled against the environment as of one instant (SPEC §7.1),
+/// and normalized, so that a chain of links is one schedule at the root.
 pub fn compile(term: &Closed, env: &Env) -> Compiled {
     let mut links = Vec::new();
     let resolved = resolve(term.term(), env, &mut links);
@@ -360,13 +342,12 @@ fn mk_moot(term: Term) -> Term {
     }
 }
 
-/// §7.1 — compile a whole chain: one [`Compiled`] per todo, or the cycle.
+/// One [`Compiled`] for each todo of the chain, or the cycle (SPEC §7.1).
 ///
-/// The map is todo to function — [`crate::fold::flatten`]'s answer, each
-/// [`fpl::link`]ed, keyed by the names the links use — and the links draw a
-/// graph over its keys. That
-/// graph is checked FIRST, whole, because the compiler is the first reader
-/// that holds it: a link is local, a loop is not.
+/// `functions` maps each todo, by the name that the links use, to its
+/// function from [`crate::fold::flatten`], linked by [`fpl::link`]. The
+/// function checks the whole graph of the links first, because one link alone
+/// cannot show a loop.
 pub fn compile_chain(
     functions: &BTreeMap<String, Closed>,
     env: &Env,
@@ -381,7 +362,8 @@ pub fn compile_chain(
         .collect())
 }
 
-/// The chain in dependency order, ties broken by name, or the cycle.
+/// The todos of the chain in dependency order, with ties broken by name, or
+/// the cycle.
 pub fn chain_order(functions: &BTreeMap<String, Closed>) -> Result<Vec<String>, ChainError> {
     let edges = upstreams(functions);
     let mut topo = Topo::default();

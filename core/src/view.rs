@@ -1,21 +1,9 @@
-//! §6.7 — the entry: one entity as the folds see it at a moment, under a
+//! The entry (SPEC §6.7): one entity as the folds see it at a moment, under a
 //! schema with a [`Row`], a [`History`] and a [`Bind`].
 //!
-//! See ../../SPEC.md §6.7. Not a fifth fold: every field is a
-//! projection of the entity's registers or §7's evaluator over them, composed
-//! once here so every consumer performs it once.
-//!
-//! TWO READINGS. The CONFIRMED one, under the host's [`Policy`], prices and is
-//! what a reader is told; the CLAIMED one, under [`Everything`], exists only to
-//! name what a writer claimed and the policy did not bind ([`Entry::claim`]).
-//!
-//! A CONFLICT IS ITS CANDIDATES. Nothing picks a winner: the reading holds
-//! candidate sets, and the function is `Least` over the worlds, so a conflict
-//! prices as its most urgent candidate.
-//!
-//! EVERY ENTITY EVER MENTIONED. A row per entity any node names, whatever `t`
-//! is: `t` asks what is believed. [`Entry::exists_at`] answers whether the
-//! entity exists at `t`, and a list of what exists keeps exactly those rows.
+//! The confirmed reading, under the host's [`Policy`], gives the price and the
+//! answer. The claimed reading, under [`Everything`], only shows what a writer
+//! claimed and the policy did not bind ([`Entry::claim`]).
 
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
@@ -30,54 +18,46 @@ use crate::registers::{self, Genesis, Node};
 use crate::schema::{Bind, History, Row};
 use crate::term::Term;
 
-/// An entity's price at a moment: §6.4's function and that function's value
-/// there. Every row has one: an entity with no function is priced by `Absent`
-/// (§7), which reads `∅`. Only a schema with a [`Row`] has rows.
+/// An entity's fulfillment function (SPEC §6.4) and its value at a moment.
+///
+/// An entity with no function has the price `Absent` (SPEC §7), which reads
+/// `∅`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Price {
-    /// The todo's fulfillment FUNCTION over all of time — its revisions and
-    /// its lifecycle as pieces of one term. Not the authored spec of the
-    /// moment; `fold::specs` is that. Open: its `Ref`s are other todos'. `Absent`
-    /// where the todo has no spec and no checklist.
+    /// The todo's fulfillment function over all of time, which is not the
+    /// authored spec of the moment ([`fold::specs`]).
+    ///
+    /// The term is open: its `Ref`s name other todos. It is `Absent` where
+    /// the todo has no spec and no checklist.
     pub spec: Term,
-    /// `spec`, linked against every todo's function, at the moment the entry
-    /// was taken: a number in [0, 1], `∅` (`None`) where it has none, or why
-    /// it does not link. A function whose reference is unknown or loops has
-    /// no value, and says so.
+    /// The value of `spec`, linked against every todo's function, at the
+    /// moment of the entry: a number in [0, 1], `None` for `∅`, or the reason
+    /// that `spec` does not link.
     pub value: Result<Option<f64>, LinkError>,
-    /// `spec`, linked: what a consumer explains, samples or compiles, so no
-    /// reader links a second time with a different set of specs.
+    /// `spec`, linked. A consumer explains, samples or compiles this term, so
+    /// that no reader links a second time with a different set of specs.
     pub linked: Result<fpl::Closed, LinkError>,
 }
 
-/// WHY a reader is being shown something the confirmed reading did not have.
+/// The reason that a reader sees something that the confirmed reading does
+/// not have.
 ///
-/// Never "no reason": [`Confidence::Confirmed`] is that case, so a `Provisional`
-/// that means nothing is not a value that exists. The two reasons are
-/// independent — a claimed state and a content record the policy does not
-/// confirm are different asymmetries with different remedies — so the sum
-/// names all three
-/// inhabitants rather than carrying two booleans that can both be false.
+/// The case with no reason is [`Confidence::Confirmed`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provisional {
-    /// A CLAIMING event names a reading the confirmed one refuses
-    /// ([`Row::disputes`]). [`Entry::claim`] is that reading.
+    /// An event that claims gives a reading that the confirmed one refuses
+    /// ([`Row::disputes`]). [`Entry::claim`] holds that reading.
     Claimed,
-    /// A winning write is one the policy does not [`Policy::confirms`]
-    /// ([`Row::unconfirmed`]) — it BINDS, and it is still its
-    /// writer's. Under the todo schema, a content record, shown as source and
-    /// never rendered ("rendered means confirmed").
+    /// The policy binds a winning write but does not confirm it
+    /// ([`Policy::confirms`], [`Row::unconfirmed`]). Under the todo schema,
+    /// the write is a content record, which a reader shows as source and
+    /// never renders.
     Content,
     /// Both at once.
     ClaimedAndContent,
 }
 
-/// Whether the chain's answer for this todo is the confirmed reading, whole.
-///
-/// A SUM and not a bool beside a string: a consumer that
-/// wants one flag asks [`Confidence::is_provisional`], and a consumer that wants
-/// to say WHICH asymmetry it is looking at can, without a second field to keep
-/// in step.
+/// Whether the answer for this entity is the whole confirmed reading.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Confidence {
     /// The two readings agree and the policy confirms the winning content
@@ -87,8 +67,8 @@ pub enum Confidence {
 }
 
 impl Confidence {
-    /// The confidence implied by the two asymmetries. Total: neither of them is
-    /// [`Confidence::Confirmed`], which is why `Provisional` has no fourth arm.
+    /// The confidence for a refused claim (`claimed`) and an unconfirmed
+    /// content record (`content`).
     pub fn of(claimed: bool, content: bool) -> Confidence {
         match (claimed, content) {
             (false, false) => Confidence::Confirmed,
@@ -98,7 +78,7 @@ impl Confidence {
         }
     }
 
-    /// The one flag a wire carries — `view.Entry.unconfirmed`.
+    /// The flag that the wire carries as `view.Entry.unconfirmed`.
     pub fn is_provisional(self) -> bool {
         matches!(self, Confidence::Provisional(_))
     }
@@ -109,17 +89,17 @@ impl Confidence {
 pub struct Entry<E: Row> {
     pub genesis: Genesis,
     pub key: E::Key,
-    /// The CONFIRMED reading: for a todo, its candidate bindings, `None` for
-    /// open, one member unless the state is in conflict.
+    /// The confirmed reading. For a todo, it is the candidate bindings, with
+    /// `None` for open.
     pub reading: E::Reading,
-    /// The CLAIMED reading, where it disputes the confirmed one. DISPLAYED,
-    /// never applied.
+    /// The claimed reading, where it disputes the confirmed one. A reader
+    /// shows it and never applies it.
     pub claim: Option<E::Reading>,
     pub confidence: Confidence,
-    /// §6.4's function and its value here (see [`Price`]).
+    /// The entity's function and its value at the moment of the entry.
     pub price: Price,
-    /// The registers of this entity with more than one live write, each named
-    /// by the writes a human settles with the next one.
+    /// The registers of this entity with more than one write in the frontier,
+    /// with the names of those writes.
     pub conflicts: BTreeMap<E::Register, Vec<Hash>>,
     /// Every object whose event names this entity, in causal order.
     pub stream: Vec<Hash>,
@@ -165,7 +145,10 @@ impl<P: Payload> Entry<TodoEvent<P>> {
         &self.reading.outcome
     }
 
-    /// The NAMES of the candidate content records, sorted.
+    /// The names of the candidate content records, sorted.
+    ///
+    /// The entry holds names and not records, because the host decides what a
+    /// record means.
     #[must_use]
     pub fn content(&self) -> &[Hash] {
         &self.reading.content
@@ -175,15 +158,15 @@ impl<P: Payload> Entry<TodoEvent<P>> {
         self.reading.outcome == Candidates::from([None])
     }
 
-    /// The lifecycle as the WIRE spells it: each candidate's constructor name
-    /// lowercased, `"open"` for none, joined by `|` under a conflict. A
-    /// rendering; [`Entry::outcome`] is the value.
+    /// The lifecycle in the wire format: each candidate's constructor name in
+    /// lower case, `"open"` for none, joined by `|` under a conflict. The
+    /// string is a rendering, and [`Entry::outcome`] is the value.
     pub fn state(&self) -> String {
         lowered(&self.reading.outcome)
     }
 
-    /// The bound candidates' instants as CPython's `isoformat(" ")`, `""` for
-    /// an open todo.
+    /// The instants of the bound candidates in the format of CPython's
+    /// `isoformat(" ")`, joined by `|`, or `""` for an open todo.
     pub fn at(&self) -> String {
         let instants: Vec<String> = self
             .reading
@@ -195,8 +178,9 @@ impl<P: Payload> Entry<TodoEvent<P>> {
         instants.join("|")
     }
 
-    /// The CLAIMED state, `""` where the two readings agree and, as the wire
-    /// always spelt it, where the claim is only that the todo is open.
+    /// The claimed state in the format of [`Entry::state`]. It is `""` where
+    /// the two readings agree, and also where the claim is only that the todo
+    /// is open, because the wire format requires it.
     pub fn claimed(&self) -> String {
         match &self.claim {
             Some(claim) if claim.outcome != Candidates::from([None]) => lowered(&claim.outcome),
@@ -205,9 +189,8 @@ impl<P: Payload> Entry<TodoEvent<P>> {
     }
 }
 
-/// §6.7's LIST ORDER, stated once so no host decides it: most urgent first —
-/// ascending in value, ties by (genesis, id) — then every row with no number,
-/// `absent` or not linking, by (genesis, id).
+/// The list order of SPEC §6.7: ascending in value, ties by (genesis, id),
+/// then every row with no number, by (genesis, id).
 pub fn list_order<E: Row>(a: &Entry<E>, b: &Entry<E>) -> Ordering {
     let number = |entry: &Entry<E>| entry.value().ok().flatten();
     match (number(a), number(b)) {
@@ -232,22 +215,17 @@ fn lowered(candidates: &Candidates) -> String {
     names.join("|")
 }
 
-/// §6.7 — every entity the DAG has ever mentioned, as the folds see it at
-/// `t`, per genesis and by key.
+/// Every entity that the DAG mentions, as the folds see it at `t`, per
+/// genesis and by key (SPEC §6.7).
 ///
-/// Per entity: `reading` is the confirmed one; `claim` the claimed one where
-/// it disputes it; `spec` is `flatten`'s function, `Absent` where none, and
-/// `value` its fulfillment at `t`, linked against its prodrome's functions
-/// under the CONFIRMED environment, and a qualified reference through the
-/// set of the DAG's prodromes a `Genesis` begins (design §6.3.1), each read
-/// as `spec` is;
-/// `conflicts` every register with two
-/// writes; and `confidence` whether a claim was refused or a winning write is
-/// one the policy does not confirm.
+/// An entity whose events are all dated after `t` is still a row. The value
+/// links against the functions of the entity's prodrome under the confirmed
+/// environment. A qualified reference links through the set of the DAG's
+/// prodromes that a `Genesis` begins (design §6.3.1).
 ///
 /// # Errors
 ///
-/// A function [`fold::flatten`] cannot build.
+/// Returns an error where [`fold::flatten`] cannot build a function.
 pub fn entries<E: Row + History + Bind>(
     nodes: &[Node<E>],
     t: Datetime,

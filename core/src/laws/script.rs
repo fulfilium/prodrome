@@ -1,14 +1,10 @@
-//! Law 68, the script law: three replicas driven through a random script of
-//! steps, with every invariant checked after every step.
+//! Law 68: three replicas driven through a random script of steps, with
+//! every invariant checked after every step.
 //!
-//! A law of one statement draws its inputs and checks one equation. Bugs
-//! that need several features in sequence (a partial sync, then a
-//! revocation, then a read through a cache) are out of its reach. A script
-//! reaches them: each of three actors (`ada`, `ben` and `cai`) holds a
-//! replica of its own, and a [`Script`] is a list of [`Step`]s, each one an
-//! append, a partial or whole sync, a refused receipt, a revocation of a
-//! key, a read, a recorded reading, a snapshot, a forget or a flush. After
-//! every step, [`run`] checks:
+//! A script finds bugs that need several features in sequence (for example
+//! a partial sync, then a revocation, then a read through a cache), which a
+//! law of one equation cannot reach. Each of three actors (`ada`, `ben` and
+//! `cai`) holds a replica of its own. After every step, [`run`] checks:
 //!
 //! - each replica's kept fold is the fold of what it holds, and its tips
 //!   and heads are its history's;
@@ -28,15 +24,10 @@
 //!   nothing, that a refused receipt takes nothing, and that a sync of all
 //!   leaves every replica holding the same objects.
 //!
-//! The machine is generic over a schema. An application runs it over its
-//! own schema with [`a_script`] and a strategy of the writes each actor
-//! makes; `docs/script-law.md` shows how. [`run_with`] reads the claimed
-//! reading under the host's own policy, and calls a host's check after every
-//! step with each actor's replica, so a host checks its own invariants on
-//! the same scripts. [`long_run`] runs many scripts and answers the rate. A failure names the law, the step
-//! and what differs, and proptest shrinks the script to a short one, which
-//! [`Script`]'s `Debug` prints one step on a line with each event in its
-//! canonical print.
+//! An application runs the machine over its own schema with [`a_script`]
+//! and a strategy of the writes of each actor; `docs/script-law.md` shows
+//! how. A failure names the law, the step and what differs, and proptest
+//! shrinks the script to a short one.
 
 mod kept;
 mod keys;
@@ -60,8 +51,9 @@ use crate::schema::Schema;
 use crate::store::Held;
 use machine::{Conduct, Machine};
 
-/// A script: the kind of each actor's replica, by [`Who::index`], and the
-/// steps.
+/// The kind of each actor's replica, by [`Who::index`], and the steps.
+/// Its `Debug` output prints one step on a line, with each event in its
+/// canonical print.
 #[derive(Clone, PartialEq)]
 pub struct Script<E> {
     pub kinds: [Kind; 3],
@@ -101,17 +93,15 @@ impl<E: Schema> fmt::Debug for Script<E> {
     }
 }
 
-/// What a script that kept every invariant did: its steps, and the objects
-/// its replicas held together at the end.
+/// The count of steps of a script that kept every invariant, and the count
+/// of objects that its replicas held together at the end.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Ran {
     pub steps: usize,
     pub objects: usize,
 }
 
-/// Run `script` over replicas opened at the schema `vocabulary`, and check
-/// every invariant after every step: [`run_with`] under the policy where
-/// everything binds, with no check of the host's.
+/// [`run_with`] under [`Everything`], with no check of the host.
 ///
 /// # Errors
 ///
@@ -121,11 +111,13 @@ pub fn run<E: Schema>(vocabulary: &E::Vocabulary, script: &Script<E>) -> Result<
     run_with(vocabulary, script, &Everything, |_, _| Ok(()))
 }
 
-/// Run `script` over replicas opened at the schema `vocabulary`, with the
-/// claimed reading under `policy`, and check every invariant after every
-/// step. After the machine's own checks, before the first step and after
-/// each step, `host` is called with each actor and what the actor's replica
-/// holds, read-only; its refusal stops the script as a broken law does.
+/// Runs `script` over replicas opened at `vocabulary`, with the claimed
+/// reading under `policy`, and checks every invariant after every step.
+///
+/// Before the first step and after each step, after the checks of the
+/// machine, `run_with` calls `host` with each actor and the contents of its
+/// replica, read-only. A refusal by `host` stops the script as a broken law
+/// does.
 ///
 /// # Errors
 ///
@@ -162,8 +154,8 @@ where
     })
 }
 
-/// How fast a long run went: the scripts and the steps it ran, and the
-/// seconds it took.
+/// The counts of scripts and steps of a long run, and its duration in
+/// seconds.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rate {
     pub scripts: usize,
@@ -201,9 +193,9 @@ impl fmt::Display for Rate {
     }
 }
 
-/// Run every script that `scripts` draws under `config`, each by `run` (for
-/// example [`run`], or [`run_with`] with a host's policy and check), and
-/// answer the rate. Proptest shrinks a script that fails.
+/// Runs every script that `scripts` draws under `config` with `run` (for
+/// example [`run`], or [`run_with`] with the policy and check of a host),
+/// and returns the rate.
 ///
 /// # Errors
 ///

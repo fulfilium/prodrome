@@ -1,22 +1,12 @@
-//! THE REFERENCE PAYLOAD — the record shape `conformance/*.py` was taken
-//! with, and an example of [`crate::payload::Payload`] written out in full.
+//! The reference payload: the record shape that `conformance/*.py` was
+//! taken with, and a full example of a [`crate::payload::Payload`].
 //!
-//! `Authored(todo, at, actor, kind, created, body, spec, rationale, category,
-//! waiting_on, detail, source, subtodos, notes, note)`: one deployment's
-//! decorations of a fulfillment curve — a todo's text in two rendering
-//! languages, the message it came from, a checklist, comment runs — frozen here
-//! because the vectors' bytes are frozen. Every `Authored(...)` print in
-//! `conformance/*.py` parses and prints back byte for byte under this
-//! payload; that is the whole of what this module is for.
-//!
-//! IT IS NOT THE FORMAT. A host defines its own [`Payload`] and gets its own
-//! record kind; nothing in `event`, `store`, `fold`, `registers`, `view` or
-//! `breaks` knows a field named here. Behind the default `reference` feature so
-//! a host that wants none of it can turn it off.
-//!
-//! `MarkupSource` and `StringSource` are opaque text in this host's two
-//! rendering languages; the database stores and prints them and never
-//! interprets them.
+//! Its record kind is `Authored(todo, at, actor, kind, created, body, spec,
+//! rationale, category, waiting_on, detail, source, subtodos, notes, note)`.
+//! Every `Authored(...)` print in `conformance/*.py` parses and prints back
+//! byte for byte under this payload, so its fields never change. No other
+//! module of the core reads a field of this payload. The default feature
+//! `reference` enables the module.
 
 use crate::event::{mk_record, newtype_str, Name, TodoEvent};
 use crate::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
@@ -25,16 +15,17 @@ use crate::payload::Payload;
 use crate::term::Term;
 
 newtype_str! {
-    /// Typst MARKUP source — the inside of a `[..]` block. A different type
-    /// from [`StringSource`] because `]` is structure in one and `"` in the
-    /// other, so a value of one language in a field of the other is a bug the
-    /// reparse would catch late.
+    /// Typst markup source: the inside of a `[..]` block. The core stores and
+    /// prints it, and never interprets it. It is a different type from
+    /// [`StringSource`], because `]` is structure in markup and `"` is
+    /// structure in a string.
     #[derive(Default, Literal)]
     MarkupSource
 }
 
 newtype_str! {
-    /// Typst STRING source — the inside of a `".."` literal.
+    /// Typst string source: the inside of a `".."` literal. The core stores
+    /// and prints it, and never interprets it.
     #[derive(Default, Literal)]
     StringSource
 }
@@ -51,9 +42,7 @@ impl StringSource {
     }
 }
 
-/// Where a [`Note`] may attach: a field of the record, or the block as a whole.
-/// A closed set, so a note about `waiting_on` cannot be read as one about
-/// `detail`.
+/// Where a [`Note`] attaches: a field of the record, or the block as a whole.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum NoteSite {
     Block,
@@ -94,7 +83,7 @@ impl NoteSite {
         }
     }
 
-    /// The parse boundary: a stored literal arrives as a bare string.
+    /// Reads a site from its word, which a stored literal holds as a string.
     ///
     /// # Errors
     ///
@@ -126,8 +115,8 @@ impl AsRef<str> for NoteSite {
 // or `None` where a call lacks it. `core/tests/all/derive.rs` pins the
 // constructors, so a rename that changes a stored name fails a test.
 
-/// The message a todo came from. `date` is a day; the three identifiers are
-/// `""` when the era that authored the todo did not record them.
+/// The message a todo came from. `date` is a day. The three identifiers are
+/// `""` where the writer of the todo did not record them.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
 pub struct Source {
     pub sender: StringSource,
@@ -158,8 +147,8 @@ pub struct SubTodo {
     pub done: bool,
 }
 
-/// THE PAYLOAD: everything this host attaches to a todo, beyond the `todo`,
-/// `at` and `actor` the core owns. Its record kind is `Authored`.
+/// The reference payload: the fields of a record beyond the core's `todo`,
+/// `at` and `actor`. Its record kind is `Authored`.
 #[derive(Debug, Clone, PartialEq, Literal)]
 #[literal(rename = "Authored", new = mk_todo)]
 pub struct Todo {
@@ -237,9 +226,9 @@ pub fn mk_subtodo(body: impl Into<String>, done: bool) -> Result<SubTodo, Prodro
     Ok(SubTodo { body, done })
 }
 
-/// Every field of this payload, in declared order. Long by construction: the
-/// shipped field set is frozen, so a builder that let one be forgotten would be
-/// a way to print a different object under the same name.
+/// Every field of this payload, in declared order. The function takes every
+/// field, because a builder that let a caller forget one would print a
+/// different object.
 ///
 /// # Errors
 ///
@@ -280,9 +269,7 @@ pub fn mk_todo(
     })
 }
 
-/// The whole record: the core's three fields and this payload's twelve — the
-/// constructor every test and every vector in this repository is written
-/// against.
+/// The whole record: the core's three fields, then this payload's twelve.
 #[allow(clippy::too_many_arguments)]
 pub fn mk_authored(
     todo: &str,

@@ -1,33 +1,4 @@
-//! §5 — STANDING: does this event bind, or does it only claim?
-//!
-//! See ../../SPEC.md. Every fold in [`crate::fold`], the register action in
-//! [`crate::registers`], the composition in [`crate::view`] and §3's `verify`
-//! ask exactly this one question about an event, and a [`Policy`] — the HOST's
-//! — is what answers it.
-//!
-//! THE DATABASE DOES NOT DECIDE WHOM TO BELIEVE. Which writers a deployment
-//! stands behind is not a fact about a DAG of events, any more than what a
-//! record MEANS is (§4, and the same move: 0.2 made the record the host's,
-//! 0.3 makes the standing the host's). The core carried one deployment's
-//! answer — a set of untrusted actor names, plus a kind-dependent rule — and
-//! that answer is now [`Untrusted`], the REFERENCE policy: still here, still
-//! what `conformance/` was taken under, and no longer something the folds
-//! know.
-//!
-//! WHAT STAYS IN THE CORE is the two-reading fold: the CONFIRMED environment
-//! and the CLAIMED one, side by side in [`crate::view::entries`]. A store that
-//! held only the filtered reading could not show a claim at all, and showing
-//! one is the whole point of storing it. [`Everything`] is the policy the
-//! claimed reading is taken under.
-//!
-//! WHO WROTE AN OBJECT IS A READING TOO. An event's `actor` is a field its
-//! writer chose; a history can prove it (§3's signatures, [`Proof`]). A
-//! policy may ask for that proof, and [`Proven`] is the one combinator that
-//! does, over any policy: an object binds under it where the history proves
-//! its actor AND the policy it wraps binds it. So standing is a function of
-//! the object and of a reading of the history it is in, and the history's
-//! only through that reading, which is a function of its object set (law
-//! 41): never of the log's order or the moment.
+//! Standing (SPEC §5): whether an event binds or only claims.
 
 use std::collections::BTreeSet;
 
@@ -36,23 +7,18 @@ use crate::event::{Actor, Hash};
 use crate::schema::Schema;
 use crate::sign::{Proof, Proved, PublicKey, Registrar};
 
-/// What a [`Policy`] says about one event: the two readings, as a sum.
-///
-/// A `bool` would have been the same two inhabitants with none of the meaning:
-/// every call site here reads "does this write" and "is this a claim" out of
-/// the same value, and the two are not negations of each other by luck.
+/// The answer of a [`Policy`] for one event.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Standing {
-    /// The folds take it: it writes its registers, and what it says is what
-    /// the store believes.
+    /// The folds apply the event to its registers.
     Binds,
-    /// The folds refuse it. It is stored and it is SHOWN — as a claim, beside
-    /// the answer that stands — and it changes no confirmed reading (§9.11).
+    /// The store keeps and shows the event as a claim, and the event changes
+    /// no confirmed reading (law 11).
     Claims,
 }
 
 impl Standing {
-    /// Both bind: the meet of two answers, `Claims` the bottom.
+    /// `Binds` only where both bind.
     #[must_use]
     pub fn and(self, other: Standing) -> Standing {
         if self.binds() && other.binds() {
@@ -73,59 +39,25 @@ impl Standing {
     }
 }
 
-/// A deployment's answer to §5, as a type.
+/// A deployment's answer to SPEC §5. A host implements it.
 ///
-/// One required method: the standing of an OBJECT, named, carrying its
-/// event, which is a function of that object and of what the policy has read
-/// of the history ([`Policy::at`]) — not of the log's order, not of the
-/// position, not of the moment. §9.12 is that fact as a law: because standing
-/// selects objects rather than positions, folding under a policy is folding
-/// the sub-log of its binding events, whatever order the log arrives in.
-///
-/// Asked of EVERY object that carries an event. The schema says which events
-/// are about standing ([`Schema::asks`]); a policy that holds writers to a
-/// roster, as [`Untrusted`] does, binds every other one whoever wrote it, and
-/// a policy that asks who wrote it, as [`Proven`] does, asks of every one.
-///
-/// NOT SEALED. A host implements this; it is the seam the decision leaves the
-/// core through. [`Untrusted`] is the reference implementation and
-/// [`Everything`] the trivial one.
-///
-/// Generic over the schema, so a host whose events say something about their
-/// own standing can read it. A policy that does not care — the two here do
-/// not — implements it for every schema in one blanket impl.
+/// The standing of an object must depend only on the object and on what the
+/// policy read of the history ([`Policy::at`]), never on the order of the log
+/// or on the time, because law 12 depends on it.
 pub trait Policy<E: Schema> {
-    /// Does the object named `object`, carrying `event`, write, or does it
-    /// only claim?
+    /// Whether the object `object`, which carries `event`, binds or claims.
     fn standing(&self, object: &Hash, event: &E) -> Standing;
 
-    /// Is this event the host's OWN word?
-    ///
-    /// Two readers ask, and neither is a fold: [`crate::view::entries`] marks
-    /// a row whose winning content record is not the host's own
-    /// ([`crate::view::Provisional::Content`]), and §3's `verify` holds such
-    /// an event's `at` to the DAG's order — a writer whose stamp the host
-    /// forces cannot legitimately be dated behind what it was written on top
-    /// of, where a human backfilling 2025 completions today legitimately can.
-    ///
-    /// THE DEFAULT IS §5 EXACTLY: a claiming event is not the host's word, a
-    /// binding one is. A policy that folds a writer's events while still
-    /// marking them as that writer's overrides it — the reference policy does,
-    /// because a content record from an untrusted actor binds (writing content
-    /// is what such a writer is for) and is still shown as its author's.
-    ///
-    /// `standing(o, e) == Claims` implies `!confirms(o, e)`; every
-    /// implementation here keeps that, and §9's laws are stated over
-    /// policies that do.
+    /// Whether the event is the host's own word (SPEC §5). A policy overrides
+    /// the default to fold a writer's events and still mark them as that
+    /// writer's. An implementation must keep `standing(o, e) == Claims`
+    /// implies `!confirms(o, e)`, because the laws of SPEC §9 assume it.
     fn confirms(&self, object: &Hash, event: &E) -> bool {
         self.standing(object, event).binds()
     }
 
-    /// This policy at the history `history`, what it reads of a history read
-    /// of this one; `None` where it reads nothing of a history and so is
-    /// itself at every one, as both policies here are. [`Proven`] reads its
-    /// [`Proof`]. A reader of a history asks the policy at that history,
-    /// and the store asks its own at every `verify`.
+    /// This policy at the history `history`. `None` means that the policy
+    /// reads nothing of a history, so it is the same at every history.
     fn at(&self, history: &Dag<E>) -> Option<Self>
     where
         Self: Sized,
@@ -135,12 +67,8 @@ pub trait Policy<E: Schema> {
     }
 }
 
-/// The policy under which every event binds.
-///
-/// §6.7's CLAIMED reading is taken under it — "what would every writer's
-/// events bind" — and §9.10 is the law that says the two readings are then the
-/// same reading. `Untrusted::none()` is equal to it and says the same thing
-/// about a deployment with an empty roster.
+/// The policy under which every event binds. The claimed reading of SPEC
+/// §6.7 uses it (law 10). `Untrusted::none()` is equal to it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Everything;
 
@@ -150,32 +78,18 @@ impl<E: Schema> Policy<E> for Everything {
     }
 }
 
-/// THE REFERENCE POLICY: a set of actor names, and the rule the conformance
-/// vectors were taken under.
+/// The reference policy (SPEC §5, "The reference policy"): a roster of actor
+/// names.
 ///
-/// Over any schema, the same rule: a named actor's events the schema
-/// [`Schema::asks`] about CLAIM, and its others bind. Under the todo schema,
-/// a named actor's LIFECYCLE, `Tended` and `SpecRevised` events CLAIM —
-/// stored, shown, never folded — because such a writer reads
-/// attacker-controlled input and an injected completion, tending or repricing
-/// is the threat the roster exists for. Its
-/// CONTENT records BIND: writing content is what the writer is for, and a fold
-/// that hid its writes would not be containment, it would be an outage that
-/// reports success. They are still not the host's own word, so
-/// [`Policy::confirms`] refuses them and the reader marks the row.
-///
-/// It lives in the core, not behind the `reference` feature that gates the
-/// reference PAYLOAD: it is a policy over any schema's events, it needs
-/// nothing from any payload, and the core's conformance suites — which read
-/// `conformance/`'s `untrusted` fields through it — would have to be
-/// feature-gated with it for no gain. The `reference` feature answers "which
-/// record shape"; this answers "whose word", and one store can want the second
-/// without the first.
+/// A named actor reads input that an attacker can control, so the policy
+/// does not let an injected completion, tending or repricing bind. The policy
+/// is not behind the `reference` feature, because it needs no payload and the
+/// conformance suites read the vectors' `untrusted` fields through it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Untrusted(BTreeSet<Actor>);
 
 impl Untrusted {
-    /// A deployment that stands behind every writer, said out loud.
+    /// The empty roster, under which every event binds.
     pub fn none() -> Untrusted {
         Untrusted(BTreeSet::new())
     }
@@ -184,8 +98,7 @@ impl Untrusted {
         Untrusted(actors.into_iter().collect())
     }
 
-    /// The roster. A reader that wants to SHOW the policy asks; nothing in the
-    /// core reads an actor name to decide anything.
+    /// The roster, for a reader that shows the policy.
     pub fn actors(&self) -> &BTreeSet<Actor> {
         &self.0
     }
@@ -208,21 +121,13 @@ impl<E: Schema> Policy<E> for Untrusted {
     }
 }
 
-/// THE POLICY THAT REQUIRES SIGNATURES, over any policy `P`: an object by
-/// actor A binds only where a signature by a key registered to A proves it
-/// (SPEC §5's proof), and then as `P` says. A key counts where one of the
-/// ROOT keys signed its `KeyAdded`, and a revocation where a root signed its
-/// `KeyRevoked`; the roots are the host's, as `P` is.
+/// The policy that requires signatures (SPEC §5, "The policy that requires
+/// signatures"), over a policy `P`.
 ///
-/// The meet of two policies, so it composes: `Proven<Untrusted>` holds a
-/// roster's writers to the roster and every writer to its keys. An object
-/// it does not prove CLAIMS, whatever its kind, a content record included:
-/// a record whose author is unproven is not its author's word. It is still
-/// stored and shown, as every claim is, and the claimed reading folds it.
-///
-/// A POLICY AT A HISTORY: it is made at one, and read only there; a reader
-/// of another history asks it [`Policy::at`] that one, as the store's
-/// `verify` does of what it read.
+/// An object binds only where a signature by a key registered to its actor
+/// proves it, or, for a husk, the proof vouches for it, and `P` binds it. A
+/// `Proven` is made at one history; ask it [`Policy::at`] to read another
+/// history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proven<P> {
     policy: P,

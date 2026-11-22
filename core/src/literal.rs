@@ -1,19 +1,15 @@
-//! §2 — values and the literal grammar: the value model, its canonical
-//! printer, and the strict parser that is the only door into it.
+//! Values and the literal grammar (SPEC §2): the value model, the canonical
+//! printer, and the strict parser.
 //!
-//! The doctrine is the reference's `literals.py`'s, unchanged: the whitelist
-//! IS the grammar, and a parser that accepts more than the grammar is not
-//! permissive, it is incorrect. This module is deliberately IGNORANT of what
-//! the constructors MEAN — it knows names, field order and arity through a
-//! [`Vocabulary`], and hands the fields to whichever layer owns the kind
-//! (`event` for §4, `fpl` for §7). That is what lets `print ∘ parse` be the
-//! identity on a stored object without this file knowing a Term from a Note.
+//! A parser that accepts more than the grammar is incorrect. This module
+//! knows only the names, field order and arity of constructors, through a
+//! [`Vocabulary`]. It gives the fields to the layer that owns the kind
+//! (`event` for §4, `fpl` for §7).
 //!
-//! The printer reproduces CPython's `repr` for every case the store holds:
-//! floats through the shortest round-tripping digits and CPython's own
-//! fixed/scientific cutover, strings through `str.isprintable`'s Unicode
-//! categories as Unicode 16.0.0 assigns them ([`printable`]). Those two are
-//! the whole subtlety of §2; see `print_float` and `push_str_repr`.
+//! The printer reproduces CPython's `repr` for every value that a store
+//! holds. Floats ([`print_float`]) and strings ([`print_str`], with the
+//! printable set of Unicode 16.0.0 in [`printable`]) are the two difficult
+//! cases.
 
 pub mod codec;
 pub mod printable;
@@ -22,23 +18,21 @@ use std::fmt::Write as _;
 
 use thiserror::Error;
 
-/// Every refusal in the core. Nothing here panics on input (§2: parsing is
-/// fuzzed), so every boundary returns one of these.
+/// Every refusal in the core; no boundary panics on input (SPEC §2).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProdromeError {
-    /// The literal grammar refused the text — Python's `parse_literal`
-    /// `ValueError`, whose message the store's `verify` quotes verbatim.
+    /// The literal grammar refused the text, as the `ValueError` of Python's
+    /// `parse_literal` does. The store's `verify` quotes the message verbatim.
     #[error("parse_literal: {0}")]
     Parse(String),
-    /// A smart constructor refused its parameters (§1: invariants live here,
-    /// never at a use site).
+    /// A smart constructor refused its parameters.
     #[error("{0}")]
     Invalid(String),
-    /// The object store refused (§3): a missing parent, a cycle, bytes that do
-    /// not hash to their name.
+    /// The object store refused (SPEC §3), for example for bytes that do not
+    /// hash to their name.
     #[error("{0}")]
     Store(String),
-    /// Filesystem trouble under a store root.
+    /// An input or output failed under a store root.
     #[error("{path}: {message}")]
     Io { path: String, message: String },
 }
@@ -52,9 +46,8 @@ impl ProdromeError {
         ProdromeError::Invalid(message.into())
     }
 
-    /// The same refusal, of the same kind, with its message led by
-    /// `context`: `Review.lines: a review covers at least one line`. A read
-    /// of a field names the field so ([`codec::Literal::from_field`]).
+    /// The same refusal, of the same kind, with `context` and `: ` before its
+    /// message, as in `Review.lines: a review covers at least one line`.
     #[must_use]
     pub fn within(self, context: &dyn std::fmt::Display) -> Self {
         match self {
@@ -79,10 +72,10 @@ impl ProdromeError {
     }
 }
 
-/// An integer of the grammar. Every integer the chain stores fits an `i64`,
-/// but one conformance vector is `12345678901234567890` and the print must be
-/// the identity on it, so the value is held as its own canonical decimal
-/// digits: sign plus a nonempty digit string with no leading zero.
+/// An integer of the grammar, held as a sign and a nonempty decimal digit
+/// string with no leading zero. The digits are unbounded because one
+/// conformance vector holds `12345678901234567890`, and the print must be the
+/// identity on it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Int {
     negative: bool,
@@ -90,7 +83,8 @@ pub struct Int {
 }
 
 impl Int {
-    /// The canonical integer named by `digits` (ASCII decimal, nonempty).
+    /// The canonical integer of `digits`, which must be nonempty ASCII decimal
+    /// digits.
     pub fn new(negative: bool, digits: &str) -> Result<Int, ProdromeError> {
         if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
             return Err(ProdromeError::parse(format!(
@@ -112,10 +106,7 @@ impl Int {
         }
     }
 
-    /// The value as an `i64`, or `None` when it does not fit one. Callers that
-    /// need a number (a datetime field, a timedelta component) ask for this and
-    /// refuse `None`; the printer never does, which is why the big vector
-    /// round-trips.
+    /// The value, or `None` where it does not fit an `i64`.
     pub fn as_i64(&self) -> Option<i64> {
         let magnitude: i128 = self.digits.parse().ok()?;
         let signed = if self.negative { -magnitude } else { magnitude };
@@ -131,8 +122,7 @@ impl Int {
     }
 }
 
-/// A float that is storable: finite, so the printer is total (§2: `inf`/`nan`
-/// are NOT storable, and a value that exists is valid).
+/// A finite float. `inf` and `nan` are not storable (SPEC §2).
 #[derive(Debug, Clone, Copy)]
 pub struct Finite(f64);
 
@@ -163,8 +153,8 @@ impl PartialEq for Finite {
 
 impl Eq for Finite {}
 
-/// A naive local datetime (§2: naive local time only — there is no tz field to
-/// set, which is how "tz-aware is not storable" stops being a runtime check).
+/// A naive local datetime (SPEC §2). The type has no time zone field, so a
+/// value with a time zone cannot be stored.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Datetime {
     year: i32,
@@ -191,8 +181,8 @@ fn days_in_month(year: i32, month: u32) -> u32 {
 }
 
 impl Datetime {
-    /// CPython's `datetime` bounds, checked once here so that every later
-    /// reader (ordering, `isoformat`) is total.
+    /// Refuses a value outside the bounds of CPython's `datetime`, so that
+    /// ordering and `isoformat` are total.
     pub fn new(
         year: i32,
         month: u32,
@@ -272,7 +262,7 @@ impl Datetime {
     }
 
     /// CPython's `datetime.isoformat()`: seconds always, microseconds only when
-    /// nonzero. `verify`'s dating finding quotes this, so it is exact.
+    /// nonzero. The dating finding of `verify` quotes this text.
     pub fn isoformat(self) -> String {
         let head = format!(
             "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
@@ -287,9 +277,9 @@ impl Datetime {
 }
 
 /// A duration, normalised as CPython normalises one: `0 <= seconds < 86400`,
-/// `0 <= microseconds < 1000000`, and the sign carried entirely by `days`.
-/// Normalising in the constructor is what makes `timedelta(hours=3)` and
-/// `timedelta(seconds=10800)` the same value with one print.
+/// `0 <= microseconds < 1000000`, and `days` carries the sign. The
+/// normalisation gives `timedelta(hours=3)` and `timedelta(seconds=10800)` one
+/// value and one print.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timedelta {
     days: i64,
@@ -308,7 +298,7 @@ impl Timedelta {
         microseconds: 0,
     };
 
-    /// From the components CPython's constructor takes, in its own order.
+    /// Takes the components of CPython's `timedelta` constructor, in its order.
     pub fn new(
         days: i64,
         seconds: i64,
@@ -360,10 +350,9 @@ impl Timedelta {
     }
 }
 
-/// A constructor call: a name from the vocabulary and its fields in DECLARED
-/// order, always keyword form. The parser resolves positional arguments into
-/// this shape through the [`Vocabulary`], so a printed call is canonical
-/// whatever the text said.
+/// A constructor call: a name and its fields in declared order, in keyword
+/// form. The parser binds positional arguments through the [`Vocabulary`], so
+/// the print of a call is canonical whatever the text was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {
     pub name: String,
@@ -378,8 +367,7 @@ impl Call {
         }
     }
 
-    /// The field named `name`, or `None`. The event layer's `from_value` reads
-    /// its record through this and applies its own defaults for what is absent.
+    /// The field named `name`, or `None`.
     pub fn field(&self, name: &str) -> Option<&Value> {
         self.fields
             .iter()
@@ -388,7 +376,7 @@ impl Call {
     }
 }
 
-/// One expression of the grammar (§2).
+/// One expression of the grammar (SPEC §2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Value {
     None,
@@ -447,41 +435,32 @@ impl Value {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signature<'a> {
     /// The declared field order. Positional arguments bind to it in turn, a
-    /// keyword must name one of these, and no field may be given twice.
-    ///
-    /// BORROWED FROM THE VOCABULARY, not `'static`: a vocabulary whose field
-    /// order is not a compile-time table — SPEC §4's record kind, whose fields
-    /// are the core's three plus the host payload's — owns its own slice and
-    /// lends it. A static table lends `'static`, which coerces.
+    /// keyword must name one of these fields, and no field may be given twice.
+    /// The slice is borrowed from the vocabulary, because the field order of
+    /// the record kind (SPEC §4) is not a static table.
     Fields(&'a [&'a str]),
-    /// The same declared field order, held as owned names: a vocabulary that
-    /// arrives as data at run time (a declared schema, [`crate::declared`])
-    /// lends what it owns. A field order is a field order however it is
-    /// held, so the parse binds both by one function.
+    /// The declared field order as owned names, lent by a vocabulary that is
+    /// data at run time, such as a schema of [`crate::declared`].
     Owned(&'a [String]),
-    /// Any keyword field, no positional arguments — for reading a canonical
-    /// print back without knowing the kind. Used by conformance tests and by
-    /// tooling that inspects an object; the shipped read path never uses it,
-    /// because the closed vocabulary is the point (§2).
+    /// Any keyword field and no positional argument, to read a canonical print
+    /// without knowing the kind. The read path of a store never uses it,
+    /// because a store's vocabulary is closed (SPEC §2).
     AnyKeywords,
 }
 
-/// The closed set of constructor names a parse admits (§2: "the names admitted
-/// are the closed vocabulary of §4 and §7 plus `datetime`/`timedelta`"). The
-/// trait is how `literal` stays ignorant of what those kinds mean: `event`
-/// supplies §4's and §7's, and nothing else can widen it.
+/// The closed set of constructor names that a parse admits (SPEC §2).
+/// `event` supplies the names of §4 and §7.
 pub trait Vocabulary {
     fn signature(&self, name: &str) -> Option<Signature<'_>>;
 }
 
-/// A vocabulary over a static table — what `event` builds its own from.
+/// A vocabulary over a static table.
 #[derive(Debug, Clone, Copy)]
 pub struct Table(pub &'static [codec::Constructor]);
 
 impl Table {
-    /// The lookup, keeping the `'static` the table's own data has — so a
-    /// vocabulary composed of several tables ([`crate::event::EventVocabulary`])
-    /// is not handed a signature borrowed from a temporary.
+    /// The result is `'static`, so a vocabulary composed of several tables
+    /// ([`crate::event::EventVocabulary`]) can return it.
     pub fn find(&self, name: &str) -> Option<Signature<'static>> {
         self.0
             .iter()
@@ -496,10 +475,9 @@ impl Vocabulary for Table {
     }
 }
 
-/// Admits any constructor name in keyword form. NOT a read path: it exists so
-/// a canonical print can be round-tripped without the closed vocabulary
-/// (conformance, tooling outside this crate), and it refuses positional arguments
-/// precisely because it does not know any field order.
+/// Admits any constructor name in keyword form, and refuses positional
+/// arguments because it knows no field order. It is not a read path:
+/// conformance and outside tools use it to round-trip a canonical print.
 #[derive(Debug, Clone, Copy)]
 pub struct Open;
 
@@ -511,8 +489,8 @@ impl Vocabulary for Open {
 
 // --- printing ---------------------------------------------------------------
 
-/// The canonical print (§2). Total: every `Value` that exists is printable,
-/// because the constructors refused the ones that are not.
+/// The canonical print (SPEC §2). It is total, because the constructors
+/// refuse every value that does not print.
 pub fn print_literal(value: &Value) -> String {
     let mut out = String::new();
     push_literal(&mut out, value);
@@ -592,16 +570,16 @@ fn push_literal(out: &mut String, value: &Value) {
     }
 }
 
-/// CPython's `repr(float)`, written out rather than borrowed from `{}`.
+/// CPython's `repr(float)` of a finite `value`.
 ///
-/// Rust's `{}` and `{:e}` both give the SHORTEST round-tripping digits — the
-/// same digits CPython gets from David Gay's `dtoa` in mode 0 — but neither
-/// lays them out the way CPython does. So the digits come from `{:e}` and the
-/// layout is `format_float_short`'s: with `decpt` the position of the decimal
-/// point relative to the first significant digit, scientific form is used iff
-/// `decpt <= -4 || decpt > 16`, and a fixed form with no point gets `.0`
-/// appended (CPython's `Py_DTSF_ADD_DOT_0`). That cutover is what makes
-/// `1e+16` scientific and `1000000000000000.0` fixed.
+/// The digits come from Rust's `{:e}`, which gives the shortest round-tripping
+/// digits, the same digits that CPython gets from David Gay's `dtoa` in mode
+/// 0. Rust lays them out differently, so the layout is CPython's
+/// `format_float_short`: with `decpt` the position of the decimal point
+/// relative to the first significant digit, the form is scientific if
+/// `decpt <= -4 || decpt > 16`. A fixed form with no point gets `.0`
+/// (CPython's `Py_DTSF_ADD_DOT_0`). So `1e+16` prints in scientific form and
+/// `1000000000000000.0` in fixed form.
 pub fn print_float(value: f64) -> String {
     debug_assert!(value.is_finite(), "Finite refuses non-finite floats");
     let scientific = format!("{value:e}");
@@ -654,7 +632,7 @@ pub fn print_float(value: f64) -> String {
     out
 }
 
-/// CPython's `repr(str)`, as a string — the one string printer in the crate.
+/// CPython's `repr(str)` (SPEC §2); the one string printer in the crate.
 pub fn print_str(text: &str) -> String {
     let mut out = String::new();
     push_str_repr(&mut out, text);
@@ -708,7 +686,7 @@ fn push_str_repr(out: &mut String, text: &str) {
 /// the guarantee, not a tuning knob.
 const MAX_DEPTH: usize = 128;
 
-/// Parse exactly the grammar of §2 against `vocabulary`, and nothing else.
+/// Parses exactly the grammar of SPEC §2 against `vocabulary`.
 pub fn parse_literal(text: &str, vocabulary: &dyn Vocabulary) -> Result<Value, ProdromeError> {
     let mut parser = Parser {
         input: text,

@@ -10,7 +10,8 @@ pub struct Genesis {
 }
 
 crate::newtype_str! {
-    /// 32 lowercase hex drawn once, so two prodromes a host labels alike are two.
+    /// 32 lowercase hex digits, drawn once, so that two prodromes with the
+    /// same label have different names.
     Nonce
 }
 

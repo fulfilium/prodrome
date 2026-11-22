@@ -1,5 +1,5 @@
-//! §3 — the DAG as a value: named objects, their tips, closure, order and
-//! findings, with no files. [`crate::store`] is the files around one.
+//! The DAG as a value, with no files (SPEC §3). [`crate::store`] keeps the
+//! files around one.
 
 mod below;
 mod facts;
@@ -35,17 +35,14 @@ pub(crate) struct Prints<E> {
     pub(crate) husks: BTreeSet<Hash>,
 }
 
-/// Named prints read at the schema `E`: each an object or, `unread`, a print
-/// that is not one. The objects are `objects` and `waiting`: of a DAG made
-/// by [`Dag::interior`], or held by a store, `objects` is its history and
-/// `waiting` the objects outside it, each resting on a name no object of
-/// the history is; of any other, `waiting` is empty. So the history is
-/// `objects` once read, and what it leaves out ([`Dag::excluded`]) is still
-/// a function of every print held.
+/// A set of named prints read at the schema `E`, each an object or a print
+/// that is not one.
 ///
-/// `husks` names the objects held, in the history or waiting, whose prints
-/// are husks (SPEC §3): each reads as the object it holds, and no print
-/// under its name hashes to the name.
+/// In a DAG from [`Dag::interior`] or from a store, the objects outside the
+/// history wait, each resting on a name that no object of the history has.
+/// In any other DAG, no object waits. [`Dag::excluded`] depends on every
+/// print held, waiting or not. A husk (SPEC §3, "A husk") reads as the object
+/// that it holds, and no print under its name hashes to the name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dag<E> {
     history: History<E>,
@@ -80,10 +77,11 @@ impl<E> Extend<(Hash, Envelope<E>)> for Dag<E> {
     }
 }
 
-/// A stored print from `sender`, rehashed against its name: a print that
-/// hashes to it is the whole, parsed at the schema `schema`; any other is
-/// the husk [`Schema::husk`] reads, where `sender` is the keeper of record,
-/// or else tampered.
+/// Rehashes a stored print against its name and parses it at `schema`.
+///
+/// A print that does not hash to its name is read as a husk
+/// ([`Schema::husk`]) only when `sender` is the keeper of record; otherwise
+/// it is [`Unread::Tampered`].
 pub fn decode<E: Schema>(
     schema: &E::Vocabulary,
     name: &Hash,
@@ -177,18 +175,14 @@ impl<E> Dag<E> {
         }
     }
 
-    /// THE HISTORY THESE OBJECTS HOLD: the largest down-set among them, every
-    /// object whose ancestors are all here. Of a store closed under parents
-    /// it is the store; of one missing an object (set aside, never arrived)
-    /// it is the store without that object and everything resting on it,
-    /// which is the history a replica holding exactly those objects has. An
-    /// interior operator on sets of objects: never more than the set,
-    /// idempotent and monotone, so a function of the objects alone (law 40).
-    /// A cycle, which only a hash collision makes, is in no down-set.
+    /// The history: the largest down-set of the objects held, that is, every
+    /// object whose ancestors are all held.
     ///
-    /// NOTHING IS LOST: the objects outside it are held as waiting, and the
-    /// unread prints as unread, so the interior holds the prints this DAG
-    /// holds and [`Dag::excluded`] answers of it what it answers of this.
+    /// Law 40: the interior is never more than the set, idempotent and
+    /// monotone, so it depends on the objects alone. A cycle, which only a
+    /// hash collision makes, is in no down-set. The result keeps every print
+    /// of this DAG (the rest wait or stay unread), so [`Dag::excluded`] gives
+    /// the same answer for both.
     #[must_use]
     pub fn interior(&self) -> Dag<E>
     where
@@ -274,14 +268,14 @@ impl<E> Dag<E> {
         joins
     }
 
-    /// The DAG, where every print it holds is an object; or the refusal of
-    /// the first, by name, that is not: what a write over it refuses with.
+    /// This DAG if every print it holds is an object; a write over the DAG
+    /// refuses with the same error.
     ///
     /// # Errors
     ///
-    /// That print named: a file failing its hash by [`Unread::refusal`],
-    /// which names the `fsck` that sets it aside, and any other in
-    /// [`Dag::verify`]'s words ([`Finding::Unread`]).
+    /// The first print, by name, that is not an object. A print that fails
+    /// its hash gives [`Unread::refusal`], which names the `fsck` that sets
+    /// it aside; any other gives [`Finding::Unread`] as text.
     pub fn whole(&self) -> Result<&Dag<E>, ProdromeError> {
         match self.unread.iter().next() {
             Some((name, why @ Unread::Tampered(_))) => Err(why.refusal(name)),
@@ -296,25 +290,26 @@ impl<E> Dag<E> {
         }
     }
 
-    /// Every object no object rests on: the maximal objects of the causal
-    /// order ([`parents_of`]). Derived from the objects on the first ask
-    /// and kept until they change, so a DAG that a store of record keeps
-    /// answers it without a pass over its objects (law 59).
+    /// The objects that no object rests on ([`parents_of`]).
+    ///
+    /// The DAG derives the tips on the first call and keeps them until the
+    /// objects change, so a later call makes no pass over the objects
+    /// (law 59: a kept fact equals the fresh one).
     pub fn tips(&self) -> BTreeSet<Hash> {
         self.history.tips().clone()
     }
 
-    /// The heads of the history: its tips ([`Dag::tips`], kept once
-    /// derived) and the count of its objects. Of a DAG that a store holds,
-    /// this is what the store records and serves as its heads (SPEC law
-    /// 65), so a host that places its own files derives its record here.
+    /// The tips and the count of objects of the history.
+    ///
+    /// Law 65: for a DAG that a store holds, the store records these heads,
+    /// so a host that places its own files derives its record here.
     #[must_use]
     pub fn heads(&self) -> Heads {
         Heads::new(self.tips(), self.objects().len())
     }
 
-    /// `seeds` and everything they rest on; a name this DAG lacks is in it,
-    /// and not walked past.
+    /// `seeds` and everything they rest on. A name that this DAG lacks is in
+    /// the result, and the walk stops there.
     pub fn closure(&self, seeds: impl IntoIterator<Item = Hash>) -> BTreeSet<Hash> {
         let mut found = BTreeSet::new();
         let mut pending: Vec<Hash> = seeds.into_iter().collect();
@@ -327,9 +322,9 @@ impl<E> Dag<E> {
         found
     }
 
-    /// `seeds` and every object resting on them: [`Dag::closure`]'s dual,
-    /// an up-set of the causal order. A seed this DAG lacks is in it, and
-    /// what names it as a parent is walked from.
+    /// `seeds` and every object that rests on them, the dual of
+    /// [`Dag::closure`]. A seed that this DAG lacks is in the result, and the
+    /// walk continues from the objects that name it as a parent.
     #[must_use]
     pub fn above(&self, seeds: impl IntoIterator<Item = Hash>) -> BTreeSet<Hash> {
         up(&self.children(), seeds)
@@ -347,16 +342,15 @@ impl<E> Dag<E> {
         children
     }
 
-    /// WHAT THE HISTORY LEAVES OUT, AND WHY: every name these prints hold
-    /// or their objects rest on that is no object here, a print that is not
-    /// one ([`Unread`]) or a parent no print is, in name order, each with
-    /// the objects resting on it ([`Dag::above`]). The history,
-    /// [`Dag::interior`], is exactly the objects no `resting` names (a
-    /// cycle aside, which only a hash collision makes): this says, object
-    /// by object, why the rest are not in it. A function of the prints, as
-    /// the interior is (law 40), and so the same of a DAG and of its
-    /// interior; the one reading of "unreadable" that [`Dag::verify`]
-    /// reports and every replica's reading leaves out (laws 44 and 45).
+    /// Each name, in name order, that is held or rested on but is not an
+    /// object here, with the objects that rest on it.
+    ///
+    /// A name is either an [`Unread`] print or a parent that no print has.
+    /// Apart from a cycle, [`Dag::interior`] is exactly the objects that no
+    /// `resting` set names. The answer depends only on the prints (law 40),
+    /// so a DAG and its interior give the same answer. [`Dag::verify`]
+    /// reports these names, and every reading of a replica leaves them out
+    /// (laws 44 and 45).
     #[must_use]
     pub fn excluded(&self) -> Vec<Excluded> {
         let children = self.children();
@@ -380,11 +374,11 @@ impl<E> Dag<E> {
             .collect()
     }
 
-    /// Kahn's algorithm with a min-heap on the name: parents first, and
-    /// incomparable objects in name order. A missing parent or a cycle is a
-    /// refusal. Derived from the objects on the first ask and kept until
-    /// they change, as [`Dag::tips`] is (law 59), so every reader of the
-    /// order after the first reads the kept list.
+    /// The causal order: parents first, and incomparable objects in name
+    /// order (Kahn's algorithm with a min-heap on the name).
+    ///
+    /// The DAG derives the order on the first call and keeps it until the
+    /// objects change, as for [`Dag::tips`] (law 59).
     ///
     /// # Errors
     ///
@@ -393,14 +387,12 @@ impl<E> Dag<E> {
         self.history.order()
     }
 
-    /// The empty [`Reach`] over this DAG's linear order: a set of objects
-    /// held as positions in the order, which [`Dag::linearise`] derives,
-    /// with an index of the order that the DAG keeps beside it (SPEC law
-    /// 64).
+    /// The empty [`Reach`] over the order of [`Dag::linearise`], with an
+    /// index of the order that the DAG keeps (law 64).
     ///
     /// # Errors
     ///
-    /// [`Dag::linearise`]'s: the DAG has no linear order.
+    /// The errors of [`Dag::linearise`].
     pub fn reach(&self) -> Result<Reach<'_>, ProdromeError> {
         let (order, index) = self.history.indexed()?;
         Ok(Reach::empty(order, index))
@@ -420,8 +412,8 @@ impl<E> Dag<E> {
         )
     }
 
-    /// Every prodrome's genesis: each `Genesis`, and the least legacy root,
-    /// whose prodrome every legacy object is in (§3).
+    /// The genesis of every prodrome: each `Genesis`, and the least legacy
+    /// root, whose prodrome holds every legacy object (SPEC §3).
     pub fn geneses(&self) -> BTreeSet<Hash> {
         let genesis = self
             .objects()
@@ -436,8 +428,8 @@ impl<E> Dag<E> {
         genesis.chain(root).collect()
     }
 
-    /// The registers' key for the prodrome `genesis` starts: `None` for a
-    /// legacy root.
+    /// The registers' key for the prodrome that `genesis` starts: `None` for
+    /// a legacy root.
     pub fn key(&self, genesis: &Hash) -> Genesis {
         (!self.is_root(genesis)).then(|| genesis.clone())
     }
@@ -455,9 +447,8 @@ impl<E> Dag<E> {
         }
     }
 
-    /// The genesis of the prodrome the object `name` is in (§3): a
-    /// `Genesis`'s own name, the one a change or a snapshot names, and for
-    /// the legacy prodrome its least root. `None` where the DAG lacks it.
+    /// The genesis of the prodrome of the object `name` (SPEC §3); for the
+    /// legacy prodrome, its least root. `None` if the DAG lacks the object.
     #[must_use]
     pub fn genesis_of(&self, name: &Hash) -> Option<Hash> {
         let object = self.objects().get(name)?;
@@ -481,10 +472,9 @@ impl<E> Dag<E> {
 }
 
 impl<E: Schema> Dag<E> {
-    /// Each print from `sender` decoded under its name at the schema
-    /// `schema`, a print that is not an object kept with why. A print that
-    /// does not hash to its name is a husk only from the keeper of record
-    /// (SPEC §3).
+    /// Decodes each print with [`decode`], and keeps each print that is not
+    /// an object as [`Unread`]. A print that does not hash to its name is a
+    /// husk only from the keeper of record (SPEC §3, "A husk").
     pub fn from_prints(
         schema: &E::Vocabulary,
         prints: impl IntoIterator<Item = (Hash, Result<Vec<u8>, ProdromeError>)>,
@@ -539,9 +529,12 @@ impl<E: Schema> Dag<E> {
         dag
     }
 
-    /// The objects as the registers read them, in the linearisation's order.
-    /// A DAG missing a parent refuses: its [`Dag::interior`] is the history
-    /// it holds.
+    /// The objects as the registers read them, in the order of
+    /// [`Dag::linearise`].
+    ///
+    /// # Errors
+    ///
+    /// A DAG that lacks a parent refuses; call this on its [`Dag::interior`].
     pub fn nodes(&self) -> Result<Vec<Node<E>>, ProdromeError> {
         Ok(self
             .linearise()?
@@ -560,11 +553,13 @@ impl<E: Schema> Dag<E> {
         ))
     }
 
-    /// §3's findings: every print that is not an object, by name, then every
-    /// parent no object is, or else a cycle, or else the dating rule; then
-    /// §3's genesis, deps and snapshot rules, object by object. Of every
-    /// object held, a function of the prints as [`Dag::excluded`] is: a
-    /// DAG's interior verifies as the DAG does.
+    /// The findings of SPEC §3, "`verify`": every print that is not an
+    /// object, by name; then every parent that no object is, or
+    /// else a cycle, or else the dating rule; then the genesis, deps and
+    /// snapshot rules, object by object.
+    ///
+    /// The answer depends only on the prints, so the interior of a DAG
+    /// verifies as the DAG does.
     pub fn verify(&self, policy: &impl Policy<E>) -> Vec<Finding> {
         if !self.waiting.is_empty() {
             let mut held = self.clone();

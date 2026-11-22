@@ -1,10 +1,5 @@
-//! §7 — what a view observes of a fulfillment, and when that next changes.
-//!
-//! A view shows a value at a PRECISION (a whole percent, a pie's drawn
-//! angle), so what it draws is `view ∘ observe ∘ ⟦t⟧`, a function of the
-//! OBSERVED value. An [`Observation`] is that `observe`: a first-class value,
-//! the unit interval cut into equal steps with a stated rounding, composed
-//! with a behaviour rather than a constant inside one.
+//! The value that a view observes of a fulfillment, and when that value next
+//! changes (SPEC §7, "Next change").
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroU32;
@@ -24,8 +19,8 @@ use crate::term::{normalize, Term, TermF};
 pub enum Rounding {
     /// The step at or below: `⌊x·n⌋`.
     Down,
-    /// The nearest step, a half read upward: `⌊x·n + ½⌋`, JavaScript's
-    /// `Math.round` on `[0, n]`.
+    /// The nearest step, a half read upward: `⌊x·n + ½⌋`, which equals
+    /// JavaScript's `Math.round` on `[0, n]`.
     Nearest,
     /// The step at or above: `⌈x·n⌉`.
     Up,
@@ -34,17 +29,11 @@ pub enum Rounding {
 /// A quantisation of `[0, 1] ∪ {∅}`: `levels` equal steps, a value read as the
 /// step `rounding` takes it to, and `∅` read as itself.
 ///
-/// Laws (`tests/all/observe.rs`): `observe` is monotone on numbers, reads `0`
-/// as step 0 and `1` as step `levels`, and reads `∅`, and only `∅`, as `∅`.
-/// So the set of values one step observes is an interval, which is what lets
-/// a behaviour's observed value be a step function of time.
-///
-/// MONOTONICITY IS THE LAW [`next_change`] RESTS ON, and the only one: a
-/// monotone map of an affine stretch is monotone, so bisection finds its
-/// step, and a monotone map of an interval is one step exactly when its two
-/// ends are. Any finer or coarser cut of `[0, 1]` is the same type with a
-/// different `levels`; the observation is an argument, never a constant of
-/// the term or the view.
+/// `observe` is monotone on numbers, reads `0` as step 0 and `1` as step
+/// `levels`, and reads only `∅` as `∅` (`tests/all/observe.rs`).
+/// [`next_change`] depends on the monotonicity: bisection finds a step only
+/// because a monotone map of an interval is one step exactly when its two ends
+/// are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Observation {
     levels: NonZeroU32,
@@ -52,7 +41,7 @@ pub struct Observation {
 }
 
 impl Observation {
-    /// A whole percent, rounded to the nearest: what a list row prints.
+    /// A whole percent, rounded to the nearest, as a list row prints it.
     pub const PERCENT: Observation = Observation {
         levels: match NonZeroU32::new(100) {
             Some(levels) => levels,
@@ -61,8 +50,7 @@ impl Observation {
         rounding: Rounding::Nearest,
     };
 
-    /// `[0, 1]` cut into `levels` steps, read by `rounding`. Total: a zero
-    /// step count is not a value of the argument's type.
+    /// `[0, 1]` cut into `levels` steps, read by `rounding`.
     #[must_use]
     pub const fn new(levels: NonZeroU32, rounding: Rounding) -> Observation {
         Observation { levels, rounding }
@@ -97,8 +85,8 @@ impl Observation {
         (0.0..=levels).contains(&edge).then_some(edge / levels)
     }
 
-    /// The step `value` is observed as, `None` for `∅`. A number outside
-    /// `[0, 1]` (no term reads one) is read as the nearer end.
+    /// The step that `value` is observed as, `None` for `∅`. A number outside
+    /// `[0, 1]`, which no term reads, is read as the nearer end.
     #[must_use]
     pub fn observe(self, value: Option<f64>) -> Option<u32> {
         let scaled = value?.clamp(0.0, 1.0) * f64::from(self.levels.get());
@@ -113,15 +101,14 @@ impl Observation {
     }
 }
 
-/// When a behaviour's observed value next changes after an instant.
+/// When a behaviour's observed value next changes after an instant (law 38:
+/// a next change is never late).
 ///
-/// `at` is `None` where the observed value never changes again. `exact` says
-/// which kind of answer `at` is, a fact about the behaviour and not about how
-/// the term is written: the observed value's NEXT STEP, where it differs from
-/// the value now (or, `None`, a proof that it never does), or a CONSERVATIVE
-/// bound, never later than the next step and possibly earlier. An early
-/// answer costs a redraw that changes nothing; a late one would show a stale
-/// number, so no answer is late.
+/// `at` is `None` where the observed value never changes again. Where `exact`
+/// is `true`, `at` is the next step, or `None` as a proof that no step comes.
+/// Where `exact` is `false`, `at` is a bound that is never later than the next
+/// step and can be earlier. An early answer costs a redraw that changes
+/// nothing, and a late one would show a stale number, so no answer is late.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NextChange {
     pub at: Option<Instant>,
@@ -129,43 +116,28 @@ pub struct NextChange {
 }
 
 /// The first instant after `now` at which `observation` of `⟦term⟧(·, env)`
-/// differs from its observation at `now`: the push half of push-pull, a
-/// behaviour naming its next discontinuity so a client redraws then and not
-/// on a ticking clock. Time is microseconds, the evaluator's own grain.
+/// differs from its observation at `now` (SPEC §7, "Next change"; law 38).
+/// Time is in microseconds, the grain of the evaluator.
 ///
-/// `env` is a snapshot, read as [`crate::fpl::fulfillment`] reads it: a binding or a
-/// tending dated after `now` comes into force at its instant, so it is a
-/// change this answer sees. History not yet in `env` is a new input, not time.
+/// `env` is a snapshot, read as [`crate::fpl::fulfillment`] reads it: a
+/// binding or a tending dated after `now` comes into force at its instant.
+/// History that is not yet in `env` is a new input and not a change in time.
 ///
-/// EXACT on the exact fragment (§7 breakpoints: `Flat`, `Decay`, `Curve`,
-/// `Absent`, and `Piecewise`, `Offset`, `Shift` and `Least` over them, and
-/// constant composites): there it is [`Schedule::next_change`] of the
-/// [`observed`] schedule. The term is affine between its breakpoints,
-/// read off each atom's closed form (a `Decay`'s window, a `Curve`'s points,
-/// a `Piecewise`'s knots, two lines' crossing), so its observation is
-/// monotone between them, and the step inside one is found by bisection
-/// against the evaluator itself: the answer agrees with [`crate::fpl::fulfillment`] bit
-/// for bit rather than with a second formula. Past the last breakpoint an
-/// exact term is constant, so it never changes there.
+/// On the exact fragment the answer is [`Schedule::next_change`] of the
+/// [`observed`] schedule. The bisection runs against the evaluator itself,
+/// so the answer agrees with [`crate::fpl::fulfillment`] bit for bit.
 ///
-/// CONSERVATIVE everywhere else, where the evaluator samples (`Within`, a
-/// composite of moving parts) or reads history (`After`, `Recur`), or folds
-/// time (`Periodic`). There the answer is the first instant at which an
-/// ENCLOSURE of the term over `[now, t]` (an interval of numbers, and whether
-/// `∅` is possible) stops being one observed value: each atom's exact range
-/// over the stretch, a monotone composite applied to its children's bounds,
-/// a window widened by its span, a lookup split where a binding or a tending
-/// comes into force, a cycle folded onto its period. Up to `t` the enclosure
-/// proves the observed value has not moved, so the answer is never late; it
-/// is early where the enclosure is loose (members moving in opposite
-/// directions). An enclosure over all time that is one observed value
-/// answers never, exactly. The search looks about a thousand years ahead (2⁵⁵ µs) and
-/// answers that horizon if nothing ends sooner, which is early, not late.
+/// Elsewhere the answer is the first instant at which an enclosure of the
+/// term over `[now, t]` stops being one observed value. The answer is early
+/// where the enclosure is loose, for example where members move in opposite
+/// directions. The search looks 2⁵⁵ µs (about a thousand years) ahead, and
+/// answers that horizon if nothing ends sooner, which is early and not late.
 ///
 /// The enclosure applies the evaluator's own float operations to bounds, so
-/// it is sound wherever those are monotone: `+`, `·`, `/`, `min` and `max`
-/// are, as correctly rounded; `powf`, `exp` and `ln` are faithfully rounded
-/// on every platform this builds for, though IEEE does not promise it.
+/// it is sound only where those operations are monotone. `+`, `·`, `/`, `min`
+/// and `max` are monotone because IEEE 754 rounds them correctly. `powf`,
+/// `exp` and `ln` are faithfully rounded on every platform that this crate
+/// builds for, although IEEE 754 does not require it.
 #[must_use]
 pub fn next_change(term: &Closed, now: Instant, env: &Env, observation: Observation) -> NextChange {
     if let Some(observed) = observed(term, now, env, observation) {
@@ -184,16 +156,13 @@ pub fn next_change(term: &Closed, now: Instant, env: &Env, observation: Observat
     }
 }
 
-/// The observed value of `term` from `from` on, as the step function it is:
-/// `observation ∘ ⟦term⟧(·, env)` on `[from, ∞)`, its head the value at
+/// The observed value of `term` from `from` on, as a step function:
+/// `observation ∘ ⟦term⟧(·, env)` on `[from, ∞)`, with its head the value at
 /// `from` and a knot at every later microsecond where the value changes.
-/// `None` off the exact fragment, where the steps are not known exactly and
-/// only [`next_change`]'s conservative bound is.
 ///
-/// Between two breakpoints the term is affine, so its observation is
-/// monotone there and each step inside the stretch is found by bisection
-/// against the evaluator; a breakpoint is read on its own, since a jump or a
-/// crossing lands on it; past the last the term is constant.
+/// `None` off the exact fragment, where only the conservative bound of
+/// [`next_change`] is known. The function reads each breakpoint on its own,
+/// because a jump or a crossing lands on it.
 #[must_use]
 pub fn observed(
     term: &Closed,

@@ -16,10 +16,10 @@ use crate::schema::Schema;
 /// One register: its name, its frontier and its reading, as object names.
 type Register<E> = (<E as Schema>::Register, Vec<Hash>, Vec<Hash>);
 
-/// Every entity's registers, by genesis and key: each register's name, its
-/// frontier and its reading, as object names. Two folds read alike exactly
-/// when their `Registers` are equal, and [`Registers::differs`] names the
-/// first place where they part.
+/// The registers of every entity, by genesis and key: each register's
+/// name, its frontier and its reading, as object names.
+///
+/// Two folds read alike exactly when their `Registers` are equal.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Registers<E: Schema>(BTreeMap<(Genesis, E::Key), Vec<Register<E>>>);
 
@@ -27,14 +27,15 @@ pub struct Registers<E: Schema>(BTreeMap<(Genesis, E::Key), Vec<Register<E>>>);
 impl<E: Schema> Eq for Registers<E> {}
 
 impl<E: Schema> Registers<E> {
-    /// The registers of every entity `folded` holds, each read whole.
+    /// The registers of every entity that `folded` holds, each read at every
+    /// instant under [`Everything`].
     #[must_use]
     pub fn of(folded: &Folded<E>) -> Self {
         Registers::at(folded, None, &Everything)
     }
 
-    /// The registers of every entity `folded` holds, each read at `at`
-    /// (`None`: ever) under `policy`.
+    /// The registers of every entity that `folded` holds, each read at `at`
+    /// (`None` reads at every instant) under `policy`.
     #[must_use]
     pub fn at(folded: &Folded<E>, at: Option<Instant>, policy: &impl Policy<E>) -> Self {
         let mut out = BTreeMap::new();

@@ -1,16 +1,15 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BinaryHeap};
 
-/// The crate's one causal order: Kahn's walk with a min-heap on the key,
-/// so every key comes after the keys it rests on among `rests_on`'s keys,
-/// and keys no order relates come in key order. It is a function of the
-/// relation alone, not of the order it was given in. A key resting on one
-/// that is not among them is passed over; `Err` names the least key a
-/// cycle leaves unplaced.
+/// The crate's one causal order: each key comes after the keys of `rests_on`
+/// that it rests on, and unrelated keys come in key order.
 ///
-/// The walk runs over each key's place among the keys, which a map holds
-/// in key order: a place orders as its key does, so the heap compares
-/// numbers, and an edge costs one binary search among the keys.
+/// The order depends only on the relation, not on the order of the input.
+/// The walk ignores an edge to a key that `rests_on` does not hold. `Err`
+/// holds the least key that a cycle leaves unplaced.
+///
+/// The heap holds each key's index among the keys of the map, which are in
+/// key order, so an index orders as its key does.
 pub fn linear<'k, K: Ord + ?Sized>(
     rests_on: &BTreeMap<&'k K, Vec<&'k K>>,
 ) -> Result<Vec<&'k K>, &'k K> {
@@ -45,8 +44,7 @@ pub fn linear<'k, K: Ord + ?Sized>(
     }
 }
 
-/// A depth-first walk that settles each key after what it expands into, with
-/// the keys being expanded as the cycle witness.
+/// A depth-first walk that settles each key after the keys it expands into.
 pub struct Topo<K, V> {
     path: Vec<K>,
     settled: BTreeMap<K, V>,
@@ -64,8 +62,11 @@ impl<K, V> Default for Topo<K, V> {
 }
 
 impl<K: Ord + Clone, V: Clone> Topo<K, V> {
-    /// `key`'s value, expanded once. A key met again on its own path is a
-    /// cycle, named from that key with it repeated at the end.
+    /// The value of `key`; the walk keeps each value that `expand` returns,
+    /// and calls `expand` only for a key without a kept value.
+    ///
+    /// If the walk meets `key` again on its own path, `cycle` receives the
+    /// path from `key`, with `key` repeated at the end.
     pub fn settle<E>(
         &mut self,
         key: &K,
@@ -89,7 +90,7 @@ impl<K: Ord + Clone, V: Clone> Topo<K, V> {
         Ok(value)
     }
 
-    /// Every settled key, each after what it expanded into.
+    /// Every settled key, each after the keys it expanded into.
     pub fn into_order(self) -> Vec<K> {
         self.order
     }

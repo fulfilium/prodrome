@@ -1,20 +1,5 @@
-//! A schema: what a store's events are, and what each one writes
-//! (`docs/design-register-types.md` §5).
-//!
-//! THE EVENT TYPE IS THE SCHEMA. Its values are the events the schema names,
-//! a closed sum of constructors with frozen fields, so an event outside the
-//! vocabulary is not a value of the type: §2's parse refuses it at the
-//! boundary. The impl says the rest: the entity each event is about, the
-//! registers it writes, and which events a policy is asked about.
-//!
-//! A schema is the STORE'S type (`EventStore<S>`), as the payload was. No
-//! object carries it: a stored print is parsed against the schema the store
-//! was opened at, so `Genesis(label, nonce)` stays frozen.
-//!
-//! [`crate::event::TodoEvent`] is the reference schema ([`crate::todo`]):
-//! §4's six kinds and the record kind, and every legacy envelope is read at it.
-//! A schema MAY price its entities ([`Price`]); one that does not has no
-//! price at all, which is not FPL's `Absent`.
+//! A schema: the type of a store's events, and what each event writes
+//! (SPEC §4, `docs/design-register-types.md` §5).
 
 pub mod headed;
 
@@ -30,57 +15,35 @@ use crate::store::Husking;
 use crate::store::{HuskObject, Other};
 use crate::term::Term;
 
-/// A store's events and what they mean.
+/// A store's event type: its stored shape, its key, and the registers each
+/// event writes (SPEC §8).
 ///
-/// # The contract
-///
-/// - [`Schema::Vocabulary`], [`Schema::to_value`] and [`Schema::from_value`]
-///   are the STORED SHAPE: every constructor an event may print, with its
-///   declared field order, the print in that order, and the parse that refuses
-///   what a smart constructor would. None of the vocabulary's names may be an
-///   envelope's (`Sealed`, `Woven`, `Genesis`, `Change`, `Snapshot`), which are
-///   looked up first.
-/// - The vocabulary is a VALUE, the schema as data: what a parse reads and
-///   what a boundary names registers by. A Rust schema's is a unit its type
-///   already says everything of (`Default`); a declared one's is the
-///   declaration a host admitted at run time ([`crate::declared`]). A store
-///   is opened at one, and no object carries it.
-/// - [`Schema::key`], [`Schema::at`] and [`Schema::actor`] are what every
-///   event says: about what, when its writer thought it was (data, never an
-///   order), and who.
-/// - [`Schema::Registers`] is an entity's REGISTERS, a [`Product`] of
-///   semilattices: its `join` is the route from an event to the writes it
-///   makes, each register a [`crate::fold::Frontier`] or an accumulating set,
-///   read under its [`crate::fold::RegisterType`].
-/// - [`Schema::writes`] is the route's NAMES: the registers whose frontier
-///   this event joins and whose writes it therefore supersedes (§6). A register
-///   that only accumulates, such as the todo's tendings, is not among them.
-/// - [`Schema::asks`] is whether an event is about standing: the reference
-///   policy binds one it answers `false` for whoever wrote it, and a policy
-///   that requires signatures asks of every event (§5).
+/// No name in the vocabulary may be an envelope's name
+/// ([`crate::event::ENVELOPE_SIGNATURES`]), because a parse looks up the
+/// envelopes first. [`Schema::at`] is the writer's stamp: data, never an
+/// order (SPEC §1).
 pub trait Schema: Clone + PartialEq + Debug + Send + Sync + 'static {
-    /// §2's whitelist for this schema's events, as a value: the schema as
-    /// data, what a store is opened at.
+    /// The whitelist of SPEC §2 for this schema's events, as a value.
     type Vocabulary: Vocabulary + Clone + Debug + Send + Sync;
 
-    /// What an event is about: a todo, a review.
+    /// The entity that an event is about, such as a todo.
     type Key: Clone + Ord + Debug + Send + Sync;
 
-    /// A register's name, among those a write supersedes in.
+    /// The name of a register that a write supersedes in.
     type Register: Copy + Ord + Debug + Send + Sync + 'static;
 
-    /// Every register a write supersedes in, in the order a reading lists
-    /// them, at the schema `vocabulary`.
+    /// Every register that a write supersedes in, in the order that a
+    /// reading lists them.
     fn registers(vocabulary: &Self::Vocabulary) -> Vec<Self::Register>;
 
-    /// An entity's registers: a product of semilattices.
+    /// The registers of one entity (SPEC §6, "A schema's registers").
     type Registers<'a>: Product<'a, Schema = Self>;
 
     /// The event as a literal: every field, in declared order.
     fn to_value(&self) -> Value;
 
-    /// The parse at the schema `vocabulary`: a literal into an event,
-    /// through every smart constructor.
+    /// Parses a literal into an event at `vocabulary`, through every smart
+    /// constructor.
     ///
     /// # Errors
     ///
@@ -94,40 +57,36 @@ pub trait Schema: Clone + PartialEq + Debug + Send + Sync + 'static {
 
     fn actor(&self) -> &Actor;
 
-    /// The registers this event writes, each once.
+    /// The registers whose frontier this event joins, and so whose writes
+    /// it supersedes, each once (SPEC §6). A register that only
+    /// accumulates, such as the todo's tendings, is not among them.
     fn writes(&self) -> impl Iterator<Item = Self::Register>;
 
-    /// Is this event about standing? The reference policy binds every other
-    /// whoever wrote it (§5).
+    /// Whether this event is about standing (SPEC §5).
     fn asks(&self) -> bool {
         true
     }
 
-    /// The husk that `print` holds: a stored print that does not hash to
-    /// its name (SPEC §3). The default reads no husk, so for a schema
-    /// without sealed parts such a print is tampered, and a store pays for
-    /// this method only after a file fails its hash. A schema that has
+    /// The husk that `print` holds, where `print` does not hash to its name
+    /// (SPEC §3, "A husk").
+    ///
+    /// A store calls this method only after a file fails its hash. The
+    /// default reads no husk, so such a print is tampered. A schema that has
     /// husks implements [`Husking`] and answers
-    /// `HuskObject::of_other(print).ok()`; only a [`Husking`] schema can
-    /// make a [`HuskObject`].
+    /// `HuskObject::of_other(print).ok()`.
     fn husk(_print: &Other<'_>) -> Option<HuskObject<Self>> {
         None
     }
 }
 
-/// A schema's PRICE (design §4): the §7 term each candidate of an entity's
-/// reading prices as. Optional: a schema without it has no price at all,
-/// which is not FPL's `Absent`.
-///
-/// A reading in conflict holds more than one candidate. The core prices the
-/// reading as `Least` over their terms ([`crate::fold::price`]): the meet in
-/// the fulfillment order, "price a conflict as its most urgent candidate",
-/// whose top is `∅`, so a candidate that prices `∅` never lowers one that
-/// prices a number (law 34). It is not a register's join, and FPL's `Conj`,
-/// which aggregates different entities, is neither.
+/// A schema's price: the FPL term of each candidate of an entity's reading,
+/// which [`crate::fold::price`] combines as their `Least` (SPEC §6, "A
+/// schema's registers"; law 34). This `Least` is not a register's join, and
+/// it is not FPL's `Conj`, which aggregates different entities.
 pub trait Price: Schema {
-    /// The term each candidate of the reading prices as, none for one that
-    /// prices nothing. Empty: the entity has no price here.
+    /// The term of each candidate of the reading, and none for a candidate
+    /// that prices nothing. An empty vector means that the entity has no
+    /// price.
     ///
     /// # Errors
     ///
@@ -135,18 +94,16 @@ pub trait Price: Schema {
     fn terms(registers: &Self::Registers<'_>) -> Result<Vec<Term>, FplError>;
 }
 
-/// A price that CHANGES WITH THE ENTITY'S HISTORY: §6.4's fulfillment
-/// function, a piece at every instant one of its registers was written
-/// ([`crate::fold::flatten`]). A schema whose price is only its reading's
-/// has none.
+/// A price that changes with the entity's history: the fulfillment function
+/// of SPEC §6.4 ([`crate::fold::flatten`]).
 pub trait History: Price {
-    /// The term each candidate prices as at one MOMENT of the history: `now`,
-    /// the reading there, with a register unwritten yet read as it was first
-    /// written (`first`), and `head`, the history's price before its first
-    /// moment, for a candidate that prices nothing there.
+    /// The term of each candidate at one moment of the history.
     ///
-    /// With nothing first written and no head, a moment is its reading:
-    /// `moment(r, &Default::default(), None)` is `Price::terms(r)`.
+    /// `now` is the reading at the moment. A register that is not written
+    /// yet reads as `first`, its first write. `head` is the price before the
+    /// first moment, for a candidate that prices nothing at the moment.
+    /// An implementation must keep `moment(r, &Default::default(), None)`
+    /// equal to `Price::terms(r)`.
     ///
     /// # Errors
     ///
@@ -158,29 +115,29 @@ pub trait History: Price {
     ) -> Result<Vec<Term>, FplError>;
 }
 
-/// What FPL's `Ref`s read of an entity in this store (§6.1, §7.2): its key is
-/// the name a `Ref` gives it, so it reads as a string, and [`Bind::bind`]
-/// records what the environment holds of it. An entity in ANOTHER store is
-/// a host's environment, passed in, never a method of a schema.
+/// What an FPL `Ref` reads of an entity in this store (SPEC §6.1, §7.2); a
+/// `Ref` names the entity by its key as a string.
+///
+/// An entity in another store reaches FPL through an environment that the
+/// host passes in, not through this trait.
 pub trait Bind: Schema<Key: AsRef<str>> {
-    /// What FPL's terms read of an entity at a reading, recorded in `env`.
+    /// Records in `env` what FPL terms read of the entity at a reading.
     fn bind(key: &Self::Key, registers: &Self::Registers<'_>, env: &mut Env);
 }
 
-/// What a row of the list shows of an entity (§6.7), and when it tells a
-/// reader the policy refused or does not confirm a write.
-/// [`crate::view::entries`] asks for it, beside a [`History`] and a
-/// [`Bind`], and nothing else does.
+/// What a row of the list shows of an entity (SPEC §6.7), and when the row
+/// tells a reader that the policy refused or does not confirm a write.
 pub trait Row: Schema {
     /// What a row shows of an entity's registers.
     type Reading: Clone + PartialEq + std::fmt::Debug;
 
     fn reading(registers: &Self::Registers<'_>) -> Self::Reading;
 
-    /// Does the CLAIMED reading, under every writer, dispute the confirmed
-    /// one where a reader should be told?
+    /// Whether the claimed reading, under every writer, disputes the
+    /// confirmed reading so that a reader must be told.
     fn disputes(confirmed: &Self::Reading, claimed: &Self::Reading) -> bool;
 
-    /// Does the reading show a write the policy binds and does not confirm?
+    /// Whether the reading shows a write that the policy binds and does not
+    /// confirm.
     fn unconfirmed(registers: &Self::Registers<'_>, policy: &impl Policy<Self>) -> bool;
 }

@@ -1,10 +1,8 @@
-//! Where a cache's pairs are held (design §6.2): the one interface of the
-//! relation from keys to values, and its interpreter in memory.
+//! The interface that holds the pairs of a cache, and its implementation in
+//! memory (design §6.2).
 //!
-//! A [`Holder`] holds a finite set of (key, value) pairs. A program reads a
-//! key through it as a partial function: no value, one value, or a
-//! [`Lookup::Finding`] when the key holds two. Every holder obeys the same
-//! laws (SPEC law 51), whatever it keeps its pairs in:
+//! Every [`Holder`] obeys the same laws (law 57), whatever it keeps its
+//! pairs in:
 //!
 //! - after `add(k, v)`, `get(k)` answers `v` among its values, unless the
 //!   holder dropped the pair (a policy evicted it, or a file could not be
@@ -15,11 +13,6 @@
 //! - after `forget(ks)` answers `Ok`, every key of `ks` misses, and no byte
 //!   of their values is left in the holder's storage;
 //! - `keys` is every key that holds a value, and `len` is its count.
-//!
-//! [`Memory`] holds the pairs in a hash map. [`super::File`] holds them in
-//! one file. [`super::Cache`] is a holder under an eviction policy, and
-//! [`super::Front`] is a holder read through a cache in memory, so holders
-//! nest. [`super::fold()`] runs over any holder.
 
 use std::collections::{BTreeSet, HashMap};
 

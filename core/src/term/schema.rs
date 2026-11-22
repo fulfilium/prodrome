@@ -9,8 +9,8 @@ use crate::literal::{Signature, Vocabulary};
 
 use super::{CurvePoint, Term, TermF};
 
-/// One field of a layer: the one place a term's fields are named, which every
-/// format renders or reads.
+/// One field of a layer. Every format renders and reads a term's fields
+/// through this type, so it is the one place where the fields are named.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Slot<A> {
     Real(f64),
@@ -183,7 +183,7 @@ pub fn fields<A>(layer: &TermF<A>) -> (&'static str, Fields<&A>) {
     }
 }
 
-/// A format's reading of one constructor's fields; `None` is a field absent.
+/// A format's reader of the fields of one constructor.
 pub trait FieldSource: Sized {
     fn real(&mut self, name: &'static str) -> Field<f64>;
     fn at(&mut self, name: &'static str) -> Field<Instant>;
@@ -335,7 +335,8 @@ fn builders<S: FieldSource>() -> [(&'static str, Builder<S>); 18] {
     ]
 }
 
-/// The constructor `kind`, its fields read from `source`, through its `mk_*`.
+/// The constructor `kind`, built by its `mk_*` function from the fields that
+/// `source` reads.
 pub fn build(kind: &str, source: &mut impl FieldSource) -> Result<Term, FplError> {
     let (_, builder) = builders()
         .into_iter()
@@ -344,8 +345,8 @@ pub fn build(kind: &str, source: &mut impl FieldSource) -> Result<Term, FplError
     builder(source)
 }
 
-/// §7's constructor names and their declared field order, as a literal
-/// vocabulary.
+/// The constructor names of SPEC §7 and their declared field order, as a
+/// literal vocabulary.
 pub struct Signatures(Vec<(&'static str, Vec<&'static str>)>);
 
 impl Signatures {
@@ -363,7 +364,8 @@ impl Vocabulary for Signatures {
     }
 }
 
-/// The signatures, recorded once from what each builder reads.
+/// The signatures, which the first call records from the fields that each
+/// builder reads.
 pub fn signatures() -> &'static Signatures {
     static SIGNATURES: OnceLock<Signatures> = OnceLock::new();
     SIGNATURES.get_or_init(|| {
