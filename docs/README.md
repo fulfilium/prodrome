@@ -49,6 +49,9 @@ finally implemented, see `SPEC.md` and `CHANGELOG.md`.
 - [`design-core-face.md`](design-core-face.md): a measure of what a
   program reads to use the core, and a plan in stages to make it smaller:
   shorter doc comments, a narrower public API, and smaller crates.
+- [`design-viewer-stores.md`](design-viewer-stores.md): a design for one
+  hosted viewer of every public store: the address in the page's link, how
+  the page finds a store's objects, trust, and one list of several stores.
 - [`SIMPLIFY-PLAN.md`](SIMPLIFY-PLAN.md): a plan to remove duplicated code,
   so that the crate has one term functor, one schema, one evaluator, and one
   fold.

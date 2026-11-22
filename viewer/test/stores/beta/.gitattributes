@@ -1,0 +1,4 @@
+# A prodrome store (SPEC §3): each file is named by the sha256 of its bytes,
+# so git must never rewrite one: no line-ending conversion, no text merge.
+objects/** -text -diff
+quarantine/** -text -diff

@@ -1876,7 +1876,8 @@ prodromes, each a replica of its own genesis.
     `sets.rs::a_qualified_ref_to_what_the_set_lacks_is_absent`,
     `sets.rs::an_unqualified_term_links_alike_under_any_set`,
     `sets.rs::a_view_prices_a_qualified_ref_through_its_replicas_set`,
-    `sets.rs::a_proposal_prices_as_the_todo_it_serves`.
+    `sets.rs::a_proposal_prices_as_the_todo_it_serves`,
+    `wasm/src/reference.rs::a_qualified_ref_links_through_the_stores_it_is_given`.
 
 Law 42 is who wrote an object (§3's signatures and keys, §5's proof),
 over generated histories of writes, keys added and revoked by a root or

@@ -7,7 +7,7 @@
 // `typst compile` reads from `typst/examples/`.
 
 import { PACKAGES } from "typst-packages";
-import type { View } from "./view";
+import type { Page } from "./stores";
 
 /** The part of typst-wasm this reads — the glue module satisfies it. */
 export interface Typst {
@@ -37,17 +37,38 @@ const PACKAGE = "@local/prodrome-typst:0.1.0";
 export const IMPORT = `#import "${PACKAGE}": *`;
 
 /** The packages' files and the data, keyed the way typst-wasm finds them. */
-export function files(view: View): Record<string, string> {
+export function files(view: Page): Record<string, string> {
   return { ...PACKAGES, "/data.json": JSON.stringify(view) };
 }
 
-export function listDocument(markup: boolean): string {
-  return `${IMPORT}\n#roadmap(json("/data.json"), markup: ${markup})\n`;
+/**
+ * The list. Its title, and the stores' part of every link (`query`), come
+ * from the data, so no text of a link is spliced into code.
+ *
+ * AN ITEM'S TEXT IS SHOWN AS WRITTEN, never read as Typst (`markup:
+ * false`). Typst markup is code: it can spell any element and loop for
+ * ever. A store's text comes from whoever can write to the store, and the
+ * issue mirror writes an issue's title, which anyone may write. No store
+ * can say yet which writers may write markup, so the page runs no item's
+ * text. The package's `markup` option stays for a host that can say.
+ */
+export function listDocument(): string {
+  return [
+    IMPORT,
+    `#let data = json("/data.json")`,
+    `#roadmap(data, title: data.title, href: key => "#/todo/" + key + data.query, markup: false)`,
+    ``,
+  ].join("\n");
 }
 
-/** The item named by the data's `focus`, so an id is never spliced into code. */
-export function itemDocument(markup: boolean): string {
-  return `${IMPORT}\n#let data = json("/data.json")\n#item(data, data.focus, markup: ${markup})\n`;
+/** The item named by the data's `focus`, so an id is never spliced into code; its text as written. */
+export function itemDocument(): string {
+  return [
+    IMPORT,
+    `#let data = json("/data.json")`,
+    `#item(data, data.focus, markup: false, objects: data.objects, back: "#/" + data.query)`,
+    ``,
+  ].join("\n");
 }
 
 /** The editor's starting text: a small document over the same data. */
@@ -55,67 +76,18 @@ export function scratchDocument(): string {
   return [
     IMPORT,
     `#let data = json("/data.json")`,
-    `#let e = data.entries.find(e => e.todo == data.focus)`,
+    `#let e = data.entries.find(e => e.key == data.focus)`,
     `// A scratch pad over this item's data. Nothing here is saved.`,
     ``,
     `= Notes on #raw(e.todo)`,
     ``,
     `Worth #price(e.value) now, which is *#state-of(e.value)*.`,
     ``,
-    `#trace-of(data, e.todo)`,
+    `#trace-of(data, e.key)`,
     ``,
   ].join("\n");
 }
 
-export function compile(typst: Typst, source: string, view: View): Compiled {
+export function compile(typst: Typst, source: string, view: Page): Compiled {
   return JSON.parse(typst.compile_html(source, JSON.stringify(files(view)))) as Compiled;
-}
-
-/**
- * Compile a page with the items' text read as Typst, and again verbatim if
- * that fails: nothing promises a store's text is Typst, and one item's stray
- * `#` should cost that reading, not the page.
- */
-export function compilePage(
-  typst: Typst,
-  document: (markup: boolean) => string,
-  view: View,
-): Compiled & { markup: boolean } {
-  const typeset = compile(typst, document(true), view);
-  if (typeset.html !== null) return { ...typeset, markup: true };
-  return { ...compile(typst, document(false), view), markup: false };
-}
-
-const DROPPED = new Set(["SCRIPT", "IFRAME", "OBJECT", "EMBED", "LINK", "META", "BASE", "FORM"]);
-
-/**
- * The body of a compiled document, as nodes safe to put in the page. Typst
- * escapes text, but `html.elem` can spell any element, and an item's text is
- * typeset as markup; so scripts, frames and handlers are dropped, and only
- * links within the site or to http(s) survive. The page's Content Security
- * Policy forbids inline script as well — this is the second lock.
- */
-export function body(html: string): DocumentFragment {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_ELEMENT);
-  const doomed: Element[] = [];
-  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-    const el = node as Element;
-    if (DROPPED.has(el.tagName.toUpperCase())) {
-      doomed.push(el);
-      continue;
-    }
-    for (const attr of Array.from(el.attributes)) {
-      const name = attr.name.toLowerCase();
-      const value = attr.value.trim().toLowerCase();
-      const url = name === "href" || name === "src" || name === "xlink:href" || name === "action";
-      if (name.startsWith("on") || (url && !/^(#|https?:|objects\/|[a-z0-9._-]+(\/|$))/.test(value))) {
-        el.removeAttribute(attr.name);
-      }
-    }
-  }
-  for (const el of doomed) el.remove();
-  const out = document.createDocumentFragment();
-  out.append(...Array.from(doc.body.childNodes).map((n) => document.importNode(n, true)));
-  return out;
 }
