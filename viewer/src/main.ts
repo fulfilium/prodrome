@@ -166,18 +166,14 @@ function percent(value: Entry["value"]): string {
 
 /**
  * Before Typst has arrived, or if it never does: the list as plain HTML, the
- * rows `prodrome list` prints (open, and created by now) in the core's order.
+ * rows `prodrome list` prints (open, and begun by now) in the core's order.
  */
 function plain(view: Page): HTMLElement {
   const list = document.createElement("ol");
   const rows = new Map(view.entries.map((e) => [e.key, e]));
-  const existed = (key: string) => {
-    const first = view.created[key];
-    return first !== undefined && first.at <= view.at;
-  };
   for (const key of view.order) {
     const entry = rows.get(key);
-    if (entry === undefined || entry.state !== "open" || !existed(key)) continue;
+    if (entry === undefined || entry.state !== "open" || entry.begun > view.at) continue;
     const li = document.createElement("li");
     const a = Object.assign(document.createElement("a"), { href: hrefOf(key, view.query) });
     a.textContent = key;

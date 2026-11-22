@@ -1299,6 +1299,7 @@ fn json_entry<E: RowJson>(schema: &E::Vocabulary, entry: &Entry<E>) -> Value {
                 ),
                 ("spec", json!(print_term(entry.spec()))),
                 ("stream", names(&entry.stream)),
+                ("begun", json!(iso(instant_of(entry.begun)))),
             ])
             .collect(),
     )

@@ -103,6 +103,9 @@ pub struct Entry<E: Row> {
     pub conflicts: BTreeMap<E::Register, Vec<Hash>>,
     /// Every object whose event names this entity, in causal order.
     pub stream: Vec<Hash>,
+    /// The least instant that an event of `stream` carries, of any kind:
+    /// the instant from which the entity exists.
+    pub begun: Datetime,
 }
 
 impl<E: Row> Entry<E> {
@@ -124,6 +127,14 @@ impl<E: Row> Entry<E> {
     /// Why the function has no value, where it does not link.
     pub fn unlinked(&self) -> Option<&LinkError> {
         self.price.value.as_ref().err()
+    }
+
+    /// Whether the entity exists at `t`: an event of its stream, of any
+    /// kind, is dated at or before `t`. This is the one test of existence.
+    /// A list of what exists at `t` keeps exactly the rows that pass it,
+    /// open and closed (SPEC §6.7, law 87).
+    pub fn exists_at(&self, t: Datetime) -> bool {
+        self.begun <= t
     }
 }
 
@@ -230,6 +241,10 @@ pub fn entries<E: Row + History + Bind>(
             None => fold::member(prodrome, now, policy)?,
         };
         for (key, stream) in prodrome {
+            // A key with no write is no entity, and has no row.
+            let Some(begun) = stream.iter().map(|stamp| stamp.event.at()).min() else {
+                continue;
+            };
             let registers = fold::read(stream, Some(now), policy);
             let reading = E::reading(&registers);
             // The readings differ only where the policy refuses a write.
@@ -259,6 +274,7 @@ pub fn entries<E: Row + History + Bind>(
                 },
                 conflicts: registers.conflicts(),
                 stream: stream.iter().map(|stamp| stamp.name.clone()).collect(),
+                begun,
             });
         }
     }

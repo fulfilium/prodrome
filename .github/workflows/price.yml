@@ -130,7 +130,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # push the claim to roadmap-data
-      issues: write # post the proposal
+      issues: write # post the proposal, and say that a run failed
     env:
       ISSUE: ${{ github.event.issue.number }}
       GH_TOKEN: ${{ github.token }}
@@ -161,7 +161,9 @@ jobs:
         run: |
           ./result-github/bin/prodrome-github "$GITHUB_EVENT_PATH" --proposal reply.md \
             --store data/roadmap
-          ./result-cli/bin/prodrome verify --store data/roadmap
+      - name: Verify the store
+        id: verify
+        run: ./result-cli/bin/prodrome verify --store data/roadmap
       - name: Push to roadmap-data
         working-directory: data
         run: |
@@ -186,3 +188,12 @@ jobs:
             sed 's/@/@\xe2\x80\x8b/g' reply.md
           } > comment.md
           gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file comment.md
+
+      # A FAILED RUN IS SAID ON ITS ISSUE, where a maintainer sees it. A
+      # refused claim is not reported again: the proposal's comment says
+      # that it was not recorded. The comment holds no text of the issue.
+      - name: Report a failed run
+        if: failure() && steps.claim.outcome != 'failure'
+        env:
+          VERIFY: ${{ steps.verify.outcome }}
+        run: code/.github/scripts/report-failure.sh "$ISSUE" "$VERIFY"

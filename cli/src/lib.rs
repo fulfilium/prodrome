@@ -161,35 +161,17 @@ fn actor_of(stamp: &Stamp) -> Result<String, Error> {
         .ok_or_else(|| Error::usage("no actor: pass --actor, or set PRODROME_ACTOR or USER"))
 }
 
-/// One store, folded at one instant, with the two things a §6.7 row does not
-/// carry and a reader wants: when each todo was created, and what it says.
+/// One store, folded at one instant, with the one thing a §6.7 row does not
+/// carry and a reader wants: what each todo says.
 pub struct Reading {
     pub at: Datetime,
     pub untrusted: Vec<String>,
     pub entries: Vec<Entry<TodoEvent<Todo>>>,
-    created: BTreeMap<TodoId, Datetime>,
     bodies: BTreeMap<TodoId, String>,
     details: BTreeMap<TodoId, String>,
 }
 
 impl Reading {
-    /// Did the chain know about this todo at the instant read?
-    ///
-    /// A §6.7 row exists because the DAG mentions the todo AT ALL — the
-    /// future's included, deliberately — so this is the question `list` has to
-    /// ask on top, and its answer is the `Created` event's own `at`.
-    pub fn existed(&self, todo: &TodoId) -> bool {
-        self.created.get(todo).is_some_and(|at| *at <= self.at)
-    }
-
-    pub fn created_at(&self, todo: &TodoId) -> String {
-        self.created
-            .get(todo)
-            .copied()
-            .map(price::iso)
-            .unwrap_or_default()
-    }
-
     /// What the todo asks for: the winning record's body, and the `Created`
     /// event's text for a todo with no record.
     pub fn body(&self, todo: &TodoId) -> &str {
@@ -215,11 +197,9 @@ pub fn read(store: &Store, at: Datetime) -> Result<Reading, Error> {
         .filter_map(|node| node.event().cloned())
         .collect();
 
-    let mut created = BTreeMap::new();
     let mut bodies = BTreeMap::new();
     for event in &events {
         if let TodoEvent::Created(e) = event {
-            created.entry(e.todo.clone()).or_insert(e.at);
             bodies.insert(e.todo.clone(), e.text.clone());
         }
     }
@@ -248,7 +228,6 @@ pub fn read(store: &Store, at: Datetime) -> Result<Reading, Error> {
             .map(|actor| actor.as_str().to_owned())
             .collect(),
         entries: entries(&nodes, at, store.policy())?,
-        created,
         bodies,
         details,
     })

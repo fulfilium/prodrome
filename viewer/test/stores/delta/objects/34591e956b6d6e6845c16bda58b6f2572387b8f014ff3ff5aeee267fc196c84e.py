@@ -1,0 +1,1 @@
+Genesis(label='delta', nonce='a31c5c1f8767767c55f4a645cdafd9e3')

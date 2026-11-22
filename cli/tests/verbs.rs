@@ -8,8 +8,10 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use prodrome::event::{canonical_envelope, mk_created, mk_sealed, seal_hash};
+use prodrome::fpl::mk_flat;
 use prodrome::literal::Datetime;
 use prodrome::policy::Untrusted;
+use prodrome::reference::mk_authored;
 use prodrome::store::Sender;
 use prodrome_cli::command::Cli;
 use prodrome_cli::{run, Outcome, Store};
@@ -236,6 +238,52 @@ fn a_verb_refuses_an_id_the_store_does_not_hold() {
         &["add", "publish", "--body", "again", "--actor", "bassel"]
     )
     .is_err());
+}
+
+/// Law 87, at the command line: an item that content records alone make,
+/// with no `Created`, is listed from its first record on, as `show` reads
+/// it, and a revised record keeps one row with the latest body.
+#[test]
+fn an_item_made_by_content_records_alone_is_listed() {
+    let root = a_store();
+    said(&root, &["init", &root.display().to_string()]);
+    let store = Store::new(&root, Untrusted::none());
+    let at = |day| Datetime::new(2026, 11, day, 9, 0, 0, 0).expect("an instant");
+    for (day, body) in [
+        (4, "write the parser"),
+        (5, "write the parser and its errors"),
+    ] {
+        let record = mk_authored(
+            "parser",
+            at(day),
+            "ada",
+            "todo",
+            at(4),
+            body,
+            Some(mk_flat(0.55).expect("a fulfillment")),
+            vec![],
+            "",
+            "",
+            "",
+            None,
+            vec![],
+            vec![],
+            "",
+        )
+        .expect("an event");
+        store.append(record).expect("writes");
+    }
+    let before = said(&root, &["list", "--at", "2026-11-03T12:00:00"]);
+    assert!(before.starts_with("0 open"), "{before}");
+    let text = said(&root, &["list", "--at", "2026-11-06T12:00:00"]);
+    assert!(text.starts_with("1 open"), "{text}");
+    assert!(
+        text.contains("0.550  parser  write the parser and its errors"),
+        "{text}"
+    );
+    let shown = said(&root, &["show", "parser", "--at", "2026-11-06T12:00:00"]);
+    assert!(shown.contains("state      open"), "{shown}");
+    assert!(shown.contains("created    2026-11-04T09:00:00"), "{shown}");
 }
 
 #[test]

@@ -4,7 +4,8 @@
 //
 // APP is a build of the viewer that reads stores from this machine
 // (`VIEWER_LOOPBACK=1 viewer/build.sh`), and STORES holds the stores `alpha`,
-// `beta` and `gamma` that `make-stores.mjs` makes (`viewer/test/stores/`).
+// `beta`, `gamma` and `delta` that `make-stores.mjs` makes
+// (`viewer/test/stores/`).
 // The test serves the app on one local origin and the stores on another,
 // which sends `Access-Control-Allow-Origin: *` as GitHub's raw host does. The
 // store host writes each store's `index.json` from its `objects/`, and serves
@@ -45,6 +46,7 @@ async function objectsOf(store) {
 const alpha = await objectsOf("alpha");
 const beta = await objectsOf("beta");
 const gamma = await objectsOf("gamma");
+const delta = await objectsOf("delta");
 const geneses = JSON.parse(await readFile(join(stores, "geneses.json"), "utf8"));
 // This site's own store, for case 11: all of gamma, the issue's title in
 // markup included. A copy less the two items that Typst itself refuses (an
@@ -71,6 +73,7 @@ const served = {
   "endless-object": { objects: alpha, listed: alpha.map((o) => o.hash), endless: "object" },
   "endless-index": { objects: alpha, listed: alpha.map((o) => o.hash), endless: "index" },
   "alpha-gamma": { objects: [...alpha, ...gamma], listed: [...alpha, ...gamma].map((o) => o.hash) },
+  delta: { objects: delta, listed: delta.map((o) => o.hash) },
 };
 
 const requests = { app: [], stores: [] };
@@ -312,9 +315,51 @@ const sanitised = await page.evaluate(() => window.sanitised);
 check(sanitised.failed.length === 0, `the sanitiser holds in ${sanitised.cases} cases${sanitised.failed.length ? ": " + sanitised.failed.join(" | ") : ""}`);
 check(await page.locator("#stores").isHidden(), "a page of this site's own store needs no list of stores");
 
+// 15. A store written as content records alone: each item of `delta` is an
+// `Authored` record with its spec, and no item has a `Created`. Law 87: the
+// list shows the open items in the core's price order, alone and merged with
+// another store, and the open and closed items together are exactly the
+// items whose own page reads as an item.
+const deltaIds = [...new Set(delta.flatMap((o) => /todo='([^']+)'/.exec(o.text)?.[1] ?? []))].sort();
+/** The keys of the rows of the "Closed" list: each item link outside the table of open items. */
+const closedKeys = () =>
+  page.locator("#page a[href^='#/todo/']").evaluateAll((as) => as.filter((a) => a.closest(".roadmap") === null).map((a) => a.textContent));
+await open(`#/?delta=${at("delta")}`);
+list = await rows();
+const deltaOpen = [["d-errors", "25%"], ["d-parser", "55%"], ["d-port", "60%"], ["d-figures", "70%"]];
+check(
+  list.length === deltaOpen.length && deltaOpen.every(([key, price], i) => list[i].key === key && list[i].price.includes(price)),
+  `a store of content records alone lists its open items by price (${list.map((r) => `${r.key} ${r.price}`).join(", ")})`,
+);
+check((await page.locator("#page").textContent()).includes("4 open on"), "the list says 4 open");
+const closed = await closedKeys();
+check(JSON.stringify(closed) === JSON.stringify(["d-format", "d-release"]), `the closed list holds the cancelled and the completed item (${closed})`);
+check(JSON.stringify([...list.map((r) => r.key), ...closed].sort()) === JSON.stringify(deltaIds), `the open and closed items are every item of the store (${deltaIds})`);
+check((await notices()) === "", "nothing of delta is left out");
+for (const id of deltaIds) {
+  await page.goto(`${base}#/todo/${id}?delta=${at("delta")}`);
+  await page.waitForFunction((id) => document.title.startsWith(id), id, { timeout: 60_000 });
+  await page.waitForSelector('body[data-state="typeset"]');
+  const text = (await page.locator("#page").textContent()).replace(/\s+/g, " ");
+  const state = closed.includes(id) ? (id === "d-release" ? "completed" : "cancelled") : "open";
+  check(text.includes(state), `the page of ${id} reads it as ${state}`);
+}
+await page.goto(`${base}#/todo/d-parser?delta=${at("delta")}`);
+await page.waitForFunction(() => document.title.startsWith("d-parser"), null, { timeout: 60_000 });
+await page.waitForSelector('body[data-state="typeset"]');
+const parser = (await page.locator("#page").textContent()).replace(/\s+/g, " ");
+check(parser.includes("Write the parser") && parser.includes("55% now, flat"), `the page of d-parser reads its text and its price (${parser.slice(0, 160)})`);
+if (shots) await page.screenshot({ path: `${shots}/stores-delta-item.png`, fullPage: true });
+await open(`#/?alpha=${at("alpha")}&delta=${at("delta")}`);
+list = await rows();
+const merged = ["delta/d-errors", "alpha/a1", "delta/d-parser", "delta/d-port", "delta/d-figures", "alpha/a2"];
+check(JSON.stringify(list.map((r) => r.key)) === JSON.stringify(merged), `merged with alpha, delta's open items keep the core's price order (${list.map((r) => `${r.key} ${r.price}`).join(", ")})`);
+check(JSON.stringify(await closedKeys()) === JSON.stringify(["delta/d-format", "delta/d-release"]), "merged with alpha, delta's closed items are listed");
+if (shots) await page.screenshot({ path: `${shots}/stores-delta.png`, fullPage: true });
+
 // THE ADDRESSES REACH NO HOST BUT THE STORES': the app's host is asked
 // only for the app's files, and no request carries a store's address.
-const leaked = requests.app.filter((url) => /alpha|beta|gamma|127\.0\.0\.1/.test(url));
+const leaked = requests.app.filter((url) => /alpha|beta|gamma|delta|127\.0\.0\.1/.test(url));
 check(leaked.length === 0, `the viewer's host never sees a store's address (${requests.app.length} requests)`);
 check(requests.stores.every((url) => /^\/[a-z-]+\/(index\.json|objects\/[0-9a-f]{64}\.py)$/.test(url)), "the store host is asked only for listings and objects");
 
