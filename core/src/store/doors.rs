@@ -1,10 +1,11 @@
-//! The doors through which prints reach a store's `objects/`, said when the
-//! store is opened.
+//! Who may change a store's `objects/` (SPEC §3, "The doors a store has").
 
 /// Who may change a store's `objects/`, as the program that opens the store
-/// says. It decides one thing: what a decision reads
-/// ([`super::EventStore::decide`], and every write). It changes no stored
-/// byte, so a store moves between the two by being opened the other way.
+/// declares.
+///
+/// It decides only what a decision reads ([`super::EventStore::decide`], and
+/// every write). It changes no stored byte, so a program can open the same
+/// store either way (SPEC law 86).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Doors {
     /// Other programs may change `objects/`: a `git merge`, a copy of
@@ -16,8 +17,8 @@ pub enum Doors {
     /// `objects/`. A decision trusts the mark of the last hold, as a read
     /// does, and lists only where the mark is not the one its handle keeps.
     ///
-    /// The promise is made for every process that opens the directory, not
-    /// only for this one. A `git merge`, a copy of files, a person, or a
+    /// The program declares this for every process that opens the
+    /// directory, not only for itself. A `git merge`, a copy of files, a person, or a
     /// binary of a version before the mark of the last hold is a door, and
     /// breaks it. Where it is broken, an object that arrives by the door is
     /// not read as history by a handle that has read the store, also under

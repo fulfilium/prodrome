@@ -6,11 +6,12 @@ use crate::genesis::mk_genesis;
 use crate::literal::ProdromeError;
 use crate::schema::Schema;
 
-/// The objects of a history of `events`: one genesis, and one change per
-/// event, each object once (an event drawn twice over the same changes is
-/// one object). Each event is paired with a bit mask: its change rests on
-/// the earlier changes to the same entity whose positions, modulo 64, have
-/// their bit set.
+/// The objects of a history of `events`: one genesis, and one change for
+/// each event, each object once.
+///
+/// The bit mask of an event selects its deps: its change rests on each
+/// earlier change to the same entity whose position, modulo 64, has its bit
+/// set.
 ///
 /// # Errors
 ///

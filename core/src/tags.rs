@@ -1,28 +1,18 @@
 //! Mergeable tag sets: a set of tags on each target that any replica can
 //! change, and that every replica reads alike once it holds the same
-//! objects (SPEC law 48).
+//! objects.
 //!
-//! Two schemas hold the sets. A membership event puts a tag on a target or
-//! takes it off. Its key is the pair of a target and a tag, so each pair
-//! has one register, and the register reads the greatest value of its
-//! frontier under `Off < On`. So a removal takes off the adds that its
-//! writer saw, and an add that it did not see stays on: an observed-remove
-//! set where an add wins. An alias event makes a tag a name of another tag,
-//! or a name of its own again. A rename or a merge of two tags writes
-//! aliases and no membership. [`TagSet`](set::TagSet) reads the two stores
-//! together: it follows each name's alias to the tag that it stands for,
-//! and reads a ring of aliases as its least name.
+//! SPEC law 48: a tag set is an observed-remove set where an add wins, read
+//! through its aliases. The law also gives the print of each event. A
+//! membership event ([`membership`]) puts a tag on a target or takes it off.
+//! An alias event ([`alias`]) makes a tag a name of another tag. A rename or
+//! a merge of two tags writes aliases and no membership.
+//! [`TagSet`](set::TagSet) reads the two stores together. A host describes
+//! its sets with one [`Tagging`]. The target and the tag can be one type.
 //!
-//! A host describes its sets with one [`Tagging`]: the type of a target,
-//! the type of a tag, and the names of their fields in an event's print.
-//! The events print as `Added(<target>, <tag>, at, actor)`,
-//! `Removed(<target>, <tag>, at, actor)`, `Aliased(<tag>, at, actor, to)`
-//! and `Unaliased(<tag>, at, actor)`. The target and the tag can be one
-//! type.
-//!
-//! Each field name must differ from the other and from `at`, `actor` and
-//! `to`, since a print with a repeated field does not parse. The check runs
-//! when a schema is first used with a [`Tagging`], at compile time:
+//! The two field names must differ from each other and from `at`, `actor`
+//! and `to`, because a print with a repeated field does not parse. The check
+//! runs at compile time, when a schema is first used with a [`Tagging`]:
 //!
 //! ```compile_fail
 //! use prodrome::tags::{membership, Tagging};
@@ -50,8 +40,8 @@ pub mod alias;
 pub mod membership;
 pub mod set;
 
-/// A host's tag sets: what a target is, what a tag is, and the names of
-/// their fields in an event's print.
+/// A host's tag sets: the type of a target, the type of a tag, and the
+/// names of their fields in an event's print.
 pub trait Tagging: Clone + Debug + Ord + Send + Sync + 'static {
     /// What a tag is put on.
     type Target: Literal + Clone + Ord + Debug + Send + Sync + 'static;

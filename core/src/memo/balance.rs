@@ -1,37 +1,24 @@
-//! A long sequence as a balanced tree, so a change's spine through it is
-//! logarithmic (design §6.2).
-//!
-//! A node that holds a sequence as its children is a list to the fold: one
-//! changed element renames that node, and the node's algebra rereads every
-//! element. Grouped into a tree of CHUNKS, each chunk a node of the host's
-//! own tree type carrying its children's MEASURE (their count, or any
-//! monoid's sum over them, as a finger tree's nodes do), a changed element
-//! renames the chunks above it and no others, and a fold rereads only those.
+//! A long sequence as a balanced tree of chunks, so that a changed element
+//! renames only the chunks above it (design §6.2).
 //!
 //! The shape is a function of the elements alone. A run of nodes closes
 //! after a node whose name ends a chunk (one in four, decided by the name's
-//! bytes) once it holds two, or at [`WIDEST`] nodes, and a level's last run
-//! closes as it is; level by level until one node is left. So every
-//! element is at the same depth, and every chunk holds between two and
-//! [`WIDEST`] children but the last of a level, which may hold one: no fold
-//! spends a node on a layer that adds nothing, except on the path to the
-//! last element. A closed run never changes: an element appended renames
-//! only chunks holding the last element, at most one per level, and every
-//! other chunk is the one it was, so a sequence that only grows is a tree
-//! that only grows. And two hosts that hold one sequence build one tree
-//! with one name, whatever edits each made to reach it, and their caches
-//! share every entry; an insertion or a deletion moves the chunk
-//! boundaries next to it and no others, as a replacement does, up to the
-//! next boundary that follows a node that is none. (Inside a run of more
-//! than [`WIDEST`] nodes with no boundary, an insertion moves the cuts up
-//! to the run's end: rare among distinct elements, and among equal ones
-//! only the last chunk changes.)
+//! bytes) once the run holds two nodes, or at [`WIDEST`] nodes. The last run
+//! of a level closes as it is. So every element is at the same depth, and
+//! every chunk holds between two and [`WIDEST`] children, except the last
+//! chunk of a level, which can hold one. An appended element renames only
+//! the chunks that hold the last element, at most one per level. Two hosts
+//! that hold one sequence build one tree with one name, whatever edits each
+//! made, so their caches share every entry. An insertion or a deletion
+//! moves only the chunk boundaries next to it, up to the next boundary.
+//! Inside a run of more than [`WIDEST`] nodes with no boundary, an insertion
+//! moves the cuts up to the end of the run.
 
 use super::fold::Tree;
 use crate::event::Hash;
 
-/// The most nodes one chunk holds: a run with no boundary in it is cut
-/// here, so a run of equal elements is still a tree.
+/// The most nodes that one chunk holds. A run with no boundary is cut here,
+/// so a run of equal elements still forms a tree.
 pub const WIDEST: usize = 16;
 
 /// Whether a run closes after the node named `name`: the name's last hex
@@ -44,16 +31,14 @@ fn ends_a_chunk(name: &Hash) -> bool {
         .is_some_and(|digit| digit % 4 == 0)
 }
 
-/// `elements` as one balanced tree, its interior nodes made by `chunk` from
-/// their children in order: the host's constructor for a run of its nodes,
-/// which names the run with [`super::name`] over its children's names and
-/// holds their measure. `None` for no elements, and the element itself for
-/// one.
+/// `elements` as one balanced tree, `None` for no elements, and the element
+/// itself for one.
 ///
-/// A host builds one wherever a node of its tree would hold a long
-/// sequence: the node holds the sequence's balanced tree instead, and its
-/// algebra reads a chunk as the monoid sum of its children (the sequence's
-/// concatenation, its count, its total).
+/// `chunk` builds an interior node from its children in order. It must name
+/// the node with [`super::name`] over the children's names and hold their
+/// measure: their count, or the sum of any monoid over them. The host's
+/// algebra reads a chunk as the monoid sum of its children, such as their
+/// concatenation, count or total.
 pub fn balance<T: Tree>(elements: Vec<T>, mut chunk: impl FnMut(Vec<T>) -> T) -> Option<T> {
     let mut level = elements;
     while level.len() > 1 {

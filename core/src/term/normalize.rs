@@ -2,10 +2,9 @@ use crate::fpl::piecewise;
 use crate::schedule::Schedule;
 use crate::term::{Term, TermF};
 
-/// The Piecewise-outermost normal form (§7). A pointwise layer lifts over the
-/// merged partition of its children's schedules and a `Shift` translates the
-/// instants it crosses; `Within`, `After`, `Recur` and `Periodic` do not
-/// commute with a partition and stay where they are.
+/// The term in Piecewise-outermost normal form (SPEC §7, "Normal form").
+///
+/// Law 5: `normalize` preserves every reading and is idempotent.
 pub fn normalize(term: &Term) -> Term {
     term.cata(|layer| match layer {
         TermF::Piecewise(schedule) => piecewise(schedule),

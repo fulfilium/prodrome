@@ -22,7 +22,7 @@ pub enum Presence {
 }
 
 /// The key of a membership: a target and a tag, as the writer spelled the
-/// tag. An alias may spell the tag otherwise now.
+/// tag. An alias can give the tag another spelling.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Pair<S: Tagging> {
     /// The target.

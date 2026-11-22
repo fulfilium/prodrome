@@ -1,5 +1,4 @@
-//! A replica in memory (design §6.1): what a page holds, and what an overlay
-//! writes to.
+//! A replica in memory (design §6.1), as a page holds one.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Mutex, MutexGuard};
@@ -11,13 +10,13 @@ use crate::literal::ProdromeError;
 use crate::schema::Schema;
 use crate::store::Sender;
 
-/// A STORE THAT IS NOT A DIRECTORY: objects and their prints held in memory,
-/// verified on the way in, and folded as an [`super::EventStore`] folds
-/// them. It appends by the same decision a store on disk makes
-/// ([`Replica::append`]), so it writes byte for byte what a disk store
-/// holding the same objects writes, and it holds no lock any other writer
-/// takes: what it writes is monotone and reaches a store of record by
-/// [`super::sync`].
+/// A replica that holds its objects and their prints in memory, verified on
+/// the way in, and folds them as an [`super::EventStore`] folds them.
+///
+/// It appends by the same decision as a store on disk ([`Replica::append`]),
+/// so it writes byte for byte what a store on disk that holds the same
+/// objects writes. It holds no lock that another writer takes, so it makes
+/// only monotone writes, and they reach a store of record by [`super::sync`].
 #[derive(Debug)]
 pub struct MemoryStore<E: Schema> {
     schema: E::Vocabulary,
@@ -38,7 +37,7 @@ impl<E: Schema<Vocabulary: Default>> Default for MemoryStore<E> {
 }
 
 impl<E: Schema> MemoryStore<E> {
-    /// A store in memory holding nothing, opened at the schema `schema`.
+    /// A store in memory that holds nothing, opened at the schema `schema`.
     pub fn at(schema: E::Vocabulary) -> Self {
         MemoryStore {
             schema,
@@ -50,8 +49,8 @@ impl<E: Schema> MemoryStore<E> {
         }
     }
 
-    /// This store, writing into the prodrome `genesis` begins; without one
-    /// it writes into its only genesis.
+    /// This store, writing into the prodrome that `genesis` begins. Without
+    /// one, it writes into its only genesis.
     #[must_use]
     pub fn in_genesis(self, genesis: Hash) -> MemoryStore<E> {
         MemoryStore {

@@ -5,12 +5,12 @@ use crate::literal::ProdromeError;
 use crate::schema::Schema;
 use crate::store::{MemoryStore, Replica, Sender};
 
-/// A store in memory, opened at the schema `vocabulary`, that holds
-/// `objects`, received as any replica receives them.
+/// A store in memory, opened at `vocabulary`, that receives `objects` as
+/// any replica receives them.
 ///
 /// # Errors
 ///
-/// An object whose print does not verify, or that rests on an object
+/// An object whose print does not verify, or that rests on an object that
 /// `objects` does not hold.
 pub fn holding<E: Schema>(
     vocabulary: E::Vocabulary,

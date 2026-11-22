@@ -1,16 +1,9 @@
-//! §3 and §5 — who wrote an object, proven: detached signatures, keys
-//! registered by objects, and the reading of both.
+//! Detached signatures, keys registered by objects, and the proof that the
+//! history gives (SPEC §3, and SPEC §5, "Proof: who wrote an object, read
+//! from the history").
 //!
-//! See ../../SPEC.md §3 (the objects) and §5 (the policy that asks for
-//! them). An object's `actor` is a field its writer chose. A SIGNATURE is an
-//! object of its own, `Signed(object, key, signature)`, naming what it signs
-//! by its content name, so no object's bytes or name change when it is signed
-//! and an object can gain signatures at any time after it is written. A key
-//! belongs to an actor because an object says so, `KeyAdded(genesis, actor,
-//! key)`, and stops proving what it did not already prove because one says
-//! so, `KeyRevoked(genesis, deps, actor, key)`. So which key speaks for whom
-//! is a READING of the history, like every register, and [`Proof`] is that
-//! reading: a function of the object set, whatever order it arrived in.
+//! A signature is an object of its own that names the signed object by its
+//! content name, so signing changes no object's bytes or name.
 
 mod checks;
 
@@ -40,11 +33,12 @@ crate::newtype_str! {
 }
 
 impl PublicKey {
-    /// 64 lowercase hex that ARE a key: the encoding of a point on the curve.
+    /// Accepts only 64 lowercase hex that encode a point on the Ed25519
+    /// curve.
     ///
     /// # Errors
     ///
-    /// Anything else, refused as a field of an object is.
+    /// Any other text, refused as a field of an object is refused.
     pub fn new(text: impl Into<String>) -> Result<PublicKey, ProdromeError> {
         let text = text.into();
         bytes::<32>(&text)
@@ -64,12 +58,12 @@ impl PublicKey {
 }
 
 impl Signature {
-    /// 128 lowercase hex. Whether it verifies is [`Signed::verifies`]'s
-    /// question, asked of a signature and what it signs together.
+    /// Accepts 128 lowercase hex. This does not check that the signature
+    /// verifies; [`Signed::verifies`] checks that.
     ///
     /// # Errors
     ///
-    /// Anything else.
+    /// Any other text.
     pub fn new(text: impl Into<String>) -> Result<Signature, ProdromeError> {
         let text = text.into();
         if lower_hex(&text, 128) {
@@ -111,9 +105,11 @@ fn message(object: &Hash) -> Vec<u8> {
     message
 }
 
-/// `Signed(object, key, signature)`: `key`'s signature of the object named
-/// `object`. Its one parent is that object, so it joins a history only with
-/// what it signs, and its prodrome is that object's.
+/// `Signed(object, key, signature)`: the signature by `key` of the object
+/// named `object`.
+///
+/// Its one parent is that object, so it joins a history only with what it
+/// signs, and its prodrome is the prodrome of that object.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed {
     pub object: Hash,
@@ -122,10 +118,12 @@ pub struct Signed {
 }
 
 impl Signed {
-    /// Does the signature verify, under its key, over its object's name?
-    /// Strictly: a signature with a small-order key or a non-canonical
-    /// scalar is refused, so one key and one message admit no second
-    /// encoding a forger could compute from the first.
+    /// Whether the signature verifies under its key over the name of its
+    /// object.
+    ///
+    /// The check is strict: it refuses a small-order key and a non-canonical
+    /// scalar, so that a forger cannot compute a second valid encoding for
+    /// one key and one message from the first.
     #[must_use]
     pub fn verifies(&self) -> bool {
         let signature = bytes::<64>(self.signature.as_str())
@@ -163,9 +161,11 @@ impl Signed {
 }
 
 /// `KeyAdded(genesis, actor, key)`: in the prodrome `genesis`, `key`
-/// speaks for `actor`. No parents but its genesis: adding a key twice is
-/// one object, and a key's signatures need not come after it (a device
-/// signs offline, and is registered when it is next seen).
+/// speaks for `actor`.
+///
+/// Its only parent is its genesis, so adding a key twice writes one object,
+/// and the signatures of a key need not come after it (a device signs
+/// offline and is registered when it is next seen).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyAdded {
     pub genesis: Hash,
@@ -199,10 +199,11 @@ impl KeyAdded {
 }
 
 /// `KeyRevoked(genesis, deps, actor, key)`: `key` no longer speaks for
-/// `actor`, except in the signatures this object rests on. `deps` are what
-/// its writer stands behind, sorted and distinct, as a change's are what
-/// its writer saw: a signature by the key beneath them still proves, and
-/// one that is not (made after, or concurrently, or never seen) does not.
+/// `actor`, except in the signatures that this object rests on.
+///
+/// `deps` are sorted and distinct. A signature by the key beneath `deps`
+/// still proves; any other signature by the key (made after, concurrently,
+/// or never seen by the writer) does not.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyRevoked {
     pub genesis: Hash,
@@ -211,7 +212,7 @@ pub struct KeyRevoked {
     pub key: PublicKey,
 }
 
-/// A revocation, its deps sorted and distinct.
+/// A revocation, with its deps sorted and distinct.
 ///
 /// # Errors
 ///
@@ -257,15 +258,17 @@ impl KeyRevoked {
     }
 }
 
-/// A device's signing key: the 32-byte seed the host keeps wherever it
-/// decides (a phone in its own storage, a box in a file), never an object.
-/// Signing is deterministic, so one key signing one object writes one
-/// `Signed`, byte for byte, wherever and however often it signs.
+/// A signing key of a device: a 32-byte seed that the host keeps where it
+/// decides, and never in an object.
+///
+/// Signing is deterministic, so one key that signs one object writes the
+/// same `Signed`, byte for byte, each time. The `Debug` output shows only
+/// the public key.
 pub struct Secret(SigningKey);
 
 impl Secret {
-    /// The key whose seed is `seed`, 64 lowercase hex. The host draws it
-    /// from its own source of randomness; this crate has none and no clock.
+    /// The key whose seed is `seed`, as 64 lowercase hex. The host must draw
+    /// the seed from its own source of randomness; this crate has none.
     ///
     /// # Errors
     ///
@@ -281,11 +284,12 @@ impl Secret {
         PublicKey(hex(self.0.verifying_key().as_bytes()))
     }
 
-    /// This key's signature of the object named `object`. A signature
-    /// covers a name and so proves the bytes that hash to it: the caller
-    /// has hashed those bytes to `object` itself. A signer of an object it
-    /// holds signs through [`Secret::sign_whole`], which refuses a name it
-    /// holds no such bytes for.
+    /// The signature by this key of the object named `object`.
+    ///
+    /// A signature covers a name, so it proves the bytes that hash to the
+    /// name. The caller must have hashed those bytes to `object` itself. To
+    /// sign an object that a DAG holds, use [`Secret::sign_whole`], which
+    /// refuses a name for which the DAG holds no such bytes.
     #[must_use]
     pub fn sign(&self, object: &Hash) -> Signed {
         Signed {
@@ -297,16 +301,18 @@ impl Secret {
 }
 
 impl Secret {
-    /// This key's signature of the object `object`, which `dag` holds
-    /// whole in its history: a print whose bytes the holder hashed to the
-    /// name (SPEC §5, law 80). A husk's clear fields are not bound to its
-    /// name, so whoever handed the holder the husk may have written another
-    /// whole under the name, and a signature of the name would prove that
-    /// whole on every replica that holds it.
+    /// The signature by this key of the object `object`, which `dag` must
+    /// hold whole in its history (law 80: no signature is made over a name
+    /// whose whole the signer does not hold).
+    ///
+    /// The clear fields of a husk are not bound to its name. So whoever gave
+    /// the holder the husk may have written another whole under the name,
+    /// and a signature of the name would prove that whole on every replica
+    /// that holds it.
     ///
     /// # Errors
     ///
-    /// `object` held as a husk, or not in the history.
+    /// `object` is held as a husk, or it is not in the history.
     pub fn sign_whole<E>(&self, dag: &Dag<E>, object: &Hash) -> Result<Signed, ProdromeError> {
         if dag.husks().contains(object) {
             return Err(ProdromeError::invalid(format!(
@@ -329,63 +335,53 @@ impl std::fmt::Debug for Secret {
     }
 }
 
-/// Whose signature registers a key: which `KeyAdded` and `KeyRevoked`
-/// objects a [`Proof`] reads.
+/// Which `KeyAdded` and `KeyRevoked` objects a [`Proof`] counts.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Registrar {
-    /// Every key object counts: the STRUCTURAL reading, as a change's deps
-    /// are read under the policy where everything binds. `verify` reads
-    /// keys so, because a finding records what the objects say and never a
-    /// reader's trust.
+    /// Every key object counts. `verify` uses this, because a finding must
+    /// not depend on the trust of a reader.
     Anyone,
-    /// A key object counts where a signature by one of these keys that
-    /// verifies covers it. The roots are a host's, as its policy is: the
-    /// database does not decide whom to believe about keys either (§5).
+    /// A key object counts only where a verified signature by one of these
+    /// root keys covers it. The host chooses the roots (SPEC §5).
     Roots(BTreeSet<PublicKey>),
 }
 
-/// What a [`Proof`] says of one object (SPEC §5).
+/// The answer of a [`Proof`] for one object (SPEC §5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Proved {
     /// A signature by a key that speaks for the object's actor covers its
     /// name, and the object is the bytes that hash to the name.
     Proven,
-    /// Such a signature covers the name of a husk (SPEC §3): the husk
-    /// stands on its maker's word, and on the signature its maker verified
-    /// over the whole.
+    /// Such a signature covers the name of a husk (SPEC §3). The husk is
+    /// trusted on the word of its maker, who verified the signature over
+    /// the whole.
     Vouched,
     /// No such signature covers it.
     Unsigned,
 }
 
-/// THE READING OF A HISTORY'S SIGNATURES AND KEYS: which objects carrying
-/// an event a key registered to that event's actor has signed, and which
-/// actors have a registered key, each in its prodrome.
+/// The objects of a history that registered keys sign for their actors,
+/// and the actors that have a registered key, each in its prodrome (SPEC
+/// §5, "Proof: who wrote an object, read from the history").
 ///
-/// A signature PROVES the object it signs when it verifies, its key is
-/// registered to the object's actor in the object's prodrome by a
-/// `KeyAdded` that counts, and every `KeyRevoked` of that key for that
-/// actor that counts rests on it. So a revocation keeps exactly the
-/// signatures its writer stood behind, named in its deps (or beneath
-/// them), and takes away every other signature by the key, whenever it was
-/// made: one made after the revocation, beside it, or before it and never
-/// seen by its writer is no proof, since no order but the objects' own says
-/// which came first. A revocation with no deps takes every signature away.
-/// A key revoked stays revoked: a later `KeyAdded` of it is the object it
-/// always was, one object, and adds nothing.
+/// A signature proves the object that it signs only when the signature
+/// verifies, a `KeyAdded` that counts registers its key to the object's
+/// actor in the object's prodrome, and every `KeyRevoked` of that key for
+/// that actor that counts rests on the signature. So a revocation keeps
+/// only the signatures beneath its deps, and a revocation with no deps
+/// takes every signature away. Only the objects tell which came first, so
+/// a signature made before the revocation but not beneath its deps does
+/// not prove. A revoked key stays revoked, because adding
+/// it again writes the same `KeyAdded` object.
 ///
-/// A signature covers a name, and it proves the bytes that hash to the
-/// name. A HUSK (SPEC §3) is not those bytes, so no signature proves it.
-/// Where a signature would prove the whole, it VOUCHES for the husk: the
-/// husk stands on the word of its maker, the holder that dropped the parts
-/// from a whole it had verified, or the keeper of record a replica took it
-/// from. A replica takes a husk from no other party, so no object of a
-/// receipt from a party whose word is not taken is proven or vouched for
-/// without its bytes hashing to its name (law 77).
+/// No signature proves a husk (SPEC §3), because a husk is not the bytes
+/// that hash to its name. Where a signature would prove the whole, it
+/// vouches for the husk instead. A replica takes a husk only from its maker
+/// or from the keeper of record, so an object from any other party is
+/// proven or vouched for only if its bytes hash to its name (law 77).
 ///
-/// A FUNCTION OF THE OBJECT SET (law 42): every clause above is a question
-/// about which objects exist and what each rests on, none about the order
-/// they arrived in.
+/// Law 42: the proof depends only on the object set, never on the order in
+/// which the objects arrived.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
     // Two sets of names and no third: an object in neither is unsigned.
@@ -395,15 +391,16 @@ pub struct Proof {
 }
 
 impl Proof {
-    /// The proof `dag`'s objects give, its keys read as `registrar` says.
+    /// The proof of the objects of `dag`, with key objects counted as
+    /// `registrar` decides.
     #[must_use]
     pub fn of<E: Schema>(dag: &Dag<E>, registrar: &Registrar) -> Proof {
         Proof::read(dag, registrar, Signed::verifies)
     }
 
-    /// [`Proof::of`], each signature checked through `checks`, so a history
-    /// read again checks only the signatures that `checks` does not hold.
-    /// It answers what [`Proof::of`] answers (SPEC law 49).
+    /// [`Proof::of`], with each signature checked through `checks`, so that
+    /// a second read checks only the signatures that `checks` does not hold.
+    /// Law 49: the answer equals that of [`Proof::of`].
     #[must_use]
     pub fn through<E: Schema>(dag: &Dag<E>, registrar: &Registrar, checks: &Checks) -> Proof {
         Proof::read(dag, registrar, |signed| checks.verifies(signed))
@@ -481,8 +478,7 @@ impl Proof {
         }
     }
 
-    /// What the proof says of `object`: proven, vouched for as a husk, or
-    /// unsigned.
+    /// Whether `object` is proven, vouched for as a husk, or unsigned.
     #[must_use]
     pub fn standing(&self, object: &Hash) -> Proved {
         if self.proven.contains(object) {
@@ -494,16 +490,16 @@ impl Proof {
         }
     }
 
-    /// Is the object `object` signed by a key that speaks for its actor,
-    /// over the bytes its name is the hash of? Never for a husk. A reading
-    /// of [`Proof::standing`], kept for the readers that ask only this.
+    /// Whether [`Proof::standing`] is [`Proved::Proven`]; never true for a
+    /// husk.
     #[must_use]
     pub fn proves(&self, object: &Hash) -> bool {
         self.standing(object) == Proved::Proven
     }
 
-    /// Has `actor` a registered key in the prodrome `genesis`, revoked or
-    /// not? Then its objects are meant to be signed.
+    /// Whether `actor` has a registered key, revoked or not, in the prodrome
+    /// `genesis`. If it has, its objects must be signed, and `verify`
+    /// reports an unsigned one.
     #[must_use]
     pub fn keyed(&self, genesis: &Genesis, actor: &Actor) -> bool {
         self.keyed.contains(&(genesis.clone(), actor.clone()))

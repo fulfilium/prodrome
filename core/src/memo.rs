@@ -1,29 +1,15 @@
-//! Design §6.2: caches are tabulations of pure functions.
+//! Caches as tabulations of pure functions (design §6.2; SPEC §6, "A cache
+//! is a tabulation of a pure function").
 //!
-//! A cache has no meaning of its own: reading through it is computing the
-//! function (`memo f = f`). What it holds is an approximation of that
-//! function's graph, a partial function ordered by inclusion, so it is a
-//! store with one register per key in the flat order, joined by union, from
-//! which any entry may be dropped ([`cache`]).
+//! A reading through a cache equals the function (`memo f = f`), so a
+//! program may drop any entry. A [`Holder`] keeps the pairs, and every
+//! holder obeys the same laws (law 57). [`fold()`] is the memoised fold over
+//! a content-addressed tree, over any holder. [`balance()`] gives a long
+//! sequence a balanced shape, so that a change renames a logarithmic number
+//! of nodes.
 //!
-//! WHERE A CACHE HOLDS ITS PAIRS is a [`Holder`], the one interface of that
-//! relation, with one set of laws (SPEC law 57). A holder is an interpreter
-//! of the relation: [`Memory`] holds the pairs in a hash map, and [`File`]
-//! holds them in one file that a new process reads (SPEC §6, "A cache
-//! file"). [`Cache`] is a holder under an eviction policy, and is a holder
-//! itself. [`Front`] reads a holder through a cache in memory: its meaning
-//! is the holder's, and its memory is only a cost.
-//!
-//! Hierarchical caching is then one combinator, the memoised fold over a
-//! content-addressed tree of any shape ([`fold()`]), over any holder: a
-//! node's [`name`] covers its children's names, Merkle style, the algebra is
-//! memoised at every node, and what a fold looked at is a [`Report`]. A long
-//! sequence is given a balanced shape ([`balance()`]) so a change's spine
-//! through it is logarithmic.
-//!
-//! The module depends on the hash type, on the literal codec through which
-//! a file keeps a value, and on nothing else of the crate: no schema, no
-//! store and no FPL.
+//! The module depends only on the hash type and on the literal codec of the
+//! crate: it uses no schema, no store and no FPL.
 
 #![warn(clippy::pedantic)]
 
@@ -45,13 +31,13 @@ pub use holder::{Holder, Memory};
 
 use crate::event::Hash;
 
-/// A node's content name: its own bytes and its children's names, in
-/// order, so it covers the whole subtree and a change anywhere below renames
-/// exactly the path up to it, as a git tree's name does. Its own bytes are
-/// length-prefixed and a name is fixed-width, so no two nodes print alike.
+/// The content name of a node, over its own bytes and its children's names
+/// in order, so that a change anywhere below renames exactly the path up to
+/// the node.
 ///
-/// The same function names an algebra: its code's bytes, and the names of
-/// what that code reads as its children.
+/// The own bytes are length-prefixed and a name is fixed-width, so no two
+/// nodes print alike. The same function names an algebra: its code's bytes,
+/// and the names of what that code reads as its children.
 pub fn name<'a>(own: &[u8], children: impl IntoIterator<Item = &'a Hash>) -> Hash {
     let mut bytes = format!("memo {}:", own.len()).into_bytes();
     bytes.extend_from_slice(own);

@@ -103,9 +103,9 @@ fn read_back<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<(), Brok
 /// Before them, law 1 at every object either holds: each reads back by its
 /// name as its print.
 ///
-/// The kit does not check §3's rules on what a change rests on, nor law
-/// 35's clauses on appends in memory and on overlays. A host runs
-/// [`Dag::verify`] over its stores for §3's rules.
+/// The kit does not check the rules of SPEC §3 on what a change rests on,
+/// nor the clauses of law 35 on appends in memory and on overlays. For the
+/// rules of SPEC §3, a host runs [`Dag::verify`] over its stores.
 ///
 /// # Errors
 ///

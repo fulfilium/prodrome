@@ -1,5 +1,4 @@
-//! An overlay (design §6.1): writes to memory, reads the union with another
-//! replica, and is flushed into it by a sync.
+//! An overlay (design §6.1; SPEC §3, "An overlay").
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -12,22 +11,19 @@ use crate::literal::ProdromeError;
 use crate::schema::Schema;
 use crate::store::Sender;
 
-/// A REPLICA OVER ANOTHER: what it appends or receives is held in memory
-/// (its OWN objects) and never reaches `base` until [`Overlay::flush`],
-/// while everything it reads is the reading of `own ∪ base`.
+/// A replica over `base`: it holds what it appends or receives (its own
+/// objects) in memory, and reads `own ∪ base`; its own objects reach `base`
+/// only by [`Overlay::flush`] or [`Overlay::accept`].
 ///
-/// THE UNION BY CONSTRUCTION. Its memory is the base's ([`Replica::held`]:
-/// the same objects and the same fold, shared and not copied) with its own
-/// objects admitted, which reads as the fold of the union (§1, and the
-/// memory's incremental-equals-cold law). When the base has changed since,
-/// the next read takes the base's memory again and admits its own objects
-/// over it. Nothing is copied to read it: not the base's files, and not its
-/// memory until the overlay holds an object of its own, when the memory it
-/// extends is copied once per change of the base.
+/// Its memory is the base's memory ([`Replica::held`], shared and not
+/// copied) with its own objects admitted over it. When the base changes, the
+/// next read takes the base's memory again and admits its own objects over
+/// it. A read copies none of the base's files. The memory that it extends
+/// is copied once for each change of the base, and only while the overlay
+/// holds an object of its own.
 ///
-/// An overlay decides nothing: it has no lock another writer takes and
-/// writes to memory, so it is never the store a coordinated decision is
-/// asked of ([`super::Decision`]).
+/// It has no lock that another writer takes, so no [`super::Decision`] is
+/// asked of it.
 #[derive(Debug)]
 pub struct Overlay<E: Schema, B> {
     base: B,
@@ -46,8 +42,7 @@ struct Layer<E: Schema> {
 }
 
 impl<E: Schema, B: Replica<E>> Overlay<E, B> {
-    /// An overlay holding nothing of its own over `base`, which reads as
-    /// `base` reads.
+    /// An overlay over `base` that holds nothing of its own.
     pub fn new(base: B) -> Overlay<E, B> {
         Overlay {
             base,
@@ -60,7 +55,7 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
         }
     }
 
-    /// This overlay, writing into the prodrome `genesis` begins.
+    /// This overlay, writing into the prodrome that `genesis` begins.
     #[must_use]
     pub fn in_genesis(self, genesis: Hash) -> Overlay<E, B> {
         Overlay {
@@ -73,9 +68,8 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
         &self.base
     }
 
-    /// `sync(self, base)`: the base takes in this overlay's own objects it
-    /// lacks, verified, and reads the union this overlay reads. Answers
-    /// what it took. [`Overlay::accept`] with everything chosen.
+    /// `sync(self, base)`: [`Overlay::accept`] with everything chosen.
+    /// Answers what the base took.
     ///
     /// # Errors
     ///
@@ -85,13 +79,13 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
         self.accept(self.tips()?)
     }
 
-    /// THE RESTRICTED JOIN (design §6.3): the base takes in the objects
-    /// `chosen` rest on that it lacks, verified, and nothing else of this
-    /// overlay; a batch accepted object by object. Where `chosen` is closed
-    /// under parents over the base, the base reads as it did plus exactly
-    /// `chosen`. What is not chosen stays this overlay's own, read over the
-    /// base as before, and a later flush takes it. Answers what the base
-    /// took, parents first.
+    /// The restricted join (design §6.3): the base takes in the objects that
+    /// `chosen` rest on and that it lacks, verified, and answers them,
+    /// parents first.
+    ///
+    /// Where `chosen` is closed under parents over the base, the base reads
+    /// as it did plus exactly `chosen`. What is not chosen stays this
+    /// overlay's own, and a later flush takes it.
     ///
     /// # Errors
     ///

@@ -4,9 +4,9 @@ use std::fmt;
 
 use crate::literal::ProdromeError;
 
-/// One step of a path: an entity's key, or a register's name. Not empty,
-/// and no `/`, so a path prints as its segments joined by one and parses
-/// back to them.
+/// One step of a path: an entity's key, or a register's name. A segment is
+/// not empty and holds no `/`, so a path prints as its segments joined by
+/// `/` and parses back to them.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Segment(String);
 
@@ -31,18 +31,16 @@ impl Segment {
     }
 }
 
-/// A KEY IN A NEST: where an object sits, the path of the register that
-/// held its history and then its own entity's key. Paths under
-/// concatenation are the FREE MONOID on segments: [`Path::root`] is the
-/// unit and [`Path::then`] is associative, so `a/(b/c)` and `(a/b)/c` are
-/// one path, which is why flattening three levels in either order gives one
-/// history.
+/// A key in a nest: the path of the register that held an object's
+/// history, and then the object's entity key. [`Path::then`] is
+/// associative with [`Path::root`] as its unit, so flattening three levels
+/// in either order gives one history.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Path(Vec<Segment>);
 
 impl Path {
-    /// The empty path, the monoid's unit: where a history's own objects sit
-    /// before it is nested in anything.
+    /// The empty path: where a history's own objects sit before the history
+    /// is nested in anything.
     #[must_use]
     pub fn root() -> Path {
         Path(Vec::new())

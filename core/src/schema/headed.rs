@@ -77,9 +77,9 @@ pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
     const NAME: &'static str;
 
     /// Each event constructor. Its fields are the key's fields, then `at`
-    /// and `actor`, then the body's fields. No constructor is named
-    /// `Sealed`, `Woven`, `Genesis`, `Change` or `Snapshot`, because a
-    /// parse looks up those names first, as the store's envelopes.
+    /// and `actor`, then the body's fields. No constructor may have an
+    /// envelope's name ([`crate::event::ENVELOPE_SIGNATURES`]), because a
+    /// parse looks up the envelopes first.
     const EVENTS: &'static [Constructor];
 
     /// The constructors that occur inside the fields of an event.
@@ -89,15 +89,15 @@ pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
     /// event that writes no register joins no register.
     fn writes(&self) -> impl Iterator<Item = Self::Register>;
 
-    /// Is an event with this body about standing? The reference policy
-    /// binds an event that is not, whoever wrote it.
+    /// Whether an event with this body is about standing. The reference
+    /// policy binds an event that is not, whoever wrote it.
     #[must_use]
     fn asks(&self) -> bool {
         true
     }
 
-    /// Can `key` and `body` make an event? [`Event::new`] asks this before
-    /// it builds an event. By default every pair can.
+    /// Checks that `key` and `body` can make an event. [`Event::new`] asks
+    /// this before it builds an event. By default every pair can.
     ///
     /// # Errors
     ///

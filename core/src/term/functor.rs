@@ -75,12 +75,13 @@ pub enum TermF<A> {
         delta: A,
         term: A,
     },
-    /// The fulfillment of the entity `entity`: a free variable, which
-    /// `fpl::link` binds. Unqualified (`store` none) it names an entity of
-    /// the term's own prodrome, printed `Ref(todo)`; qualified, an entity of
-    /// the prodrome `store` names in the set a host passes, printed
-    /// `RefIn(store, entity)`. One variable, two spellings: the unqualified
-    /// one is the qualified one at home.
+    /// The fulfillment of the entity `entity`, a free variable that
+    /// `fpl::link` binds (SPEC §7.2).
+    ///
+    /// With `store` set to `None`, it names an entity of the term's own
+    /// prodrome and prints as `Ref(todo)`. Otherwise it names an entity of
+    /// the prodrome that `store` names in the set that the host passes, and it
+    /// prints as `RefIn(store, entity)`.
     Ref {
         store: Option<String>,
         entity: String,
@@ -89,7 +90,7 @@ pub enum TermF<A> {
     Absent,
 }
 
-/// A named landmark on a `Curve`, validated by the enclosing `mk_curve`.
+/// A named landmark on a `Curve`. Only `mk_curve` checks it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct CurvePoint {
     pub at: Instant,
@@ -98,9 +99,11 @@ pub struct CurvePoint {
 }
 
 impl<A> TermF<A> {
-    /// Every child through `f` in declaration order, stopping at the first
-    /// error. By reference, so `as_ref` and `children` derive from it; the
-    /// layer's own fields are cloned.
+    /// The layer with `f` applied to every child in declaration order; it
+    /// stops at the first error.
+    ///
+    /// It takes the children by reference, so that `map`, `as_ref` and
+    /// `children` derive from it. It clones the layer's own fields.
     pub fn traverse<'a, B, E>(
         &'a self,
         mut f: impl FnMut(&'a A) -> Result<B, E>,
@@ -249,7 +252,8 @@ fn infallible<T>(result: Result<T, Infallible>) -> T {
 pub struct Term(Box<TermF<Term>>);
 
 impl Term {
-    /// One layer; the `mk_*` constructors are the checked path.
+    /// A term of one layer, built without checks; use the `mk_*`
+    /// constructors of `fpl` to build a checked term.
     pub fn new(layer: TermF<Term>) -> Self {
         Term(Box::new(layer))
     }
@@ -262,7 +266,7 @@ impl Term {
         *self.0
     }
 
-    /// The fold: `alg` over each layer, children first.
+    /// The fold of `alg` over each layer, children first.
     pub fn cata<R>(&self, mut alg: impl FnMut(TermF<R>) -> R) -> R {
         infallible(self.try_cata(|layer| Ok(alg(layer))))
     }

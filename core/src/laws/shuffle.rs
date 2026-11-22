@@ -16,19 +16,15 @@ type Objects<E> = Vec<(Hash, Envelope<E>)>;
 type Records<'n, E> = Vec<(u32, bool, &'n Node<E>)>;
 
 /// How [`super::free`] reorders and splits a history.
-///
-/// `objects` holds one record per object of the history, in the order of
-/// [`Dag::nodes`]: the object's rank, which orders it among the objects
-/// whose parents are placed (lowest first, then by name), and whether it
-/// seeds the first of two replicas. `twice` holds positions, in the
-/// reordered history and taken modulo its length, of objects to fold a
-/// second time.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Shuffle {
-    /// One `(rank, first replica)` record per object, in [`Dag::nodes`]'s
-    /// order.
+    /// One `(rank, first replica)` record for each object, in the order of
+    /// [`Dag::nodes`]. The rank orders an object among the objects whose
+    /// parents are placed (lowest first, then by name). The flag tells
+    /// whether the object seeds the first of the two replicas.
     pub objects: Vec<(u32, bool)>,
-    /// The objects to fold a second time.
+    /// The positions, in the reordered history and modulo its length, of
+    /// the objects to fold a second time.
     pub twice: Vec<usize>,
 }
 
@@ -66,9 +62,9 @@ impl Shuffle {
             .collect())
     }
 
-    /// `objects` split into two replicas: what the first replica's seeds
-    /// rest on, and what the others rest on. Each half is closed under
-    /// parents, and together they hold every object.
+    /// `objects` split into two replicas: what the seeds of the first
+    /// replica rest on, and what the other objects rest on. Each half is
+    /// closed under parents, and together they hold every object.
     ///
     /// # Errors
     ///

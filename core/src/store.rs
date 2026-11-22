@@ -1,35 +1,27 @@
-//! §3 — the files around a [`Dag`]: objects on disk, the lock, durable
-//! placement, quarantine, `adopt`/`merge`; and every other [`Replica`] of
-//! the same objects (a [`MemoryStore`], an [`Overlay`]), [`sync`] between
-//! any two, and the [`Decision`] only a store on disk can make.
+//! The store on disk (SPEC §3): its objects, its lock, durable placement,
+//! quarantine, `adopt` and `merge`; also the other [`Replica`]s
+//! ([`MemoryStore`], [`Overlay`]), [`sync`], and the [`Decision`] that only a
+//! store on disk makes.
 //!
-//! Objects live at `root/objects/<name>.py`, one canonical constructor
-//! expression per file, the filename being the sha256 of its own bytes. THAT IS
-//! THE WHOLE STORE. Its tips are DERIVED — the objects no object names as a
-//! parent ([`Dag::tips`]) — so nothing on disk names a head, and two copies of a
-//! store that each only added files are merged by putting their files in one
-//! directory: a `git merge` of two clones IS the union, and nothing in it can
-//! conflict. A store written before 0.9 also holds `HEAD` (and `refs/` while it
-//! had several heads). Nothing reads or writes them any more — the objects
-//! imply what they named (SPEC §9.17) — and `verify` asks for them to go.
+//! Each object lives at `root/objects/<name>.py`, one canonical print in each
+//! file, and the file name is the sha256 of the file's bytes. No file names a
+//! head, because the tips are derived ([`Dag::tips`]), so the union of the
+//! files of two stores is their merge (SPEC §3, "Tips are derived"). A store
+//! written before 0.9 also holds `HEAD` and `refs/`; nothing reads them, and
+//! `verify` reports them.
 //!
-//! Effect shell, not pure core: the filesystem lives here and `literal`/`event`
-//! stay pure. Two rules the reference states and this keeps:
-//!
-//! - a read VERIFIES, hashing the STORED BYTES against the filename before
-//!   parsing — tamper-evidence on read — and never a reprint→rehash, which
-//!   would couple every old object's validity to the current printer. At a
-//!   schema with sealed parts, bytes that do not hash to the filename may
-//!   be a HUSK, the whole with its sealed parts dropped ([`husk`], SPEC
-//!   §3), which reads as the object it prints; any other such bytes are
-//!   tampered. A
-//!   handle verifies each object once and holds it (`store::memory`); a held
-//!   object is read again only when its file no longer looks as it did, and
-//!   `verify` rehashes everything, on purpose;
-//! - a write is content-addressed and idempotent, through a randomly named
-//!   temp file synced before it is renamed, so the object appearing under its
-//!   name IS the append: there is no second file to move after it, and no
-//!   crash leaves a store half-written or an object empty.
+//! - A read hashes the stored bytes against the file name before it parses
+//!   them, and never reprints and rehashes, so that a change of the printer
+//!   cannot make an old object invalid. At a schema with sealed parts, bytes
+//!   that do not hash to the name can be a husk, which reads as the object
+//!   that it prints (SPEC §3, "A husk"); all other such bytes are tampered.
+//! - A handle verifies each object once and holds it. The handle reads a
+//!   held object again only when its file no longer looks as it did, and
+//!   `verify` rehashes every file.
+//! - A write is content-addressed and idempotent. It goes through a randomly
+//!   named temp file that is synced before it is renamed, so the rename is
+//!   the append, and no crash leaves a half-written store or an empty object
+//!   (SPEC §3, "A write is durable").
 
 mod decision;
 mod doors;
@@ -76,14 +68,12 @@ pub use overlay::Overlay;
 use record::Record;
 pub use replica::{accept, sync, Held, Replica};
 
-/// A chain rooted at `root`, of the schema `E`, read under one host
-/// [`Policy`] (§5).
+/// A store on disk at `root`, of the schema `E`, read under one host
+/// [`Policy`] (SPEC §5).
 ///
-/// THE STORE HOLDS THE POLICY, so callers do not each have to remember it and
-/// `verify` has the one it is asked about. The type parameter defaults to
-/// [`Untrusted`], the reference policy, because a store that names no policy
-/// at all is a store nobody has configured — and `Untrusted::none()`, which
-/// stands behind every writer, is the only honest thing for that to mean.
+/// The store holds the policy, so that `verify` and every caller read under
+/// the same policy. The policy type defaults to [`Untrusted`], the reference
+/// policy.
 #[derive(Debug, Clone)]
 pub struct EventStore<E: Schema, Pol = Untrusted> {
     root: PathBuf,
@@ -122,8 +112,8 @@ struct Listing {
 }
 
 impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
-    /// A store at a schema whose type says everything of it (a Rust
-    /// schema's unit vocabulary).
+    /// A store at the default value of the schema's vocabulary, such as the
+    /// unit vocabulary of a Rust schema.
     pub fn new(root: impl Into<PathBuf>, policy: Pol) -> EventStore<E, Pol>
     where
         E::Vocabulary: Default,
@@ -131,7 +121,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         EventStore::at(root, policy, E::Vocabulary::default())
     }
 
-    /// A store opened at the schema `schema`, a value: a declared schema
+    /// A store opened at the schema value `schema`: a declared schema
     /// admitted at run time ([`crate::declared`]), or a Rust schema's unit.
     pub fn at(root: impl Into<PathBuf>, policy: Pol, schema: E::Vocabulary) -> EventStore<E, Pol> {
         EventStore {
@@ -150,14 +140,15 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         self.doors
     }
 
-    /// This handle, opened with `doors`: [`Doors::Shared`] unless the
-    /// program says that nothing but this library writes `objects/`.
+    /// This handle, opened with `doors` (SPEC §3, "The doors a store has").
+    /// Open a store with [`Doors::Alone`] only where nothing but this library
+    /// writes `objects/`.
     #[must_use]
     ///
     /// A change of doors forgets the mark that the memory keeps, so the
-    /// next read lists `objects/`: a handle that read while other programs
-    /// could change the store has no mark that a decision of a store opened
-    /// as alone may trust.
+    /// next read lists `objects/`: a mark read while other programs could
+    /// change the store is not a mark that a decision of a store opened as
+    /// alone may trust.
     pub fn with_doors(self, doors: Doors) -> EventStore<E, Pol> {
         if doors != self.doors {
             self.memory().mark = None;
@@ -177,22 +168,22 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         })
     }
 
-    /// THE STORE OF RECORD'S DECISION: its lock taken, then its memory,
-    /// brought level with `objects/`. See [`Decision`]. On unix only: there
-    /// is no store, and no lock, off it.
+    /// The store of record's decision ([`Decision`]): the lock is taken
+    /// first, and then the memory is brought level with `objects/` (SPEC §3,
+    /// "A decision is the store of record's"). It exists only on unix,
+    /// because there is no store and no lock on other targets.
     ///
-    /// A READING MAY OMIT; A DECISION MAY NOT GUESS. Every read is total
-    /// (SPEC law 45): a file that is no object is left out, with what rests
-    /// on it, and named in [`Dag::excluded`]. A decision is not a reading.
-    /// What it writes names the store's heads as its parents and deps, and
-    /// what it answers ("is this still standing?") is a negation over the
-    /// history: a file this reader cannot read may be a head, or the write
-    /// that settled the question, and leaving it out would write a change
-    /// over heads that are not the store's, or answer from a history the
-    /// store does not hold. So a decision, and every write that begins with
-    /// one, refuses while anything is unread, naming the file; `fsck` sets
-    /// aside a file failing its hash that is no husk, and a file that parses under a newer
-    /// schema is read by opening the store at it.
+    /// A read leaves out a file that is no object, and what rests on it, and
+    /// names the file in [`Dag::excluded`] (law 45). A decision, and every
+    /// write that begins with one, instead refuses while any file is unread,
+    /// and names the file. The reason is that a decision writes over the
+    /// store's heads and answers a negation over the history, and an unread
+    /// file may be a head or the write that settled the question. A decision
+    /// that left the file out would write a change over heads that are not
+    /// the store's, or answer from a history that the store does not hold.
+    /// `fsck` sets aside a file that fails its hash and is no husk. To read a
+    /// file that parses only under a newer schema, open the store at that
+    /// schema.
     ///
     /// # Errors
     ///
@@ -326,9 +317,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// The policy this store reads under — what `verify` asks and what a
-    /// caller folding its events should ask too, so that one store is one
-    /// reading.
+    /// The policy that `verify` asks. A caller that folds the store's events
+    /// asks the same policy, so that one store has one reading.
     pub fn policy(&self) -> &Pol {
         &self.policy
     }
@@ -345,16 +335,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         object_file(&self.objects_dir(), digest)
     }
 
-    /// Every head: the objects of the history no object of it names as a
-    /// parent — [`Dag::tips`] over [`EventStore::dag`], and nothing on disk
-    /// besides.
+    /// The tips of the store's history: [`Dag::tips`] over
+    /// [`EventStore::dag`]; empty for an empty store.
     ///
-    /// Of the history the store reads, so a file that is no object is not
-    /// among them, nor what rests on it: the heads of what verifies, and
-    /// [`Dag::excluded`] says what they leave out. A write does not take
-    /// them as the store's while anything is unread
-    /// ([`EventStore::decide`]). Empty for an empty store. The tips are the
-    /// memory's, so a steady store costs a directory listing.
+    /// A file that is no object, and what rests on it, is not in the history
+    /// ([`Dag::excluded`]). A write does not take these tips as the store's
+    /// while any file is unread ([`EventStore::decide`]).
     ///
     /// # Errors
     ///
@@ -366,19 +352,19 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// The heads of the store's history and the count of its objects, read
-    /// from the store's record (`root/.heads`, SPEC §3) without a listing
-    /// of `objects/`: one small file, and one `stat` for each recorded tip.
+    /// from the record `root/.heads` and one `stat` for each recorded tip,
+    /// without a listing of `objects/` (SPEC §3, "The record of heads").
     ///
-    /// The record holds what the last holder of the store's lock saw when
-    /// it let the lock go, and no write of the store leaves an older record
-    /// (SPEC law 61). A program that adds objects by another door, such as
-    /// a checkout, a copy or an older binary, leaves the record older than
-    /// the objects until it calls [`EventStore::record_heads`] or deletes
-    /// the record (law 62). Where the record is absent, does not parse, or
-    /// names a tip whose file is absent (law 63), the heads are derived as
-    /// [`EventStore::tips`] derives them. Such a fallback writes no record,
-    /// so a store with no record pays the listing on every call until the
-    /// next hold of its lock (a write, a `decide`, or `record_heads`).
+    /// Law 61: no stop of a write of the store leaves a served record that
+    /// is not the derived heads. A program that adds objects by another
+    /// door, such as a checkout, a copy or an older binary, leaves the
+    /// record older than the objects until it calls
+    /// [`EventStore::record_heads`] or deletes the record (law 62). Where the
+    /// record is absent, does not parse, or names a tip whose file is absent
+    /// (law 63), this function derives the heads as [`EventStore::tips`]
+    /// does. That fallback writes no record, so each call lists `objects/`
+    /// until the next hold of the lock (a write, a `decide`, or
+    /// `record_heads`).
     ///
     /// # Errors
     ///
@@ -402,11 +388,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// Derive the heads under the store's lock, record them, and answer
-    /// them. A host that changes `objects/` without the store calls this,
-    /// or deletes `root/.heads`, so that [`EventStore::heads`] reads the
-    /// objects that it brought in (SPEC §3). Unlike a write, it records
-    /// while a file is unread, since the record holds the heads of the
-    /// history that every read of the store reads.
+    /// them (SPEC §3, "The record of heads").
+    ///
+    /// A host that changes `objects/` without the store calls this, or
+    /// deletes `root/.heads`, so that [`EventStore::heads`] reads the objects
+    /// that it brought in. Unlike a write, this function records while a
+    /// file is unread, because the record holds the heads of the history
+    /// that every read of the store reads.
     ///
     /// # Errors
     ///
@@ -455,16 +443,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(listing)
     }
 
-    /// THE STORE'S HISTORY: the largest down-set of its objects
-    /// ([`Dag::interior`]). An object resting on one the store lacks (set
-    /// aside, not arrived, or a file that is no object) is in it once what
-    /// it rests on is; until then no read sees it, and [`Dag::excluded`]
-    /// names what it lacks and why, as it does for any replica holding the
-    /// same files (SPEC law 45). What the memory holds, after reading what
-    /// it does not.
+    /// The store's history: the largest down-set of its objects
+    /// ([`Dag::interior`], law 40).
     ///
-    /// Shared, not copied: the memory goes on from this value, and copies it
-    /// only if a look extends it while the caller still holds this one.
+    /// An object that rests on one the store lacks joins the history when
+    /// what it rests on arrives; until then, [`Dag::excluded`] names what it
+    /// lacks and why (law 45). The memory shares this value, and copies it
+    /// only if a look extends the memory while the caller still holds it.
     ///
     /// # Errors
     ///
@@ -475,10 +460,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(Arc::clone(memory.dag()))
     }
 
-    /// The fold of the store's history (what an append decides on):
-    /// `fold(&dag.nodes()?)` of [`EventStore::dag`], extended by each object
-    /// as it is read and never refolded from the files. Shared as `dag` is: a caller holding it
-    /// while the store extends its memory makes that extension copy it.
+    /// The fold of the store's history, on which an append decides: equal to
+    /// `fold(&dag.nodes()?)` of [`EventStore::dag`].
+    ///
+    /// The memory extends the fold by each object as it reads the object, and
+    /// never refolds the files. A caller that holds the value while the store
+    /// extends its memory makes that extension copy it.
     pub fn folded(&self) -> Result<Arc<Folded<E>>, ProdromeError> {
         let mut memory = self.memory();
         self.refresh(&mut memory)?;
@@ -529,8 +516,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(None)
     }
 
-    /// This handle, writing into the prodrome `genesis` begins; without one
-    /// a handle writes into the store's only genesis.
+    /// This handle, writing into the prodrome that `genesis` begins. Without
+    /// a genesis, a handle writes into the store's only genesis.
     pub fn in_genesis(self, genesis: Hash) -> EventStore<E, Pol> {
         EventStore {
             genesis: Some(genesis),
@@ -554,25 +541,23 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// Write `event` as a `Change` over its entity's heads (every write to
-    /// that entity the writer holds that no other descends from), or, when
-    /// the writer's prodrome already holds an object whose event prints the
-    /// same, write nothing and answer the first such. A write that would take
-    /// an inflationary register below the reading it supersedes is refused,
-    /// and nothing is written.
+    /// that entity that the writer holds and that no other write descends
+    /// from), or, where the writer's prodrome already holds an object whose
+    /// event prints the same, write nothing and answer the first such object
+    /// (SPEC §3, "Appending writes a `Change`").
     ///
-    /// DECIDED ON THE MEMORY, UNDER THE LOCK. The look that brings the memory
-    /// level with `objects/` is taken after the lock is, and every writer
-    /// places its object before it lets the lock go, so the memory holds
-    /// every object any writer finished: the twin check and the deps read
-    /// what a fresh handle would read, and cost what is new.
+    /// A write that would take an inflationary register below the reading it
+    /// supersedes is refused, and nothing is written. The look that brings
+    /// the memory level with `objects/` comes after the lock is taken, and
+    /// every writer places its object before it lets the lock go, so the
+    /// twin check and the deps read every object that any writer finished.
     pub fn append(&self, event: E) -> Result<Hash, ProdromeError> {
         self.decision()?.append(event)
     }
 
-    /// A RUN OF APPENDS under one lock and one look: each event decided as
-    /// [`EventStore::append`] decides it, over the changes decided before
-    /// it, and every new object placed at the end, with one directory sync
-    /// ([`Decision::append_all`]). Answers each event's name.
+    /// A run of appends under one lock and one look, with every new object
+    /// placed at the end and one directory sync ([`Decision::append_all`],
+    /// SPEC §3, "A run of appends"); answers the name of each event.
     ///
     /// # Errors
     ///
@@ -588,21 +573,20 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
             .append_all(events)
     }
 
-    /// DROP THE SEALED PARTS of the objects `names` names (SPEC §3): each
-    /// object the history holds whole, as a `Change` whose event holds a
-    /// sealed part, has its file replaced by its husk, under the store's
-    /// lock ([`Decision::husk`]). A name already a husk, an event with no
-    /// sealed part, any other object and a name not held are passed over.
-    /// Answers the names husked.
+    /// Replace the file of each object in `names` by its husk, under the
+    /// store's lock ([`Decision::husk`], SPEC §3, "A husk"), and answer the
+    /// names husked.
     ///
-    /// Which names are dead is the caller's knowledge: it knows which keys
-    /// are gone ([`Husk::opens`]). The store drops what it is told to drop
-    /// and nothing else, and never takes a whole back once it is dropped.
+    /// Only an object that the history holds whole, as a `Change` whose event
+    /// holds a sealed part, is husked; every other name is passed over. The
+    /// caller decides which names are dead, because it knows which keys are
+    /// gone ([`Husk::opens`]). The store never takes a whole back once it
+    /// drops it.
     ///
-    /// Each file is replaced as an object is placed: the husk written to a
-    /// temp file and synced, the temp renamed over the whole, and
-    /// `objects/` synced once after the last. A stop at any point leaves
-    /// each file the whole or the husk (law 75). The heads do not change.
+    /// Each husk is written to a temp file and synced, the temp is renamed
+    /// over the whole, and `objects/` is synced once after the last rename.
+    /// Law 75: a stop at any point leaves each file the whole or the husk.
+    /// The heads do not change.
     ///
     /// # Errors
     ///
@@ -615,9 +599,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         self.decision()?.husk(names)
     }
 
-    /// Attest the writer's prodrome: a `Snapshot` of its tips, chained to the
-    /// last snapshot among them. With nothing new since that one, it is the
-    /// answer and nothing is written.
+    /// Attest the writer's prodrome: write a `Snapshot` of its tips, chained
+    /// to the last snapshot among them. Where nothing is new since that
+    /// snapshot, answer it and write nothing.
     pub fn snapshot(&self) -> Result<Hash, ProdromeError> {
         let mut decision = self.decision()?;
         let genesis = decision.memory.writer(self.genesis.as_ref())?;
@@ -631,10 +615,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// Join two or more tips into one `Woven`, which becomes a tip in their
     /// place: a legacy store's merge, which a store of changes never needs.
     ///
-    /// `parents` of `None` means every tip of the legacy prodrome. NO
-    /// who/when/why: a merge asserts structure, not a fact about a todo. A
-    /// caller that wants the act attributed passes an ordinary `event`, and
-    /// the object is a write and a join at once.
+    /// `parents` of `None` means every tip of the legacy prodrome. A merge
+    /// alone has no actor, time or reason; a caller that wants the merge
+    /// attributed passes an `event`, and the object is a write and a join.
     pub fn merge(&self, parents: Option<&[Hash]>, event: Option<E>) -> Result<Hash, ProdromeError> {
         let mut decision = self.decision()?;
         let on: Vec<Hash> = match parents {
@@ -645,19 +628,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         decision.write(Verified::sealed(mk_woven(on, event)?))
     }
 
-    /// Take in everything another replica's `digest` rests on, verified.
+    /// Take in, verified, everything that `digest` in `source` rests on, and
+    /// answer `digest` (SPEC §3, "`adopt(source, tip)`").
     ///
-    /// THE ONLY WAY A SECOND TIP APPEARS, and there is no placement to do: the
-    /// tips are derived, so git's three cases fall out of the objects. A tip we
-    /// already contain changes nothing; a tip that contains every tip we hold
-    /// names them all beneath it, so they stop being tips (a FAST-FORWARD);
-    /// anything else is a second tip. Answers `digest`.
-    ///
-    /// [`accept`], the restricted join, with one tip chosen.
-    ///
-    /// `sender` names whose word `source` is: from the keeper of record
-    /// ([`Sender::Keeper`]) the husks `source` keeps are taken (SPEC §3);
-    /// from a stranger they are refused.
+    /// This is [`accept`] with one tip chosen. From [`Sender::Keeper`] it
+    /// takes the husks that `source` keeps; from a stranger it refuses them.
     pub fn adopt(
         &self,
         source: &EventStore<E, Pol>,
@@ -668,20 +643,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(digest.clone())
     }
 
-    /// The same adoption from a replica that is NOT a directory: `objects` maps
-    /// a name to the canonical print that name is the hash of.
+    /// [`EventStore::adopt`] from prints that arrived over a wire: `objects`
+    /// maps a name to the canonical print that the name is the hash of.
     ///
-    /// A replica that reaches this store over a wire arrives as BYTES, and the
-    /// alternative was for its caller to lay them out as a second store —
-    /// a temporary directory whose layout is this module's own business,
-    /// written by somebody who is not this module. The placement rule, the
-    /// reverification and the walk over parents are IDENTICAL; only where the
-    /// bytes are read from differs, which is why [`EventStore::adopt`] is now
-    /// this function with a directory for a source.
-    ///
-    /// The same refusals, in the same words: bytes that do not hash to the name
-    /// given and are no husk at the store's schema, an object that does not
-    /// parse, and a parent neither `objects` nor this store holds.
+    /// It refuses, in the words of `adopt`, bytes that do not hash to the
+    /// given name and are no husk at the store's schema, an object that does
+    /// not parse, and a parent that neither `objects` nor this store holds.
     pub fn adopt_objects(
         &self,
         objects: &BTreeMap<Hash, String>,
@@ -809,13 +776,13 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         put_durably(&path, GITATTRIBUTES.as_bytes())
     }
 
-    /// Load and REVERIFY one object: hash the STORED BYTES against the
-    /// filename, then parse. Deliberately NOT a reparse→reprint→rehash — git
-    /// hashes bytes and not semantics, so that a future printer change cannot
-    /// false-alarm the whole store as tampered.
+    /// Load and verify one object: hash the stored bytes against the file
+    /// name, then parse them.
     ///
-    /// A file that does not hash to its name and reads as a husk at the
-    /// store's schema loads as the object it reads as (SPEC §3).
+    /// It never reparses, reprints and rehashes, so that a later change of
+    /// the printer cannot report the whole store as tampered. A file that
+    /// does not hash to its name and reads as a husk at the store's schema
+    /// loads as the object that it reads as (SPEC §3, "A husk").
     pub fn load(&self, digest: &Hash) -> Result<Envelope<E>, ProdromeError> {
         decode(&self.schema, digest, &self.raw(digest)?, Sender::Keeper)
             .map(Stored::into_object)
@@ -849,37 +816,26 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         }
     }
 
-    /// FULL FSCK: set aside every object file that fails its hash and does
-    /// not read as a husk (SPEC §3), then [`EventStore::verify`]. An empty
-    /// result means healthy.
+    /// Set aside every object file that fails its hash and does not read as
+    /// a husk, then run [`EventStore::verify`]; an empty result means that
+    /// the store is healthy (SPEC §3, "`fsck`").
     ///
-    /// A husk does not hash to its name, and is the object it reads as, so
-    /// it stays. Any other file whose bytes are not the hash of its name has
-    /// no honest reading:
-    /// every read leaves it out, and every write refuses to guess what it
-    /// held, so one damaged file would stop every write. This moves each
-    /// such file to `quarantine/` (durably, under the store's lock, never
-    /// overwriting other bytes already there and never deleting any), and
-    /// the store then reads and writes the largest down-set it holds
-    /// (law 40): the history WITHOUT the object and without
-    /// everything resting on it, which a replica that never received the
-    /// object holds. The report names each set-aside file
-    /// ([`Finding::Quarantined`]) until the object is restored from a
-    /// replica (an `adopt`, or a copy of its file) and the receipt deleted;
-    /// what rested on the object rejoins the history with it.
+    /// Every write refuses to guess what such a file held, so one damaged
+    /// file stops every write. This function moves each such file to
+    /// `quarantine/` durably and under the store's lock, and never
+    /// overwrites or deletes other bytes there. The store then reads and
+    /// writes the largest down-set that it holds, without the object and
+    /// everything that rests on it (law 40). The report names each set-aside
+    /// file ([`Finding::Quarantined`]) until a replica restores the object
+    /// and the receipt is deleted.
     ///
-    /// ONLY A FILE THAT FAILS ITS HASH AND IS NO HUSK. One that hashes to its name is that
-    /// object, whatever it holds — one this reader cannot parse may be a
-    /// newer writer's — and setting it aside would be hiding it: it is
-    /// reported, and stays. Strays are reported, never moved or deleted.
-    ///
-    /// So such a file blocks writes until its owner decides what it is,
-    /// which nothing here can: a newer writer's object is read, and written
-    /// over, by opening the store at the schema that parses it; a print no
-    /// schema parses (it is not text, or it is junk under an object's name)
-    /// is no object of any reader's, and its owner moves it out of
-    /// `objects/` by hand once `verify` has named it. Reads answer
-    /// throughout, leaving it out.
+    /// A file that hashes to its name stays, and is reported, even where
+    /// this reader cannot parse it, because it may be a newer writer's
+    /// object and setting it aside would hide it. Strays are reported, and
+    /// never moved or deleted. Such a file blocks writes until its owner
+    /// opens the store at the schema that parses it, or moves a print that
+    /// no schema parses out of `objects/` by hand. Reads answer throughout,
+    /// and leave the file out.
     #[must_use]
     pub fn fsck(&self) -> Vec<Finding> {
         match self.quarantine() {
@@ -929,8 +885,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(())
     }
 
-    /// Everything `digest` transitively rests on — STRICTLY: an object is not
-    /// its own ancestor. This is the partial order and the whole of it.
+    /// Everything that `digest` transitively rests on; an object is not its
+    /// own ancestor.
     pub fn ancestors(&self, digest: &Hash) -> Result<BTreeSet<Hash>, ProdromeError> {
         let dag = self.dag()?;
         let parents = |name: &Hash| {
@@ -949,10 +905,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(found)
     }
 
-    /// Do these two objects know nothing of each other? Neither rests on the
-    /// other — the definition, and the only one this store has: not "written at
-    /// the same time", which is a claim about clocks, and not "on different
-    /// branches", which is a claim about names.
+    /// Whether neither object rests on the other. Concurrency depends only
+    /// on ancestry, and never on clocks or branch names.
     pub fn concurrent(&self, a: &Hash, b: &Hash) -> Result<bool, ProdromeError> {
         if a == b {
             return Ok(false);
@@ -979,22 +933,22 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
         Ok(memory)
     }
 
-    /// Full fsck; an empty result means healthy.
+    /// Check the whole store and change nothing; an empty result means that
+    /// the store is healthy (SPEC §3, "`verify`").
     ///
-    /// The [`Dag`]'s findings of a cold look ([`EventStore::cold`]), the
-    /// unread prints and what rests on them as [`Dag::excluded`] says, with
-    /// what only the files can say beside them:
-    /// every entry of `objects/` that is not an object, a `HEAD` or `refs/`
-    /// left from before the tips were derived, and a receipt for each file in
-    /// `quarantine/`, which stands in for the missing parent it would be.
-    /// Asked under the store's policy at what it read ([`Policy::at`]).
+    /// It reports the [`Dag`]'s findings of a cold look, which reads and
+    /// rehashes every file whatever the memory holds, and the findings that
+    /// only the files show: every entry of `objects/` that is not an object,
+    /// a `HEAD` or `refs/` from before the tips were derived, and a receipt
+    /// for each file in `quarantine/`, in place of the missing parent. It
+    /// asks the store's policy at what it read ([`Policy::at`]).
     ///
-    /// The record of heads is reported when it parses and is not the heads
-    /// of the cold look ([`Finding::StaleHeads`]). `verify` takes no lock,
-    /// so it reads the record before the look and after it, and compares
-    /// only a record that both reads found: a write of the store between
-    /// the two changes the record, and a stale finding would then not be
-    /// true. A change by another door in that window is reported.
+    /// It reports the record of heads when the record parses and is not the
+    /// heads of the cold look ([`Finding::StaleHeads`]). `verify` takes no
+    /// lock, so it reads the record before the look and after it, and
+    /// compares only a record that both reads found: a write of the store
+    /// between the two reads changes the record, and a stale finding would
+    /// then be false. A change by another door in that window is reported.
     pub fn verify(&self) -> Vec<Finding> {
         let (recorded, looked) = record::bracketed(&self.root, || {
             self.listing()

@@ -4,26 +4,22 @@
 //! memoCata alg (Fix f) = memo (name (Fix f)) (alg (fmap (memoCata alg) f))
 //! ```
 //!
-//! one combinator over any tree whose nodes carry a content name. The
-//! algebra is memoised at EVERY node, keyed by its own name and the node's,
-//! so the cache takes the data's own shape: after a change, the nodes whose
-//! names moved (the spine from each changed subtree to the root) are
-//! computed, and every other subtree is one hit at its top, never entered.
-//! Nothing names a level.
+//! The fold memoises the algebra at every node, keyed by the algebra's name
+//! and the node's name. After a change, the fold computes the nodes whose
+//! names changed, and every other subtree is one hit at its top.
 
 use crate::event::Hash;
 
 use super::cache::{Key, Lookup};
 use super::holder::Holder;
 
-/// A node of a content-addressed tree: a fixed point of some functor, seen
-/// through its name and its recursive positions.
+/// A node of a content-addressed tree, seen through its name and its
+/// children.
 ///
-/// THE NAME MUST COVER THE NODE: its own content and its children's names,
-/// in order, as [`super::name`] makes one. Then a changed node renames
-/// exactly itself and its ancestors, and two nodes with one name fold to one
-/// value. A name that covers too little makes a hit wrong; one that covers
-/// too much makes too much miss.
+/// The name must cover the node: its own content and its children's names,
+/// in order, as [`super::name`] makes one. A name that covers too little
+/// makes a hit wrong, and a name that covers too much makes too many
+/// lookups miss.
 pub trait Tree {
     /// The node's content name.
     fn name(&self) -> &Hash;
@@ -31,13 +27,13 @@ pub trait Tree {
     fn children(&self) -> impl Iterator<Item = &Self>;
 }
 
-/// An `f`-algebra over a tree: what a node is, given what its children are.
+/// An algebra over a tree: the result at a node, given its children's
+/// results.
 ///
-/// `apply` is `alg` applied to one layer of the functor: the node stands
-/// for its own content, and the children's results fill its recursive
-/// positions. It must be PURE: a function of that layer and of nothing the
-/// node's name does not cover. Its own name covers its code and everything
-/// that code reads, so two algebras share a cache without sharing an entry.
+/// `apply` must be pure: a function of the node and its children's results,
+/// and of nothing that the node's name does not cover. The algebra's name
+/// must cover its code and everything that the code reads, so that two
+/// algebras share a cache without sharing an entry.
 pub trait Algebra<T: ?Sized> {
     /// What the fold answers at each node.
     type Out;
@@ -51,13 +47,12 @@ pub trait Algebra<T: ?Sized> {
 /// What became of one node a fold looked at.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Outcome {
-    /// The cache held its value: the node and its whole subtree are this one
-    /// lookup.
+    /// The cache held its value, so the fold did not enter its subtree.
     Hit,
-    /// Its value was computed, and is held from now on.
+    /// The fold computed its value and added it to the cache.
     Computed,
-    /// Its key held two values. Its value was computed, and neither held
-    /// value was used.
+    /// Its key held two values. The fold computed its value and used
+    /// neither held value.
     Finding,
 }
 
@@ -84,8 +79,7 @@ pub struct Counts {
 }
 
 /// What a fold looked at: per node and by depth, what hit and what was
-/// computed. A fold's cost is the computed nodes' work, so a cost that does
-/// not follow from these counts is itself a finding.
+/// computed. The cost of a fold is the work of its computed nodes.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Report {
     visits: Vec<Visit>,
@@ -136,18 +130,15 @@ enum Frame<'t, T> {
 }
 
 /// The algebra folded over `tree` bottom-up, memoised in `cache` at every
-/// node by (the algebra's name, the node's name), with what it looked at.
-/// The cache is any [`Holder`]: a [`super::Cache`] in memory or in a file,
-/// or a [`super::Front`] of memory before a file.
+/// node by the algebra's name and the node's name, with what it looked at.
 ///
-/// Its value is the plain fold's (`memo f = f`) whatever entries were
-/// dropped, wherever the cache's entries were made by a pure algebra's
-/// folds, here or in a cache joined into this one: a held value is the one
-/// the algebra computes, an entry dropped is computed again, and a key
-/// holding two values is computed, never chosen, and reported. A single
-/// value an untrusted writer put at a key nothing else filled is a claim,
-/// which only recomputing it checks. Iterative, so a tree's depth costs
-/// heap and not stack.
+/// The value equals the plain fold's (`memo f = f`, law 51) whatever entries
+/// were dropped, provided that the folds of a pure algebra made every entry
+/// of the cache, here or in a cache joined into this one. The fold computes
+/// a key that holds two values, never chooses one, and reports it. A single
+/// value that an untrusted writer put at a key that nothing else filled is
+/// a claim, and only a recomputation checks it. The fold is iterative, so
+/// the depth of a tree costs heap and not stack.
 // Its one `expect` cannot fire: every node entered leaves exactly one value,
 // so the root's is the one left when the stack empties.
 #[allow(clippy::missing_panics_doc)]

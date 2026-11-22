@@ -100,7 +100,7 @@ pub enum Refusal {
 }
 
 /// One of the two roots, whose signatures register and revoke keys. The
-/// confirmed reading counts the key objects that either signs.
+/// confirmed reading counts the key objects that either root signs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Root {
     First,
@@ -187,8 +187,8 @@ pub enum Step<E> {
 }
 
 impl<E> Step<E> {
-    /// Is the step one that an honest actor takes? A write with a fault,
-    /// or under another actor's name, is not.
+    /// Whether an honest actor takes this step. A write with a fault, or
+    /// under the name of another actor, is not honest.
     pub fn honest(&self) -> bool {
         match self {
             Step::Append {

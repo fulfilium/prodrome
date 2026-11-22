@@ -1,29 +1,18 @@
-//! The cache as a store (design §6.2): a relation from keys to values, joined
-//! by union, read as a partial function.
+//! The cache as a relation from keys to values, joined by union and read as
+//! a partial function (design §6.2; SPEC §6, "A cache is a tabulation of a
+//! pure function").
 //!
-//! A [`Key`] names one computation: a function's name and its argument's.
-//! Each key is a register in the FLAT order: unknown (no entry), then one
-//! value. Two caches merge by union of their pairs, which is associative,
-//! commutative and idempotent, so caches sync as replicas do (§6.1) by
-//! [`Cache::join`], in memory or in a file (SPEC law 56). Because the
-//! function is pure, two caches that computed one key hold one value there;
-//! a key that comes to hold two is a [`Finding`] (the function was not pure,
-//! or its key left out something it read, or a writer lied), held as
-//! evidence and never chosen between.
+//! [`Cache::join`] merges two caches by the union of their pairs, so caches
+//! sync as replicas do (law 56). A key that comes to hold two values is a
+//! [`Finding`], which the cache keeps as evidence and never chooses between.
+//! An [`Evict`] policy decides which entries go, and it means the same over
+//! every [`Holder`]: over a file, it bounds the keys and so the file (law
+//! 58). [`Cache::forget`] also erases the bytes of the values (law 55).
 //!
-//! An entry may be dropped at any time: nothing rests on it, and a fold that
-//! needs it computes it again. Which entries go is an [`Evict`] policy's
-//! business; [`Keep`] drops none and [`Lru`] keeps a bounded number, the
-//! least recently used going first. A policy means the same over every
-//! [`Holder`]: over a file, it bounds the keys and so the file (SPEC law 58).
-//! An entry may also be FORGOTTEN ([`Cache::forget`]): dropped, and its
-//! bytes erased from where the holder keeps them (SPEC law 55).
-//!
-//! This is not an [`crate::store::Replica`], on purpose. An object in a
-//! history is never deleted, is verified by rehashing and belongs in a
-//! checkpoint; an entry here is deleted freely, is verified by recomputing
-//! and stays out of every checkpoint. The two never share a type, so no
-//! entry can be received into a history, or an object evicted from one.
+//! A cache is not a [`crate::store::Replica`]: an entry is deleted freely,
+//! is verified by recomputing and stays out of every checkpoint. The two
+//! never share a type, so that no entry can be received into a history and
+//! no object can be evicted from one.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::marker::PhantomData;
@@ -42,9 +31,9 @@ pub struct Key {
     pub argument: Hash,
 }
 
-/// A key holding more than one value: the function was not pure, or its key
-/// left out something it read, or a writer forged an entry. Reported, never
-/// resolved by picking one.
+/// A key that holds more than one value: the function was not pure, its key
+/// left out something that it read, or a writer forged an entry. A reader
+/// reports it and never picks one of the values.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Finding {
     /// The key that holds the values.
@@ -85,17 +74,16 @@ impl<V> Lookup<V> {
     }
 }
 
-/// Which entries a cache drops, told of every key it touches and asked for
-/// a victim after every insert. A policy decides what is remembered, never
-/// what anything means: dropping an entry moves the cache down the
-/// information order.
+/// Which entries a cache drops. The cache tells the policy of every key
+/// that it touches and asks for a victim after every insert. A policy
+/// decides what the cache remembers, never what a reading answers.
 pub trait Evict {
     /// `key` was read or written.
     fn touched(&mut self, key: &Key);
     /// `key` is gone, whoever dropped it.
     fn forgot(&mut self, key: &Key);
-    /// `keys` are what a cache holds when it is made, oldest first: each is
-    /// touched in turn.
+    /// Learns the keys that a cache holds when it is made, oldest first. The
+    /// default touches each in turn.
     fn learn(&mut self, keys: impl Iterator<Item = Key>) {
         for key in keys {
             self.touched(&key);
@@ -166,10 +154,8 @@ impl Evict for Lru {
     }
 }
 
-/// A [`Holder`]'s pairs under an [`Evict`] policy: the one cache. It holds
-/// its pairs in memory ([`Memory`], the default), in a file
-/// ([`super::File`]), or in any other holder, and it is a holder itself, so
-/// a cache can stand behind another ([`super::Front`]).
+/// The pairs of a [`Holder`] under an [`Evict`] policy. The holder is
+/// [`Memory`] by default, and a cache is itself a holder.
 #[derive(Debug, Clone)]
 pub struct Cache<V, E = Keep, H = Memory<V>> {
     holder: H,
@@ -219,13 +205,13 @@ impl<V: Clone + Eq, E: Evict, H: Holder<V>> Cache<V, E, H> {
         lookup
     }
 
-    /// Adds the pair `(key, value)`. The pair is held either way; `Err`
-    /// says the key now holds more than one value. The policy may then drop
-    /// entries, this one among them.
+    /// Adds the pair `(key, value)`. The policy may then drop entries, this
+    /// one among them.
     ///
     /// # Errors
     ///
-    /// A [`Finding`] when `key` already held a different value.
+    /// A [`Finding`] when `key` already held a different value. The pair is
+    /// held either way.
     pub fn insert(&mut self, key: Key, value: V) -> Result<(), Finding> {
         self.evict.touched(&key);
         let held = self.holder.add(key, value);
@@ -233,9 +219,8 @@ impl<V: Clone + Eq, E: Evict, H: Holder<V>> Cache<V, E, H> {
         held
     }
 
-    /// The union of this cache and `other`, into this one: every pair of
-    /// `other` added. Answers every key that holds two values after the
-    /// join and did not before.
+    /// Adds every pair of `other` to this cache. Answers every key that
+    /// holds two values after the join and did not before.
     pub fn join(&mut self, other: &mut impl Holder<V>) -> Vec<Finding> {
         let mut findings = Vec::new();
         for key in other.keys().collect::<Vec<_>>() {
@@ -258,9 +243,9 @@ impl<V: Clone + Eq, E: Evict, H: Holder<V>> Cache<V, E, H> {
         self.holder.remove(key)
     }
 
-    /// Drops every key of `doomed` and erases its values from where the
-    /// holder keeps them: when this answers `Ok`, no byte of a forgotten
-    /// value is left in the holder's storage (SPEC law 55).
+    /// Drops every key of `doomed` and erases its values, so that no byte
+    /// of a forgotten value is left in the holder's storage when this
+    /// answers `Ok` (law 55).
     ///
     /// # Errors
     ///
@@ -277,7 +262,7 @@ impl<V: Clone + Eq, E: Evict, H: Holder<V>> Cache<V, E, H> {
         self.holder.keys()
     }
 
-    /// Every pair held: what a sync sends.
+    /// Every pair held, which a sync sends.
     pub fn pairs(&mut self) -> Vec<(Key, V)> {
         let mut pairs = Vec::new();
         for key in self.holder.keys().collect::<Vec<_>>() {

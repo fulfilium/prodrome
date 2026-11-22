@@ -1,30 +1,17 @@
-//! §4 — the events, and §3's envelopes and hashing.
+//! The events of the todo schema (SPEC §4), the envelopes of SPEC §3, and
+//! their hashing.
 //!
-//! The closed kinds of §4, as Rust types. The schema-evolution rule is
-//! absolute: the field set of a SHIPPED kind is frozen forever, because a new
-//! field changes what the canonical printer emits and would orphan every
-//! stored object from its hash. Evolution is a NEW KIND.
+//! Never change the field set of a shipped kind: a new field changes the
+//! canonical print, so no stored object would match its hash any more. Store
+//! new data in a new kind. The record kind carries the host's [`Payload`]
+//! (see [`crate::payload`]); the conformance vectors were taken with the
+//! payload `crate::reference`.
 //!
-//! SIX KINDS ARE THE DATABASE'S AND ONE IS THE HOST'S. `Created`, `Completed`,
-//! `Cancelled`, `Reopened`, `Tended` and `SpecRevised` are lifecycle, care and
-//! price — the semantics §5 and §6 are written about — and their fields are
-//! here. The RECORD kind is a todo's CONTENT, and content is a deployment's:
-//! it is `KIND(todo, at, actor, <the host's fields>)`, where a [`Payload`]
-//! supplies the constructor name, the fields, their parse and their print. See
-//! [`crate::payload`]; the payload the conformance vectors were taken with is
-//! [`crate::reference`].
-//!
-//! Names that mean different things are different types even when they are all
-//! strings (§1): [`Hash`], [`TodoId`], [`Actor`], [`Name`]. The `mk_*`
-//! constructors are the only path from parameters to a value, and they are also
-//! the PARSE boundary — a stored literal arrives as bare strings and comes out
-//! of [`Envelope::from_value`] having been through them, which is why nothing
-//! downstream re-checks.
-//!
-//! "" MEANS ABSENT on a shipped string field, on purpose and forever: absence
-//! with two spellings is worse than a sentinel with one meaning. Where absence
-//! is NOT a shipped string — `Sealed.prev` at genesis, `Woven.event` — it is an
-//! `Option`, and the printer puts the `''`/`None` back.
+//! The `mk_*` constructors are the parse boundary: [`Envelope::from_value`]
+//! builds every value through them, so later code does not check again.
+//! On a shipped string field, `""` means absent. Where an absent value is not
+//! a shipped string (`Sealed.prev` at a legacy root, `Woven.event`), the field
+//! is an `Option`, and the printer writes `''` or `None` for `None`.
 
 use sha2::{Digest, Sha256};
 
@@ -82,14 +69,11 @@ macro_rules! newtype_str {
 #[allow(unused_imports)]
 pub(crate) use newtype_str;
 
-/// An object's name: sha256 of its canonical print, 64 lowercase hex.
+/// An object's name: the sha256 of its canonical print, as 64 lowercase hex
+/// digits.
 ///
-/// HELD TWICE: as the digest's 32 bytes in four big-endian words, which
-/// every comparison reads, and as its text, which every print reads. A word
-/// orders as its bytes do, and a byte as its two hex digits do, so a name
-/// orders as its text does, and two names are equal exactly when their
-/// texts are. A comparison is then four words in place, not a call that
-/// reads two strings through their pointers.
+/// A name orders as its text does, and two names are equal exactly when
+/// their texts are equal.
 #[derive(Clone)]
 pub struct Hash {
     words: [u64; 4],
@@ -152,27 +136,26 @@ impl std::fmt::Display for Hash {
 }
 
 newtype_str! {
-    /// A todo's identifier: `^[a-z0-9_-]+$`. Its literal is its text, which
-    /// a read checks with [`TodoId::new`].
+    /// A todo's identifier, which matches `^[a-z0-9_-]+$`. Its literal is
+    /// its text, and a read checks the text with [`TodoId::new`].
     #[derive(Literal)]
     #[literal(new = TodoId::new)]
     TodoId
 }
 
 newtype_str! {
-    /// Who wrote an event. SYNTACTIC only (`^[a-z][a-z0-9_-]*$`): WHICH actors
-    /// exist, and what a host makes of each, is instance data — the engine
-    /// knows the mechanism, never the roster (§5, [`crate::policy`]).
-    /// Its literal is its text, which a read checks with [`Actor::new`].
+    /// The writer of an event, which matches `^[a-z][a-z0-9_-]*$`. The host's
+    /// policy decides which actors it trusts (SPEC §5, [`crate::policy`]).
+    /// Its literal is its text, and a read checks the text with
+    /// [`Actor::new`].
     #[derive(Literal)]
     #[literal(new = Actor::new)]
     Actor
 }
 
 newtype_str! {
-    /// An identifier in a DOCUMENT's vocabulary — a payload's kind or category
-    /// field: `^[A-Za-z][A-Za-z0-9_]*$`. Which values exist is the document's
-    /// business, not the engine's.
+    /// An identifier in a payload's vocabulary, such as a kind or a category,
+    /// which matches `^[A-Za-z][A-Za-z0-9_]*$`.
     Name
 }
 
@@ -227,8 +210,7 @@ fn matches_name(text: &str) -> bool {
 }
 
 impl Hash {
-    /// 64 lowercase hex, checked once so that every later reader — a parent
-    /// name, a ref filename, a `prev` — is a name and not a hope.
+    /// Refuses text that is not 64 lowercase hex digits.
     pub fn new(text: impl Into<String>) -> Result<Hash, ProdromeError> {
         let text = text.into();
         match hex_words(&text) {
@@ -307,7 +289,7 @@ impl Literal for Hash {
 }
 
 impl Name {
-    /// A required identifier.
+    /// A required identifier; `field` names the field in the error.
     pub fn new(field: &str, text: impl Into<String>) -> Result<Name, ProdromeError> {
         let text = text.into();
         if matches_name(&text) {
@@ -319,8 +301,7 @@ impl Name {
         }
     }
 
-    /// An identifier that may be absent, where `""` is "not recorded" and
-    /// nothing else.
+    /// An identifier that may be absent: `""` gives `None`.
     pub fn optional(field: &str, text: impl Into<String>) -> Result<Option<Name>, ProdromeError> {
         let text = text.into();
         if text.is_empty() {
@@ -352,10 +333,8 @@ pub struct Created {
     pub note: String,
 }
 
-/// The four kinds that share a shape: `Completed`, `Cancelled`, `Reopened`
-/// and `Tended`, each `(todo, at, actor, note)`. They are DIFFERENT kinds — the
-/// enum below keeps them apart — and one record type is what stops the four
-/// from drifting apart field by field.
+/// The fields of `Completed`, `Cancelled`, `Reopened` and `Tended`, each
+/// `(todo, at, actor, note)`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lifecycle {
     pub todo: TodoId,
@@ -364,8 +343,9 @@ pub struct Lifecycle {
     pub note: String,
 }
 
-/// `SpecRevised(todo, at, actor, spec, note)` — a new authored price, effective
-/// at `at`. No env effect: the query layer picks the latest spec.
+/// `SpecRevised(todo, at, actor, spec, note)`: a new authored price, effective
+/// at `at`. It does not change the environment; the query layer picks the
+/// latest spec.
 #[derive(Debug, Clone, PartialEq)]
 pub struct SpecRevised {
     pub todo: TodoId,
@@ -375,13 +355,11 @@ pub struct SpecRevised {
     pub note: String,
 }
 
-/// A todo's CONTENT, in full, as of `at`. Snapshot semantics, like a git blob:
-/// an edit is a new record for the same id and the fold keeps the latest.
+/// A content record: a todo's whole content as of `at`.
 ///
-/// THE THREE FIELDS ARE THE CORE'S AND THE PAYLOAD IS THE HOST'S. Every event
-/// in this database says who, about what, and when its writer thought it was;
-/// what a record additionally SAYS is [`Payload`], and the core reads exactly
-/// two things out of it (`spec`, `checklist_len`).
+/// An edit is a new record for the same id, and the fold keeps the latest.
+/// The host defines the [`Payload`], and the core reads only its `spec` and
+/// its `checklist_len` (SPEC §4).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Authored<P> {
     pub todo: TodoId,
@@ -390,20 +368,19 @@ pub struct Authored<P> {
     pub payload: P,
 }
 
-/// The closed kinds of §4.
+/// The closed kinds of the todo schema (SPEC §4).
 #[derive(Debug, Clone, PartialEq)]
 pub enum TodoEvent<P> {
     Created(Created),
     Completed(Lifecycle),
     Cancelled(Lifecycle),
     Reopened(Lifecycle),
-    /// A pass at a recurring todo: care recorded, state untouched. A todo that
-    /// is never done is never `Completed`, and `Recur` re-anchors to these.
+    /// A pass at a recurring todo: it records care and changes no state.
+    /// `Recur` re-anchors to these events (SPEC §7.3).
     Tended(Lifecycle),
     SpecRevised(SpecRevised),
-    /// Boxed: a content record carries a todo's whole content and is an order
-    /// of magnitude wider than a lifecycle event, and a log is mostly
-    /// lifecycle.
+    /// Boxed, because a content record is about ten times wider than a
+    /// lifecycle event, and a log holds mostly lifecycle events.
     Authored(Box<Authored<P>>),
 }
 
@@ -420,8 +397,8 @@ impl<P: Payload> TodoEvent<P> {
         }
     }
 
-    /// The instant the writer stamped. DATA, never an order (§1): no clock
-    /// decides who wins.
+    /// The instant that the writer stamped: data, never an order, so no clock
+    /// decides which event wins (SPEC §1).
     pub fn at(&self) -> Datetime {
         match self {
             TodoEvent::Created(e) => e.at,
@@ -446,8 +423,8 @@ impl<P: Payload> TodoEvent<P> {
         }
     }
 
-    /// The constructor name this kind prints as — the payload's own for a
-    /// record.
+    /// The constructor name of the kind; for a record, the payload's
+    /// constructor name.
     pub fn kind_name(&self) -> &'static str {
         match self {
             TodoEvent::Created(_) => "Created",
@@ -461,9 +438,9 @@ impl<P: Payload> TodoEvent<P> {
     }
 }
 
-/// The stored object (§3), holding an event of the schema `E`. `Sealed` and
-/// `Woven` are the legacy envelopes, read forever and written by no `append`
-/// (SPEC §3).
+/// The stored object (SPEC §3), which holds an event of the schema `E`.
+/// `Sealed` and `Woven` are legacy envelopes: a store reads them, and no
+/// `append` writes them.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Envelope<E> {
     Sealed {
@@ -510,8 +487,8 @@ impl<E> Envelope<E> {
         }
     }
 
-    /// The genesis a change, a snapshot or a key names. A signature names
-    /// none: its prodrome is its object's.
+    /// The genesis that a change, a snapshot or a key names. A signature
+    /// names none, because it belongs to the prodrome of the object it signs.
     pub fn genesis(&self) -> Option<&Hash> {
         match self {
             Envelope::Change(change) => Some(&change.genesis),
@@ -539,11 +516,12 @@ impl<E> Envelope<E> {
     }
 }
 
-/// What an object RESTS ON (§3), sorted and distinct: the edges it names
-/// and the genesis it names. This is the causal order, the one every
-/// reader of it reads (tips, the linearisation, closure, the interior, a
-/// replica's walk): a change rests on its genesis as on its deps, so no
-/// genesis is a head of a prodrome holding anything begun from it.
+/// The names that an object rests on (SPEC §3), sorted and distinct: the
+/// edges it names and the genesis it names.
+///
+/// This set defines the causal order that every reader uses. A change rests
+/// on its genesis as on its deps, so a genesis is never a head of a prodrome
+/// that holds an object begun from it.
 pub fn parents_of<E>(envelope: &Envelope<E>) -> Vec<Hash> {
     rests_on(envelope).into_iter().cloned().collect()
 }
@@ -650,10 +628,10 @@ pub fn mk_spec_revised<P: Payload>(
     }))
 }
 
-/// A CONTENT RECORD: the core's three fields, and the host's payload.
+/// A content record: the core's three fields and the host's payload.
 ///
-/// The payload arrived through its own smart constructor, so this checks what
-/// the core owns and nothing else — which is the whole of the seam.
+/// This function checks only the three fields; the caller must build
+/// `payload` through the payload's own smart constructor.
 pub fn mk_record<P: Payload>(
     todo: &str,
     at: Datetime,
@@ -689,7 +667,8 @@ pub(crate) fn sorted_distinct(
     Ok(names)
 }
 
-/// Two parents at least: one is a `Sealed`, none is genesis.
+/// Refuses fewer than two parents (one parent is a `Sealed`, and none is a
+/// legacy root) and a parent named twice; sorts the parents.
 pub fn mk_woven<E: Schema>(
     parents: Vec<Hash>,
     event: Option<E>,
@@ -708,8 +687,8 @@ pub fn mk_woven<E: Schema>(
 
 // --- the vocabulary ----------------------------------------------------------
 
-/// The envelopes' constructors, name and declared field order: the database's
-/// own, whatever the schema.
+/// The envelope constructors and their fields in declared order, the same
+/// for every schema.
 pub const ENVELOPE_SIGNATURES: &[(&str, &[&str])] = &[
     ("Sealed", &["prev", "event"]),
     ("Woven", &["parents", "event"]),
@@ -721,18 +700,18 @@ pub const ENVELOPE_SIGNATURES: &[(&str, &[&str])] = &[
     ("KeyRevoked", &["genesis", "deps", "actor", "key"]),
 ];
 
-/// The whole vocabulary a stored artifact may use: the envelopes, then the
-/// schema's own ([`crate::todo::TodoVocabulary`] for the todo's). `datetime`
-/// and `timedelta` are the grammar's own and need no entry.
+/// The whole vocabulary that a stored object may use: the envelopes, then
+/// the schema's own ([`crate::todo::TodoVocabulary`] for the todo schema).
 ///
-/// STILL A WHITELIST, and the envelopes win: a schema that named a kind
-/// `Change` would not shadow §3's, it would be unreachable.
+/// `datetime` and `timedelta` belong to the grammar and need no entry. The
+/// envelopes take precedence: a schema kind with an envelope's name, such as
+/// `Change`, is unreachable.
 pub struct EventVocabulary<'v, E: Schema> {
     schema: &'v E::Vocabulary,
 }
 
 impl<'v, E: Schema> EventVocabulary<'v, E> {
-    /// The envelopes' vocabulary, then the schema `schema`'s.
+    /// The envelopes' vocabulary, then the vocabulary `schema`.
     pub fn new(schema: &'v E::Vocabulary) -> EventVocabulary<'v, E> {
         EventVocabulary { schema }
     }
@@ -775,9 +754,8 @@ pub(crate) fn optional_hash(call: &Call, name: &str) -> Result<Option<Hash>, Pro
 }
 
 impl<P: Payload> TodoEvent<P> {
-    /// The event as a literal — EVERY field, in declared order, keyword form,
-    /// which is what makes the print total and order-stable however the value
-    /// was built.
+    /// The event as a literal with every field, in declared order and in
+    /// keyword form, so the print does not depend on how the value was built.
     pub fn to_value(&self) -> Value {
         match self {
             TodoEvent::Created(e) => Value::call(
@@ -819,11 +797,11 @@ impl<P: Payload> TodoEvent<P> {
 
 impl<P: Payload> Authored<P> {
     /// A content record as a literal: the core's three fields, then the
-    /// payload's own, in the order of its constructor.
+    /// payload's fields in the order of its constructor.
     ///
-    /// Split out of [`TodoEvent::to_value`] because the CONTENT fold (§6.3)
-    /// hands back records and their print is what a consumer compares — one
-    /// printer, reached from either shape.
+    /// The content fold (SPEC §6.3) returns records, and a consumer compares
+    /// their prints, so [`TodoEvent::to_value`] prints a record through this
+    /// function too.
     pub fn to_value(&self) -> Value {
         headed(
             vec![
@@ -866,8 +844,8 @@ impl<E: Schema> Envelope<E> {
         }
     }
 
-    /// A literal in, an envelope out, through every `mk_*` rule, its event
-    /// parsed at the schema `schema`.
+    /// Parses a literal into an envelope through every `mk_*` rule, and
+    /// parses its event at the vocabulary `schema`.
     pub fn from_value(schema: &E::Vocabulary, value: &Value) -> Result<Envelope<E>, ProdromeError> {
         let call = value
             .as_call()
@@ -938,35 +916,35 @@ pub(crate) fn event_from_value<P: Payload>(value: &Value) -> Result<TodoEvent<P>
 
 // --- hashing and printing -----------------------------------------------------
 
-/// `print_literal` of an event — what every fold that needs a deterministic
-/// tiebreak sorts by.
+/// The canonical print of an event; a fold sorts by it to break a tie
+/// deterministically.
 pub fn canonical<E: Schema>(event: &E) -> String {
     print_literal(&event.to_value())
 }
 
-/// An event's name apart from where it was written; never stored.
+/// The name of an event apart from the object that holds it; no store
+/// keeps it.
 pub fn event_id<E: Schema>(event: &E) -> Hash {
     Hash::of_bytes(canonical(event).as_bytes())
 }
 
-/// The canonical print of an envelope. This is the object's BYTES: the name is
-/// the sha256 of exactly this, and the file holds exactly this.
+/// The canonical print of an envelope: the object's bytes, which its file
+/// holds and whose sha256 is its name.
 pub fn canonical_envelope<E: Schema>(envelope: &Envelope<E>) -> String {
     print_literal(&envelope.to_value())
 }
 
-/// The hash of the canonical print — used at APPEND time to name the object, at
-/// which moment it is by construction also the hash of the stored bytes.
-/// Verification hashes the STORED BYTES instead (`store::EventStore::load`),
-/// never a reprint: git hashes bytes and not semantics, so that a printer
-/// change cannot false-alarm the whole store as tampered.
+/// The sha256 of the canonical print, which names an object at append time.
+///
+/// Verification hashes the stored bytes instead (`store::EventStore::load`)
+/// and never a reprint, so that a change to the printer cannot report the
+/// whole store as tampered.
 pub fn seal_hash<E: Schema>(envelope: &Envelope<E>) -> Hash {
     Hash::of_bytes(canonical_envelope(envelope).as_bytes())
 }
 
-/// Read one stored object's text into an envelope, through the closed
-/// vocabulary — the envelopes and the schema `schema`'s — and every `mk_*`
-/// rule.
+/// Parses the text of one stored object through the closed vocabulary (the
+/// envelopes, then `schema`) and every `mk_*` rule.
 pub fn parse_envelope<E: Schema>(
     schema: &E::Vocabulary,
     text: &str,
@@ -975,12 +953,9 @@ pub fn parse_envelope<E: Schema>(
     Envelope::from_value(schema, &parse_literal(text, &vocabulary)?)
 }
 
-/// Read ONE event's canonical print back — [`canonical`]'s inverse, through the
-/// same closed vocabulary. An envelope is the stored object and `parse_envelope`
-/// is how a store reads one; this is for the callers that hold a bare event
-/// print instead (a fold's input, a binding's argument), and it exists here
-/// rather than at those call sites because the vocabulary and the smart
-/// constructors are this module's, not theirs.
+/// Parses one event's canonical print, the inverse of [`canonical`], through
+/// the same closed vocabulary as [`parse_envelope`]. Use it for a bare event
+/// print, such as the input of a fold.
 pub fn parse_event<E: Schema>(schema: &E::Vocabulary, text: &str) -> Result<E, ProdromeError> {
     let vocabulary = EventVocabulary::<E>::new(schema);
     E::from_value(schema, &parse_literal(text, &vocabulary)?)
