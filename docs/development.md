@@ -99,11 +99,15 @@ were fixed when the JSON code moved to that crate.
 ## Repository layout
 
 ```
+data/         prodrome-data, the data of a store: literals, events, the
+              objects that hold them, and their names. The core re-exports
+              it at the paths that a program names.
 core/         prodrome-core, the database. The module list in core/src/lib.rs
               gives the SPEC section of each module. The module `reference`
               is the payload of the vectors.
 derive/       prodrome-derive, the procedural macro `#[derive(Literal)]`,
-              which the core re-exports as prodrome::literal::codec::Literal
+              which the data crate and the core re-export as
+              literal::codec::Literal
 cli/          prodrome-cli, the `prodrome` binary. It gives the commands, with
               the reference payload and the reference policy. It is the only
               code in the workspace that reads the system clock.

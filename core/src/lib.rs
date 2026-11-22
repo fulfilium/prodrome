@@ -82,6 +82,14 @@
 //! # }
 //! ```
 //!
+//! The crate `prodrome-data` holds the data of a store: `literal`, `topo`,
+//! `genesis` and `change`, and the parts of `event`, `payload`, `schema`,
+//! `snapshot`, `sign` and `fold` that build, print, parse and hash objects.
+//! This crate re-exports each of them at the path below. A program that only
+//! builds and reads events can depend on `prodrome-data` alone. An example
+//! in the documentation of a module of `prodrome-data` works under this
+//! crate with `prodrome` in place of `prodrome_data`.
+//!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
 //! - `schema`: the events, entities and registers of a store (§4 to §6)
@@ -119,17 +127,14 @@ extern crate self as prodrome;
 pub mod breaks;
 /// The chain compiler (SPEC §7.1).
 pub mod chain;
-pub mod change;
 pub mod dag;
 pub mod declared;
 pub mod digest;
 pub mod event;
 pub mod fold;
 pub mod fpl;
-pub mod genesis;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod literal;
 pub mod memo;
 pub mod nest;
 pub mod observe;
@@ -149,8 +154,11 @@ pub mod store;
 pub mod tags;
 pub mod term;
 pub mod todo;
-pub mod topo;
 pub mod view;
+
+// The modules of `prodrome-data` that the core does not extend, at the
+// paths that a program has always named.
+pub use prodrome_data::{change, genesis, literal, text_literal, topo, word_literal};
 
 // The property tests' case counts, one rule with the integration tests'.
 #[cfg(test)]

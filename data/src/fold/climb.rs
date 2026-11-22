@@ -7,8 +7,8 @@ use crate::fold::frontier::value;
 use crate::fold::order::{grows, maximal, Inflationary, Order};
 use crate::fold::{Frontier, Register as _, RegisterType};
 use crate::literal::ProdromeError;
-use crate::registers::Stamp;
 use crate::schema::Schema;
+use crate::stamp::Stamp;
 
 /// One inflationary register: its [`Frontier`] and its peak (SPEC §6, "A
 /// schema's registers").

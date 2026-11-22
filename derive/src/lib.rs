@@ -3,8 +3,8 @@
 //! A type that a store holds needs a `Literal` impl
 //! (`prodrome::literal::codec::Literal`): its constructors with their field
 //! names, a print and a read. This derive writes all three from the type
-//! declaration. The core re-exports it, so a program writes
-//! `#[derive(prodrome::literal::codec::Literal)]`.
+//! declaration. `prodrome-data` and `prodrome-core` re-export it, so a
+//! program writes `#[derive(prodrome::literal::codec::Literal)]`.
 //!
 //! See [`macro@Literal`] for the forms, the options and the rule for
 //! stored names.
@@ -82,10 +82,11 @@ use syn::{parse_macro_input, DeriveInput};
 /// - `#[literal(sum)]` on one field of a struct: the field's enum names the
 ///   constructor (see "A record with a sum").
 /// - `#[literal(crate = path)]` on a struct or an enum: the path of the
-///   core in the code that the derive writes. The default is `::prodrome`.
-///   A program that imports `prodrome-core` under another name, for
-///   example with `package = "prodrome-core"` in its manifest, gives that
-///   name here.
+///   crate that holds the codec, in the code that the derive writes. The
+///   default is `::prodrome`, the name of `prodrome-core`. A program that
+///   depends on `prodrome-data` alone gives `prodrome_data` here. A program
+///   that imports `prodrome-core` under another name, for example with
+///   `package = "prodrome-core"` in its manifest, gives that name.
 /// - `#[literal(new = path)]` on a struct: a read calls
 ///   `path(field, ...) -> Result<Self, ProdromeError>` with the stored fields
 ///   in print order, so that a smart constructor checks the value. With

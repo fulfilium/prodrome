@@ -104,8 +104,8 @@ pub struct Options {
     pub skip: Option<Span>,
     pub with: Option<Path>,
     pub sum: Option<Span>,
-    /// The path of the core, for a program that imports it under another
-    /// name than `prodrome`.
+    /// The path of the crate of the codec, for a program that does not
+    /// import it as `prodrome`.
     pub krate: Option<Path>,
 }
 

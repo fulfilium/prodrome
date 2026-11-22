@@ -47,6 +47,8 @@ jobs:
           - check: lint
             run: |
               cargo fmt --all --check
+              python3 scripts/test_edges.py
+              python3 scripts/edges.py data/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
               cargo test --locked --workspace --doc
           - check: test

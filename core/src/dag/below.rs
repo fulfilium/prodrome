@@ -3,8 +3,9 @@
 
 use crate::dag::Finding;
 use crate::fold::Product;
-use crate::registers::{BitSet, Folded, Stamp};
+use crate::registers::{Folded, Stamp};
 use crate::schema::Schema;
+use prodrome_data::bitset::BitSet;
 
 /// Every write to an inflationary register that does not stand on the
 /// reading of the writes to its entity that it rests on, the empty reading

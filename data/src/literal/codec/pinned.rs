@@ -16,7 +16,7 @@ use super::Constructor;
 /// and the end of a line, and empty lines, do not count.
 ///
 /// ```
-/// use prodrome::literal::codec::assert_pinned;
+/// use prodrome_data::literal::codec::assert_pinned;
 ///
 /// assert_pinned(
 ///     &[("Note", &["on", "lines"]), ("Seen", &[])],

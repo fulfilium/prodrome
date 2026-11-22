@@ -9,11 +9,16 @@
 //! every stored print and its hash, so they never change. To store new data,
 //! add a new constructor (SPEC §1). `crate::reference` is the reference
 //! payload.
+//!
+//! The reads of a stored call's fields, such as [`string_field`], are
+//! defined in `prodrome-data` and re-exported here.
+
+pub use prodrome_data::payload::*;
 
 use std::fmt::Debug;
 
 use crate::literal::codec::{self, Constructor, Literal, Record};
-use crate::literal::{Call, Datetime, ProdromeError, Value};
+use crate::literal::{Call, ProdromeError};
 use crate::term::Term;
 
 /// The fields of a record (SPEC §4) beyond `todo`, `at` and `actor`.
@@ -64,63 +69,7 @@ pub fn record_signature<P: Payload>() -> Vec<&'static str> {
     fields
 }
 
-// --- reading a stored call --------------------------------------------------
-//
-// The helpers a hand-written read wants, public because a HOST may write one:
-// implementing a read outside this crate should not mean reimplementing the
-// refusals the core's own kinds are parsed with. Each is a read of
-// `literal::codec`, which a derived `Literal` impl makes too, so a derived
-// read and a hand-written one refuse with the same messages.
-
-/// The value of the required field `name`.
-pub fn required<'a>(call: &'a Call, name: &str) -> Result<&'a Value, ProdromeError> {
-    codec::required(call, name)
-}
-
-pub fn as_string(value: &Value, context: &str) -> Result<String, ProdromeError> {
-    String::from_field(value, &context)
-}
-
-pub fn string_field(call: &Call, name: &str) -> Result<String, ProdromeError> {
-    codec::read(call, name, String::from_field)
-}
-
-/// A string field where `""` means absent. A missing field reads as `""`,
-/// so a literal that omits the trailing defaults parses as the canonical
-/// print of the same value.
-pub fn string_or_empty(call: &Call, name: &str) -> Result<String, ProdromeError> {
-    codec::read_or_default(call, name, String::from_field)
-}
-
-pub fn datetime_field(call: &Call, name: &str) -> Result<Datetime, ProdromeError> {
-    codec::read(call, name, Datetime::from_field)
-}
-
-pub fn bool_field(call: &Call, name: &str) -> Result<bool, ProdromeError> {
-    codec::read(call, name, bool::from_field)
-}
-
-pub fn tuple_field<'a>(call: &'a Call, name: &str) -> Result<&'a [Value], ProdromeError> {
-    codec::tuple(required(call, name)?, &format_args!("{}.{name}", call.name))
-}
-
-pub fn tuple_or_empty<'a>(call: &'a Call, name: &str) -> Result<&'a [Value], ProdromeError> {
-    match call.field(name) {
-        None => Ok(&[]),
-        Some(value) => codec::tuple(value, &format_args!("{}.{name}", call.name)),
-    }
-}
-
-pub fn strings(items: &[Value], context: &str) -> Result<Vec<String>, ProdromeError> {
-    items.iter().map(|item| as_string(item, context)).collect()
-}
-
 /// A field that is a term (SPEC §7) or `None`.
 pub fn spec_field(call: &Call, name: &str) -> Result<Option<Term>, ProdromeError> {
     codec::read(call, name, Option::<Term>::from_field)
-}
-
-/// `value` as a call of the constructor `name`.
-pub fn expect_call<'a>(value: &'a Value, name: &str) -> Result<&'a Call, ProdromeError> {
-    codec::call_of(value, name)
 }

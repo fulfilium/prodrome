@@ -1,26 +1,18 @@
 //! Folds (SPEC §6): each entity's stream folded into its registers
 //! ([`read`], under any schema), and the readings of a todo (SPEC §6.1 to
-//! §6.5), each a projection of its [`Registers`].
+//! §6.5), each a projection of its [`Registers`]. The register algebra,
+//! such as [`Product`] and [`Frontier`], is defined in `prodrome-data` and
+//! re-exported here.
 //!
 //! A write joins its register when it is dated at or before the moment asked
 //! and the policy binds it. Only ancestry decides what a write supersedes: no
 //! clock and no linearisation picks a winner.
 
-mod climb;
-mod frontier;
-mod order;
-mod product;
-mod register;
-pub mod sole;
 mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use climb::Climb;
-pub use frontier::Frontier;
-pub use order::{grows, maximal, Discrete, Inflationary, Order, Total};
-pub use product::Product;
-pub use register::{GrowSet, Register, RegisterType};
+pub use prodrome_data::fold::*;
 pub use write::{Kind, Write};
 
 use crate::event::{Authored, TodoEvent, TodoId};

@@ -1,4 +1,4 @@
-//! The NOTE schema (`core/src/schema/headed/example.rs`): an application schema at
+//! The NOTE schema (`data/src/schema/headed/example.rs`): an application schema at
 //! the generic event of `schema::headed`, whose product is
 //! `fold::sole::One` over `fold::sole::Whole`. The laws run over it in
 //! `schema_laws.rs`, `order_laws.rs` and `causal.rs`. This file checks its
@@ -21,7 +21,7 @@ use prodrome::schema::headed::{Constructors, Event};
 use prodrome::store::Sender;
 use prodrome::store::{sync, Held, MemoryStore, Replica};
 
-#[path = "../../src/schema/headed/example.rs"]
+#[path = "../../../data/src/schema/headed/example.rs"]
 mod schema;
 
 pub use schema::*;

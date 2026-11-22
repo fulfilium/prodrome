@@ -12,7 +12,6 @@
 mod decision;
 mod doors;
 mod fault;
-mod husk;
 mod levelled;
 mod memory;
 mod memory_store;
@@ -46,11 +45,11 @@ use crate::spread::spread;
 
 pub use decision::{Decision, Stopped};
 pub use doors::Doors;
-pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use levelled::{Level, Levelled};
 use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;
 pub use overlay::Overlay;
+pub use prodrome_data::husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use record::Record;
 pub use replica::{accept, sync, Held, Replica};
 

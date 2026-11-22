@@ -4,8 +4,8 @@ use std::fmt::Debug;
 use crate::event::Hash;
 use crate::fold::Frontier;
 use crate::literal::ProdromeError;
-use crate::registers::Stamp;
 use crate::schema::Schema;
+use crate::stamp::Stamp;
 
 /// An entity's registers: a product of semilattices, one for each register
 /// (SPEC §6, "A schema's registers", and SPEC §6.6).

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Measure the public face of `prodrome-core`.
+"""Measure the public face of `prodrome-core` or of `prodrome-data`.
 
 The public face of a crate is what a reader of its public API reads: the
 signature of each public item and its doc comment. This script reads the
@@ -13,7 +13,9 @@ Run it from the repository root:
         --target-dir target/face -- -Z unstable-options --output-format json
     python3 scripts/face.py target/face/doc/prodrome.json
 
-Add `--by-file` to count by source file instead of by top-level module.
+Give `-p prodrome-data` to `cargo rustdoc` and read
+`target/face/doc/prodrome_data.json` to measure the data crate. Add
+`--by-file` to count by source file instead of by top-level module.
 Add `--all-features` to the `cargo rustdoc` line to count the `laws`
 module, which is behind a feature.
 
@@ -31,10 +33,11 @@ methods carry no doc comment of their own. It collapses each run of white
 space in a signature to one space. A token is four characters.
 
 The second mode, `--lines`, needs no rustdoc. It reads the source files
-under `core/src` line by line, in the manner of a tool that an application
-uses to give each dependency a reading budget:
+under `<crate>/src` line by line, in the manner of a tool that an
+application uses to give each dependency a reading budget. The crate
+directory is `core` unless the command gives another, such as `data`:
 
-    python3 scripts/face.py --lines [repository root]
+    python3 scripts/face.py --lines [crate directory]
 
 It counts each line as written, with its prefix and its indentation, and
 one character for its line end:
@@ -170,10 +173,10 @@ def walk(index, root):
     return seen
 
 
-def by_lines(root):
+def by_lines(crate):
     """The `--lines` measure: characters by top-level module."""
     total = defaultdict(int)
-    src = Path(root, "core", "src")
+    src = Path(crate, "src")
     for path in sorted(src.rglob("*.rs")):
         lines = path.read_text(encoding="utf-8").split("\n")
         name = path.relative_to(src).parts[0]
@@ -238,8 +241,8 @@ def body(lines, i):
     return size, i
 
 
-def main_lines(root):
-    total = by_lines(root)
+def main_lines(crate):
+    total = by_lines(crate)
     print(f"{'module':<14}{'chars':>10}{'tokens':>9}")
     for m in sorted(total, key=lambda m: -total[m]):
         print(f"{m:<14}{total[m]:>10}{total[m] // TOKEN:>9}")
@@ -249,7 +252,7 @@ def main_lines(root):
 
 def main():
     if sys.argv[1:2] == ["--lines"]:
-        main_lines(sys.argv[2] if len(sys.argv) > 2 else ".")
+        main_lines(sys.argv[2] if len(sys.argv) > 2 else "core")
         return
     data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
     by_file = sys.argv[2:] == ["--by-file"]

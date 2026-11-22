@@ -45,6 +45,7 @@ pub fn linear<'k, K: Ord + ?Sized>(
 }
 
 /// A depth-first walk that settles each key after the keys it expands into.
+#[doc(hidden)]
 pub struct Topo<K, V> {
     path: Vec<K>,
     settled: BTreeMap<K, V>,

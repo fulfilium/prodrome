@@ -1,0 +1,34 @@
+[package]
+name = "prodrome-data"
+description = "The data of a prodrome store: values, events, objects and their names"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "content-addressed", "database", "temporal"]
+categories = ["data-structures", "encoding"]
+
+[lib]
+name = "prodrome_data"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# `literal::Datetime` checks a calendar date with `chrono::NaiveDate`.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+# `sign`: an Ed25519 public key must be a point on the curve, and
+# `Signed::verifies` checks a signature. Pure Rust, so the browser's build
+# needs no C toolchain.
+ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
+# The parser of `literal` finds the end of each run of a string's text, and
+# of a comment, with a vectorised byte search.
+memchr = "2"
+# `#[derive(Literal)]`, which `literal::codec` re-exports. A procedural
+# macro adds no code of its own to a program.
+prodrome-derive.workspace = true
+# `event::Hash`: the name of an object is the SHA-256 of its print.
+sha2 = "0.10"
+# `literal::ProdromeError`.
+thiserror = "2"

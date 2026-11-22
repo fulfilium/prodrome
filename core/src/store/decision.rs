@@ -5,7 +5,6 @@ use std::fs::{self, File};
 use std::sync::{Arc, MutexGuard};
 use std::time::SystemTime;
 
-use super::husk::{HuskObject, Husking};
 use super::levelled::Levelled;
 use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
@@ -16,6 +15,7 @@ use crate::literal::ProdromeError;
 use crate::policy::Policy;
 use crate::registers::Folded;
 use crate::schema::Schema;
+use prodrome_data::husk::{HuskObject, Husking};
 
 /// The store of record under its lock, which [`EventStore::decide`] returns.
 ///

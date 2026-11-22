@@ -212,7 +212,7 @@ where
 ///     }
 /// }
 ///
-/// prodrome::text_literal!(Tag => |tag| tag.0.clone());
+/// prodrome_data::text_literal!(Tag => |tag| tag.0.clone());
 /// ```
 #[macro_export]
 macro_rules! text_literal {
@@ -274,7 +274,7 @@ pub fn word<T>(
 ///     }
 /// }
 ///
-/// prodrome::word_literal!(Size: Size::ALL => |size| size.as_str());
+/// prodrome_data::word_literal!(Size: Size::ALL => |size| size.as_str());
 /// ```
 ///
 /// A value that is not in the list prints a word that does not read back,

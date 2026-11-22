@@ -6,14 +6,14 @@
 // `Titled(note='n1', at=datetime(…), actor='ada', title='…')` and
 // `Viewed(note='n1', at=datetime(…), actor='ada')`.
 //
-// The crate's tests include this file, and the module documentation of
-// `schema::headed` shows it as its example.
+// The tests of `prodrome-data` and of `prodrome-core` include this file,
+// and the module documentation of `schema::headed` shows it as its example.
 
-use prodrome::event::Actor;
-use prodrome::fold::sole::{One, Only, Whole};
-use prodrome::literal::codec::{Constructor, Fields, Literal};
-use prodrome::literal::{Datetime, ProdromeError, Value};
-use prodrome::schema::headed::{Body, Event};
+use prodrome_data::event::Actor;
+use prodrome_data::fold::sole::{One, Only, Whole};
+use prodrome_data::literal::codec::{Constructor, Fields, Literal};
+use prodrome_data::literal::{Datetime, ProdromeError, Value};
+use prodrome_data::schema::headed::{Body, Event};
 
 /// `Titled(note, at, actor, title)`.
 pub const TITLED: Constructor = ("Titled", &["note", "at", "actor", "title"]);
@@ -79,7 +79,7 @@ impl Body for Entry {
         let entry = match fields.name() {
             "Titled" => Entry::Titled(fields.get("title")?),
             "Viewed" => Entry::Viewed,
-            other => return Err(prodrome::literal::codec::no_arm(Self::NAME, other)),
+            other => return Err(prodrome_data::literal::codec::no_arm(Self::NAME, other)),
         };
         Event::new(
             fields.get("note")?,

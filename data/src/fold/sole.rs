@@ -12,9 +12,9 @@ use std::marker::PhantomData;
 
 use crate::fold::{Climb, Discrete, Frontier, Inflationary, Order, Product, RegisterType};
 use crate::literal::ProdromeError;
-use crate::registers::Stamp;
 use crate::schema::headed::{Body, Event};
 use crate::schema::Schema;
+use crate::stamp::Stamp;
 
 /// The name of the one register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

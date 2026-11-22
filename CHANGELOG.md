@@ -242,6 +242,60 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The data of a store is its own crate, `prodrome-data` (issue #92,
+  stage 3 of `docs/design-core-face.md`).** A program that only builds,
+  prints, parses and hashes events can depend on `prodrome-data` alone.
+  Its public face is 22,260 tokens by `scripts/face.py --lines data`, and
+  14,083 tokens by the rustdoc measure, in place of the 113,539 and
+  52,026 tokens of `prodrome-core` that such a program read before. It
+  depends on chrono, ed25519-dalek, memchr, sha2, thiserror and
+  prodrome-derive. `prodrome-core` depends on it and re-exports each moved
+  item at its old path, so a program that depends on `prodrome-core`
+  changes nothing, except for the four items in the last item of this
+  list. No behaviour, stored byte, conformance vector or law changes.
+  A program that moves to `prodrome-data` changes `prodrome::` to
+  `prodrome_data::` in these paths:
+  - `literal`, `genesis`, `change` and `topo`, whole;
+  - `event`: the names (`Hash`, `TodoId`, `Actor`, `Name`), `Envelope`,
+    the envelope constructors, `ENVELOPE_SIGNATURES`, `EventVocabulary`,
+    and the prints, parses and hashes. The todo schema's events
+    (`TodoEvent`, `Created`, `Lifecycle`, `SpecRevised`, `Authored` and
+    their `mk_*`) stay in `prodrome-core`;
+  - `payload`: the field reads, such as `string_field` and `required`.
+    `Payload`, `RECORD_PREFIX`, `record_signature` and `spec_field` stay;
+  - `schema`: `Schema` and `schema::headed`. `Price`, `History`, `Bind`
+    and `Row` stay;
+  - `snapshot`: `Snapshot` and `mk_snapshot`. `attest` and `Attestation`
+    stay;
+  - `sign`: `PublicKey`, `Signature`, `Signed`, `KeyAdded`, `KeyRevoked`
+    and `mk_key_revoked`. `Secret`, `Registrar`, `Proved`, `Proof` and
+    `Checks` stay;
+  - `fold`: the register algebra (`Product`, `Register`, `RegisterType`,
+    `GrowSet`, `Order`, `Discrete`, `Inflationary`, `Total`, `grows`,
+    `maximal`, `Frontier`, `Climb` and `fold::sole`). The folds and the
+    readings stay;
+  - `store::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender,
+    Stored}` become `prodrome_data::husk::…`, and `registers::Stamp`
+    becomes `prodrome_data::stamp::Stamp`.
+
+  `#[derive(Literal)]` still writes `::prodrome::…` paths. A program with
+  `prodrome-data` alone writes `#[literal(crate = prodrome_data)]` on each
+  derived type.
+
+  Four items that only the library uses leave the public face, with no
+  deprecation, because the version is below 1.0. `literal::print_float`
+  is no longer public; `print_literal` prints a `Value::Float`. The
+  macro `newtype_str!` is `#[doc(hidden)]` at
+  `prodrome_data::newtype_str!`, and `prodrome-core` no longer exports it.
+  `BitSet` is `#[doc(hidden)]` at `prodrome_data::bitset::BitSet`, and
+  `prodrome-core` no longer exports it at `registers::BitSet`. `topo::Topo`
+  is `#[doc(hidden)]`. Nineteen other items that only `prodrome-core` uses
+  are public in `prodrome-data` and `#[doc(hidden)]`, because `pub(crate)`
+  does not reach across crates; `docs/design-core-face.md`, section 8,
+  lists them. A program can also reach a hidden item through a path of
+  the facade, such as `prodrome::event::rests_on`. A hidden item carries
+  no promise at either path, and `prodrome-core` requires the exact
+  version of `prodrome-data`.
 - **The viewer shows every item's text as written, and runs none of it as
   Typst.** An item's text comes from whoever can write to the store, and
   the issue mirror writes each issue's title, which anyone may write. No

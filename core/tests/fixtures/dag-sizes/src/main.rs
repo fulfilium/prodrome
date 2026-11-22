@@ -6,7 +6,7 @@
 //! `target/wasm32-unknown-unknown/release/dag-sizes.wasm` across commits.
 //! Running it does nothing useful.
 
-#[path = "../../../../src/schema/headed/example.rs"]
+#[path = "../../../../../data/src/schema/headed/example.rs"]
 #[allow(dead_code)]
 mod note;
 

@@ -16,7 +16,7 @@ use crate::options::{Options, Place};
 /// A type that derives `Literal`, with its shape.
 pub struct Derived {
     pub ident: Ident,
-    /// The path of the core: `::prodrome`, or the path that
+    /// The path of the crate of the codec: `::prodrome`, or the path that
     /// `#[literal(crate = path)]` gives.
     pub root: Path,
     pub shape: Shape,
