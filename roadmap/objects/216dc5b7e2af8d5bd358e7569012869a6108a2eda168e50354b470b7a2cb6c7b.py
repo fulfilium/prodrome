@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='gh-95', at=datetime(2026, 11, 22, 18, 31, 35), actor='github-mirror', text='SPEC.md numbers two laws 40 and cites two laws by the wrong number', note=''))
