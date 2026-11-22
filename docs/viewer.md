@@ -124,13 +124,16 @@ $ python3 -m http.server -d site 8000     # then open http://localhost:8000/
 
 `assemble.sh` works on any store, so you can use the same commands to show
 your own store. If Playwright is installed, the command
-`node viewer/test/smoke.mjs site <todo>` opens the list and one item in
-headless Chromium and checks them. The command
-`node viewer/test/stores.mjs APP viewer/test/stores` serves the three small
-stores in `viewer/test/stores/` from a second local origin, and checks
+`PRODROME_NODE=<glue> node viewer/test/smoke.mjs site <todo>` opens the
+list and one item in headless Chromium and checks them. `<glue>` is the
+`nodejs/` directory of `nix build .#prodrome-wasm`. The test asks that core
+for the store's open items, and checks that the list counts as many. The
+command `node viewer/test/stores.mjs APP viewer/test/stores` serves the four
+small stores in `viewer/test/stores/` from a second local origin, and checks
 pages of them: one list, the wait from one store to another, a changed
 object, an object that the host does not serve, a pinned genesis, joined
-addresses, two prodromes with one id, and text crafted to attack the page.
+addresses, two prodromes with one id, text crafted to attack the page, and
+a store whose items are content records alone, with no `Created`.
 APP is a build that reads stores from this machine:
 `VIEWER_LOOPBACK=1 sh viewer/build.sh APP …`, with the arguments that
 `flake.nix` passes. The hosted build reads https alone. `node viewer/test/measure.mjs` measures what a

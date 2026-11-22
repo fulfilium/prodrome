@@ -99,12 +99,14 @@ jobs:
       # CODE STILL READS IT. The binary is built from this commit and pointed
       # at the `roadmap-data` branch: `verify` says every object rehashes to
       # its name and rests on a parent that exists, and `list` says the whole
-      # store still folds under this code.
+      # store still folds under this code. The branch is public and fetched
+      # read-only, so a pull request from a fork runs this with no secret.
       - if: matrix.check == 'test'
         uses: actions/checkout@v4
         with:
           ref: roadmap-data
           path: roadmap-data
+          persist-credentials: false
       # `cargo test` built the binary already: the CLI's integration tests
       # run it.
       - name: Read the roadmap
@@ -112,6 +114,20 @@ jobs:
         run: |
           ./target/debug/prodrome verify --store roadmap-data/roadmap
           ./target/debug/prodrome list --store roadmap-data/roadmap
+      # THE STORE AS THE BOTS SEE IT. The issue mirror, the pricing step and
+      # the completions write before they verify, and a write leaves local
+      # files (`.writes`) that a fresh checkout lacks, so some findings of
+      # `verify` (law 81) show only after a write. This step writes one item
+      # to a copy of the store with this commit's binary, and verifies the
+      # copy. Nothing is pushed.
+      - name: Verify the roadmap after a write
+        if: matrix.check == 'test'
+        run: |
+          copy=$(mktemp -d)/roadmap
+          cp -R roadmap-data/roadmap "$copy"
+          ./target/debug/prodrome add --store "$copy" --actor ci --priority 80 \
+            --body "A write by the pull request check" ci-check-write
+          ./target/debug/prodrome verify --store "$copy"
       # Only a run that built everything above records and saves, and never
       # a pull request's: a cache main reads is one main wrote.
       - if: github.event_name != 'pull_request' && steps.target.outputs.cache-hit != 'true'

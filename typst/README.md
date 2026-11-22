@@ -70,10 +70,10 @@ store by the viewer's own `viewer/src/view.ts`.
 | Key       | What                                                              | From                            |
 | --------- | ----------------------------------------------------------------- | ------------------------------- |
 | `at`      | the instant everything was read at, ISO                           | `entries(..).at`                |
-| `entries` | one row per todo (SPEC §6.7)                                      | `entries(..).entries`           |
+| `entries` | one row per todo (SPEC §6.7); a row's `begun` is the instant of its first event of any kind, and the list shows a row only where `begun` is at or before `at` | `entries(..).entries` |
 | `order`   | the rows' todo ids in the core's list order                       | `entries(..).order`             |
 | `records` | the records the rows name, by object name                        | `entries(..).records`           |
-| `created` | per todo, its first `Created`'s `at` and its last one's `text`    | `entries(..).created`           |
+| `created` | per todo, its first `Created`'s `at` and its last one's `text`, the body of a todo with no record | `entries(..).created` |
 | `marks`   | per todo, `back` and `ahead` (days) and `values`, evenly spaced from `back` days before `at` to `ahead` days after it, both ends included, one of them at `at`; `null` where it reads `∅` | `fulfillment`, `series_knots` |
 | `explain` | per todo, the explanation tree (optional)                         | `explain`                       |
 | `history` | per todo, its events: `at`, `kind`, `actor`, `hash` (optional)    | `fold(..).stream`               |

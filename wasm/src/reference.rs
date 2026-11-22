@@ -270,9 +270,10 @@ pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<S
 /// `created` is the other half of that lookup, for a todo with NO record: per
 /// todo, the instant of its first `Created` and the text of its last — what
 /// `prodrome list` shows as the body when there is no record to read one
-/// from, and when it asks whether a todo existed yet at `at`. Every `Created`
-/// in the chain counts, before `at` or after, exactly as the command line
-/// gathers them; the rows say what `at` believes.
+/// from. Every `Created` in the chain counts, before `at` or after, exactly
+/// as the command line gathers them; the rows say what `at` believes. Whether
+/// a todo exists at `at` is each row's `begun`, and not `created`: an item
+/// that content records alone make has no `Created` (law 87).
 #[wasm_bindgen]
 pub fn entries(objects: &str, at: Option<String>, untrusted: &str) -> Result<String, JsError> {
     let replica = Replica::<Event>::of(objects, Sender::Stranger).map_err(refused)?;

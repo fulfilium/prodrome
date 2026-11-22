@@ -8,10 +8,13 @@
 // checks the item page and the editor (highlighting, completion, live
 // preview), and fails on any page error or on a page that scrolls sideways.
 // LIST, if given, is `prodrome list`'s output on the same store: the list
-// must name the same todos in the same order. Needs Playwright (`npm i -g playwright`, or NODE_PATH at one);
-// not part of `nix flake check`, which has no browser.
+// must name the same todos in the same order. PRODROME_NODE names the
+// `nodejs/` glue of `nix build .#prodrome-wasm`: the test asks that core for
+// the site's open items, and the list must count as many (law 87). Needs
+// Playwright (`npm i -g playwright`, or NODE_PATH at one); not part of
+// `nix flake check`, which has no browser.
 import { createServer } from "node:http";
-import { readFile, stat } from "node:fs/promises";
+import { readdir, readFile, stat } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { createRequire } from "node:module";
 
@@ -19,10 +22,11 @@ const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
 const [site, todo, shots, listed] = process.argv.slice(2);
-if (!site || !todo) {
-  console.error("usage: smoke.mjs SITE TODO [SHOTS]");
+if (!site || !todo || !process.env.PRODROME_NODE) {
+  console.error("usage: PRODROME_NODE=GLUE smoke.mjs SITE TODO [SHOTS] [LIST]");
   process.exit(2);
 }
+const core = require(join(process.env.PRODROME_NODE, "prodrome.js"));
 
 const TYPES = {
   ".html": "text/html", ".js": "text/javascript", ".css": "text/css",
@@ -82,6 +86,18 @@ if (listed) {
   const shown = hrefs.map((h) => decodeURIComponent(h.slice("#/todo/".length))).slice(0, rows);
   check(JSON.stringify(shown) === JSON.stringify(cli), `the list is in prodrome list's order (${cli.length} rows)`);
 }
+// THE LIST IS THE CORE'S (law 87): it counts as open exactly the core's
+// rows over the site's objects that are open and exist at the instant read.
+const objects = await Promise.all(
+  (await readdir(join(site, "objects")))
+    .filter((file) => file.endsWith(".py"))
+    .map(async (file) => ({ hash: file.slice(0, -3), text: await readFile(join(site, "objects", file), "utf8") })),
+);
+const now = new Date(Date.now() - new Date().getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+const answer = JSON.parse(core.entries(JSON.stringify(objects), now, "[]"));
+const open = answer.entries.filter((e) => e.state === "open" && e.begun <= answer.at).length;
+const summary = (await page.locator(".typst").first().textContent()).match(/(\d+) open on/)?.[1];
+check(rows === open && summary === String(open), `the list counts ${summary} open in ${rows} rows, as the core answers ${open}`);
 check((await sideways()) <= WIDTH, `the list does not scroll sideways at ${WIDTH}px`);
 const status = await page.locator("#status").textContent();
 check(!/ ms|\dT\d/.test(status), `the status line reads as a date, with no timings: ${status}`);

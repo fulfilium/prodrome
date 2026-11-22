@@ -65,15 +65,18 @@ fn under(untrusted: &[String]) -> String {
 /// The open todos at the reading's instant, in §6.7's list order: most
 /// urgent first, and the rows with no number after them.
 ///
-/// OPEN AND ALREADY CREATED. `view::entries` answers for every todo the DAG
+/// OPEN AND ALREADY BEGUN. `view::entries` answers for every todo the DAG
 /// has ever mentioned, the future's included, because that is what a §6.7 row
-/// is; a list of what to do next is the rows whose todo existed at `t` and
-/// whose outcome at `t` is nothing.
+/// is. A list of what to do next keeps the rows that exist at `t`
+/// ([`Entry::exists_at`]: an event of any kind is dated at or before `t`)
+/// and whose outcome at `t` is nothing.
+///
+/// [`Entry::exists_at`]: prodrome::view::Entry::exists_at
 pub fn list(reading: &Reading) -> String {
     let mut rows: Vec<&Row> = reading
         .entries
         .iter()
-        .filter(|entry| entry.is_open() && reading.existed(&entry.key))
+        .filter(|entry| entry.is_open() && entry.exists_at(reading.at))
         .collect();
     rows.sort_by(|a, b| list_order(a, b));
 
@@ -124,7 +127,7 @@ pub fn show(reading: &Reading, todo: &TodoId) -> Option<String> {
             Confidence::Provisional(_) => format!("provisional{}", provisional(entry).trim_start()),
         },
     );
-    field(&mut out, "created", reading.created_at(todo));
+    field(&mut out, "created", iso(entry.begun));
     field(&mut out, "price", priced(entry));
     field(&mut out, "spec", print_term(entry.spec()));
     field(&mut out, "body", reading.body(todo));

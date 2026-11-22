@@ -51,6 +51,8 @@ export interface Entry {
   content: string | null;
   spec: string;
   stream: string[];
+  /** The instant of the todo's first event of any kind: the todo exists from it on (SPEC §6.7). */
+  begun: string;
 }
 
 /**

@@ -16,7 +16,8 @@
    "todo": "bundle-font-licences",
    "unconfirmed": false,
    "unlinked": null,
-   "value": 1
+   "value": 1,
+   "begun": "2026-09-19T09:00:00"
   },
   {
    "at": "",
@@ -31,7 +32,8 @@
    "todo": "gh-1",
    "unconfirmed": false,
    "unlinked": null,
-   "value": "absent"
+   "value": "absent",
+   "begun": "2026-09-22T09:00:00"
   },
   {
    "at": "",
@@ -47,7 +49,8 @@
    "todo": "polish-the-marks",
    "unconfirmed": false,
    "unlinked": null,
-   "value": 0.8
+   "value": 0.8,
+   "begun": "2026-09-19T10:00:00"
   },
   {
    "at": "",
@@ -64,7 +67,8 @@
    "todo": "ship-the-viewer",
    "unconfirmed": false,
    "unlinked": null,
-   "value": 0.41805555555555557
+   "value": 0.41805555555555557,
+   "begun": "2026-09-20T09:00:00"
   },
   {
    "at": "",
@@ -80,7 +84,8 @@
    "todo": "write-the-docs",
    "unconfirmed": false,
    "unlinked": null,
-   "value": 0.6
+   "value": 0.6,
+   "begun": "2026-09-21T09:00:00"
   }
  ],
  "order": [
