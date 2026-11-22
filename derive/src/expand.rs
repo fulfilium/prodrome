@@ -1,9 +1,11 @@
 //! The code that the derive writes for a [`Derived`] type: an impl of
 //! `Literal`, and for a record an impl of `Record`.
 //!
-//! The code names the core as `::prodrome`, or by the path that
-//! `#[literal(crate = path)]` gives. The core declares
+//! The code names the crate of the codec as `::prodrome`, or by the path
+//! that `#[literal(crate = path)]` gives. The core declares
 //! `extern crate self as prodrome`, so the default path works inside it.
+//! `prodrome-data` gives `crate = crate` to the types that derive inside
+//! it.
 
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote, ToTokens};

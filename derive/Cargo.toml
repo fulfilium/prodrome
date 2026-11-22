@@ -1,6 +1,6 @@
 [package]
 name = "prodrome-derive"
-description = "The derive macro of prodrome-core's literal codec"
+description = "The derive macro of the literal codec of prodrome-data and prodrome-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -12,9 +12,10 @@ categories = ["database-implementations", "encoding"]
 
 # A procedural macro: the compiler runs it, and no code of this crate is in
 # a program that uses the derive. The derive writes code that calls
-# `prodrome::literal::codec`, so a program that uses it depends on
+# `::prodrome::literal::codec`, so a program that uses it depends on
 # `prodrome-core`, which re-exports the derive as
-# `prodrome::literal::codec::Literal`.
+# `prodrome::literal::codec::Literal`. A program that depends on
+# `prodrome-data` alone gives the derive `#[literal(crate = prodrome_data)]`.
 [lib]
 proc-macro = true
 
