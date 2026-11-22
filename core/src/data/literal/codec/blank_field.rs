@@ -7,7 +7,7 @@
 
 #![warn(clippy::pedantic)]
 
-use crate::literal::Value;
+use crate::data::literal::Value;
 
 /// The text of `value`, or `''` where it is absent.
 ///

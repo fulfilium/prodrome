@@ -3,12 +3,12 @@
 
 #![warn(clippy::pedantic)]
 
-use crate::fold::frontier::value;
-use crate::fold::order::{grows, maximal, Inflationary, Order};
-use crate::fold::{Frontier, Register as _, RegisterType};
-use crate::literal::ProdromeError;
-use crate::registers::Stamp;
-use crate::schema::Schema;
+use crate::data::fold::frontier::value;
+use crate::data::fold::order::{grows, maximal, Inflationary, Order};
+use crate::data::fold::{Frontier, Register as _, RegisterType};
+use crate::data::literal::ProdromeError;
+use crate::data::schema::Schema;
+use crate::data::stamp::Stamp;
 
 /// One inflationary register: its [`Frontier`] and its peak (SPEC §6, "A
 /// schema's registers").
@@ -21,7 +21,7 @@ use crate::schema::Schema;
 /// peak, each named by the least write that carries it ([`maximal`]).
 ///
 /// The register keeps the frontier beside the peak, because a conflict
-/// ([`crate::fold::Product::conflicts`]) and the deps of an append are causal
+/// ([`crate::data::fold::Product::conflicts`]) and the deps of an append are causal
 /// and not ordered by value. A write below what it rests on cannot lower the
 /// reading, because a write above it is already in the peak.
 #[derive(Debug, Clone, PartialEq)]

@@ -10,7 +10,7 @@
 #![warn(clippy::pedantic)]
 
 use super::{Constructor, Literal};
-use crate::literal::{Call, ProdromeError, Value};
+use crate::data::literal::{Call, ProdromeError, Value};
 
 /// An enum whose variants are constructors. `#[derive(Literal)]` implements
 /// it for an enum.

@@ -10,11 +10,11 @@
 use std::fmt::Debug;
 use std::marker::PhantomData;
 
-use crate::fold::{Climb, Discrete, Frontier, Inflationary, Order, Product, RegisterType};
-use crate::literal::ProdromeError;
-use crate::registers::Stamp;
-use crate::schema::headed::{Body, Event};
-use crate::schema::Schema;
+use crate::data::fold::{Climb, Discrete, Frontier, Inflationary, Order, Product, RegisterType};
+use crate::data::literal::ProdromeError;
+use crate::data::schema::headed::{Body, Event};
+use crate::data::schema::Schema;
+use crate::data::stamp::Stamp;
 
 /// The name of the one register.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -70,7 +70,7 @@ pub trait Hold<'a, R: Sole>: Default + Clone + Debug + PartialEq {
 /// and refusing no write.
 impl<'a, R: Sole> Hold<'a, R> for Frontier<'a, R::Schema> {
     fn join(&mut self, stamp: &'a Stamp<R::Schema>) {
-        crate::fold::Register::join(self, stamp);
+        crate::data::fold::Register::join(self, stamp);
     }
 
     fn frontier(&self) -> &Frontier<'a, R::Schema> {

@@ -12,7 +12,6 @@
 mod decision;
 mod doors;
 mod fault;
-mod husk;
 mod levelled;
 mod memory;
 mod memory_store;
@@ -44,9 +43,9 @@ use crate::schema::Schema;
 use crate::snapshot::{attest, Attestation};
 use crate::spread::spread;
 
+pub use crate::data::husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 pub use decision::{Decision, Stopped};
 pub use doors::Doors;
-pub use husk::{Hashed, Husk, HuskObject, Husking, NotAHusk, Other, Sender, Stored};
 use levelled::{Level, Levelled};
 use memory::{Memory, Seen, Verified};
 pub use memory_store::MemoryStore;

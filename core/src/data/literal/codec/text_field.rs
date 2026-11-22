@@ -7,7 +7,7 @@
 use std::fmt::Display;
 
 use super::Literal;
-use crate::literal::{ProdromeError, Value};
+use crate::data::literal::{ProdromeError, Value};
 
 /// The text of `value`, as a string.
 pub fn to_value<T: AsRef<str>>(value: &T) -> Value {

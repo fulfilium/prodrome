@@ -1,19 +1,19 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 
-use crate::event::Hash;
-use crate::fold::Frontier;
-use crate::literal::ProdromeError;
-use crate::registers::Stamp;
-use crate::schema::Schema;
+use crate::data::event::Hash;
+use crate::data::fold::Frontier;
+use crate::data::literal::ProdromeError;
+use crate::data::schema::Schema;
+use crate::data::stamp::Stamp;
 
 /// An entity's registers: a product of semilattices, one for each register
 /// (SPEC §6, "A schema's registers", and SPEC §6.6).
 ///
 /// The product joins componentwise, so the order in which writes arrive
 /// changes no value. A register that a write supersedes in is a [`Frontier`],
-/// or a [`crate::fold::Climb`] where the register is inflationary. A register
-/// that only accumulates is a [`crate::fold::GrowSet`].
+/// or a [`crate::data::fold::Climb`] where the register is inflationary. A register
+/// that only accumulates is a [`crate::data::fold::GrowSet`].
 pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     type Schema: Schema;
 
@@ -53,8 +53,8 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     ///
     /// A register that may go back reads its frontier
     /// ([`Frontier::reading`]). An inflationary register reads all its
-    /// writes ([`crate::fold::Climb::reading`]). Only the product knows the
-    /// register's [`crate::fold::RegisterType`], so a reader that holds only a
+    /// writes ([`crate::data::fold::Climb::reading`]). Only the product knows the
+    /// register's [`crate::data::fold::RegisterType`], so a reader that holds only a
     /// register's name can read any schema.
     fn reading(&self, register: <Self::Schema as Schema>::Register)
         -> Vec<&'a Stamp<Self::Schema>>;
@@ -95,7 +95,7 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
 
     /// The inflationary registers of this product, which a
-    /// [`crate::fold::Climb`] holds and which the append holds to
+    /// [`crate::data::fold::Climb`] holds and which the append holds to
     /// [`Product::grows`].
     ///
     /// Where the list is empty, `verify` looks for no write below its

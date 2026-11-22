@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
-use crate::fold::{Inflationary, Order};
-use crate::schema::Schema;
+use crate::data::fold::{Inflationary, Order};
+use crate::data::schema::Schema;
 
 /// A join-semilattice: joining the same writes in any order gives one value.
 pub trait Register: Default {

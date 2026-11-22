@@ -6,7 +6,7 @@
 //! opens a store at `Event<B>`. Every event passed [`Body::admits`]:
 //! [`Event::new`] asks it, and [`Event::of`] serves only a body whose
 //! `admits` refuses nothing. A schema whose events write one register can
-//! use [`crate::fold::sole::One`] as its product.
+//! use [`crate::data::fold::sole::One`] as its product.
 //!
 //! # Example
 //!
@@ -20,11 +20,11 @@ use std::convert::Infallible;
 use std::fmt::{Debug, Display};
 use std::marker::PhantomData;
 
-use crate::event::Actor;
-use crate::fold::Product;
-use crate::literal::codec::{record, Constructor, Fields, Literal};
-use crate::literal::{Datetime, ProdromeError, Signature, Table, Value, Vocabulary};
-use crate::schema::Schema;
+use crate::data::event::Actor;
+use crate::data::fold::Product;
+use crate::data::literal::codec::{record, Constructor, Fields, Literal};
+use crate::data::literal::{Datetime, ProdromeError, Signature, Table, Value, Vocabulary};
+use crate::data::schema::Schema;
 
 /// One event: the key of its entity, its instant, its writer and its body.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,13 +52,13 @@ pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
     type Refusal: Display;
 
     /// The name of the body's type, which a refusal of an unknown event
-    /// constructor names, as [`no_arm`](crate::literal::codec::no_arm)
+    /// constructor names, as [`no_arm`](crate::data::literal::codec::no_arm)
     /// words it: `Other is not one of Entry's constructors`.
     const NAME: &'static str;
 
     /// Each event constructor. Its fields are the key's fields, then `at`
     /// and `actor`, then the body's fields. No constructor may have an
-    /// envelope's name ([`crate::event::ENVELOPE_SIGNATURES`]), because a
+    /// envelope's name ([`crate::data::event::ENVELOPE_SIGNATURES`]), because a
     /// parse looks up the envelopes first.
     const EVENTS: &'static [Constructor];
 

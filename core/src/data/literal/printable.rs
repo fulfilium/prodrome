@@ -9,7 +9,7 @@ mod table;
 
 use std::fmt::Write as _;
 
-use crate::event::Hash;
+use crate::data::event::Hash;
 
 use table::RANGES;
 

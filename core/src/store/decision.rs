@@ -5,12 +5,12 @@ use std::fs::{self, File};
 use std::sync::{Arc, MutexGuard};
 use std::time::SystemTime;
 
-use super::husk::{HuskObject, Husking};
 use super::levelled::Levelled;
 use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
 use super::{replace, sync_dir, EventStore};
 use crate::dag::Dag;
+use crate::data::husk::{HuskObject, Husking};
 use crate::event::{Envelope, Hash};
 use crate::literal::ProdromeError;
 use crate::policy::Policy;

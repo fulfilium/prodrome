@@ -12,7 +12,7 @@
 use std::fmt::{self, Display};
 
 use super::{Constructor, Literal};
-use crate::literal::{Call, ProdromeError, Value};
+use crate::data::literal::{Call, ProdromeError, Value};
 
 /// A type whose literal is a call of one constructor. `#[derive(Literal)]`
 /// implements it for a struct with named fields.

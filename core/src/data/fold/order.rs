@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use crate::literal::ProdromeError;
+use crate::data::literal::ProdromeError;
 
 /// A partial order on a register's values (law 30: reflexive, antisymmetric
 /// and transitive).

@@ -119,17 +119,15 @@ extern crate self as prodrome;
 pub mod breaks;
 /// The chain compiler (SPEC §7.1).
 pub mod chain;
-pub mod change;
 pub mod dag;
+mod data;
 pub mod declared;
 pub mod digest;
 pub mod event;
 pub mod fold;
 pub mod fpl;
-pub mod genesis;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod literal;
 pub mod memo;
 pub mod nest;
 pub mod observe;
@@ -149,8 +147,9 @@ pub mod store;
 pub mod tags;
 pub mod term;
 pub mod todo;
-pub mod topo;
 pub mod view;
+
+pub use data::{change, genesis, literal, topo};
 
 // The property tests' case counts, one rule with the integration tests'.
 #[cfg(test)]

@@ -1,7 +1,7 @@
-use crate::event::{field, hashes, hashes_value, sorted_distinct, Hash};
-use crate::literal::{Call, ProdromeError, Value};
-use crate::payload::{required, string_field};
-use crate::schema::Schema;
+use crate::data::event::{field, hashes, hashes_value, sorted_distinct, Hash};
+use crate::data::literal::{Call, ProdromeError, Value};
+use crate::data::payload::{required, string_field};
+use crate::data::schema::Schema;
 
 /// `Change(genesis, deps, event)`: an event named by its prodrome and the
 /// writes it supersedes, never by where it was written.

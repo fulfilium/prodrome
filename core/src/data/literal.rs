@@ -440,7 +440,7 @@ pub enum Signature<'a> {
     /// the record kind (SPEC §4) is not a static table.
     Fields(&'a [&'a str]),
     /// The declared field order as owned names, lent by a vocabulary that is
-    /// data at run time, such as a schema of [`crate::declared`].
+    /// data at run time, such as a schema of `prodrome::declared`.
     Owned(&'a [String]),
     /// Any keyword field and no positional argument, to read a canonical print
     /// without knowing the kind. The read path of a store never uses it,
@@ -460,7 +460,7 @@ pub struct Table(pub &'static [codec::Constructor]);
 
 impl Table {
     /// The result is `'static`, so a vocabulary composed of several tables
-    /// ([`crate::event::EventVocabulary`]) can return it.
+    /// ([`crate::data::event::EventVocabulary`]) can return it.
     pub fn find(&self, name: &str) -> Option<Signature<'static>> {
         self.0
             .iter()

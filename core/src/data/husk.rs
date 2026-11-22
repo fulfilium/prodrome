@@ -4,12 +4,12 @@
 //! Where no key that a holder keeps opens a sealed part, a husk reads as its
 //! whole, and it does so for good, because keys are only destroyed.
 
-use crate::change::{mk_change, Change};
-use crate::event::{canonical_envelope, Envelope, Hash};
-use crate::literal::codec::{Constructor, Fields};
-use crate::literal::{parse_literal, print_literal};
-use crate::literal::{ProdromeError, Signature, Table, Value, Vocabulary};
-use crate::schema::Schema;
+use crate::data::change::{mk_change, Change};
+use crate::data::event::{canonical_envelope, Envelope, Hash};
+use crate::data::literal::codec::{Constructor, Fields};
+use crate::data::literal::{parse_literal, print_literal};
+use crate::data::literal::{ProdromeError, Signature, Table, Value, Vocabulary};
+use crate::data::schema::Schema;
 
 /// A schema whose events hold sealed parts, each under a named key, which a holder may drop.
 ///
@@ -169,7 +169,7 @@ impl<E: Husking> HuskObject<E> {
             .map_err(refused)?;
         let genesis =
             Hash::new(fields.get::<String>("genesis").map_err(refused)?).map_err(refused)?;
-        let event = crate::payload::required(fields.call(), "event").map_err(refused)?;
+        let event = crate::data::payload::required(fields.call(), "event").map_err(refused)?;
         let husk = Husk::dropped(E::read_dropped(event).map_err(refused)?)?;
         let Change { genesis, deps, .. } = mk_change(genesis, deps, ()).map_err(refused)?;
         let husk = Self::over(genesis, deps, husk);

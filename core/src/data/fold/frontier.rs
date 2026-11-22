@@ -1,8 +1,8 @@
-use crate::event::Hash;
-use crate::fold::order::{maximal, Discrete, Order};
-use crate::fold::{Register, RegisterType};
-use crate::registers::Stamp;
-use crate::schema::Schema;
+use crate::data::event::Hash;
+use crate::data::fold::order::{maximal, Discrete, Order};
+use crate::data::fold::{Register, RegisterType};
+use crate::data::schema::Schema;
+use crate::data::stamp::Stamp;
 
 /// The writes to one register that no other write descends from, sorted by
 /// name. Empty is unwritten; more than one is a conflict.
