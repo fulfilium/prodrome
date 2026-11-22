@@ -53,6 +53,10 @@ events, the objects and their names:
 prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
+A program that depends on both crates gives both the same revision. The
+core requires the exact version of the data crate that it is released
+with.
+
 The library needs Rust 1.85 or later. The command-line tool is called
 `prodrome`, and it is in the crate `prodrome-cli`. Install it with cargo or
 build it with nix:

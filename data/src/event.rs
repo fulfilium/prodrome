@@ -498,10 +498,6 @@ impl<E: Schema> Vocabulary for EventVocabulary<'_, E> {
 
 // --- the literal round trip --------------------------------------------------
 
-fn text(value: impl Into<String>) -> Value {
-    Value::Str(value.into())
-}
-
 #[doc(hidden)]
 pub fn field(name: &str, value: Value) -> (String, Value) {
     (name.to_owned(), value)
@@ -509,7 +505,7 @@ pub fn field(name: &str, value: Value) -> (String, Value) {
 
 #[doc(hidden)]
 pub fn hashes_value(names: &[Hash]) -> Value {
-    Value::Tuple(names.iter().map(|name| text(name.as_str())).collect())
+    Value::Tuple(names.iter().map(|name| Value::str(name.as_str())).collect())
 }
 
 #[doc(hidden)]
@@ -533,7 +529,7 @@ impl<E: Schema> Envelope<E> {
             Envelope::Sealed { prev, event } => Value::call(
                 "Sealed",
                 vec![
-                    field("prev", text(prev.as_ref().map_or("", Hash::as_str))),
+                    field("prev", Value::str(prev.as_ref().map_or("", Hash::as_str))),
                     field("event", Schema::to_value(event)),
                 ],
             ),

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Write `core/src/literal/printable/table.rs` from one UnicodeData.txt.
+"""Write `data/src/literal/printable/table.rs` from one UnicodeData.txt.
 
 SPEC section 2 defines the printable set from the General_Category values
 of Unicode 16.0.0. This script reads the file `UnicodeData.txt` of that
@@ -7,7 +7,7 @@ version, computes the set, and prints the Rust table on standard output.
 Run it with the file of Unicode 16.0.0:
 
     curl -sSO https://www.unicode.org/Public/16.0.0/ucd/UnicodeData.txt
-    python3 scripts/printable.py UnicodeData.txt > core/src/literal/printable/table.rs
+    python3 scripts/printable.py UnicodeData.txt > data/src/literal/printable/table.rs
 
 The file of Unicode 16.0.0 has the SHA-256 written in `SOURCE_SHA256`
 below. The script refuses any other file, so that the table always comes

@@ -86,7 +86,9 @@
 //! `genesis` and `change`, and the parts of `event`, `payload`, `schema`,
 //! `snapshot`, `sign` and `fold` that build, print, parse and hash objects.
 //! This crate re-exports each of them at the path below. A program that only
-//! builds and reads events can depend on `prodrome-data` alone.
+//! builds and reads events can depend on `prodrome-data` alone. An example
+//! in the documentation of a module of `prodrome-data` works under this
+//! crate with `prodrome` in place of `prodrome_data`.
 //!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)

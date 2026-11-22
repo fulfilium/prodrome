@@ -541,8 +541,10 @@ restricted join of `accept`, but law 39 is about nests.
 
 ## 8. Stage 3, as made
 
-Stage 3 made the crate `prodrome-data` in three commits that each build
-and pass the three commands of `AGENTS.md`.
+Stage 3 made the crate `prodrome-data` in five commits that each build
+and pass the three commands of `AGENTS.md`: the cuts inside the core, the
+move of the files, the words of the derive, the narrowing, and the
+documents. Later commits answer the review.
 
 **The cuts.** The first commit moved the items that the data crate holds
 into a private module `data` of the core, and left each old path as a
@@ -596,7 +598,16 @@ became crate-visible, and `newtype_str!`, `BitSet` and `topo::Topo` became
 `hashes_value`, `sorted_distinct` and `rests_on` of `event`, and `bytes`,
 `public_of` and `signed_by` of `sign`. Each is marked where it is
 declared: a method cannot move to a separate module, so one rule serves
-every item.
+every item. The core requires the exact version of the data crate, because
+these items carry no promise between versions.
+
+**The boundary of a `Stamp`.** A program can build a `Stamp` with any place
+through `Stamp::placed` and `Place`, but only that program's own reads of
+that `Stamp` see the place, because a store folds its own `Folded` from
+the `Node`s of its DAG. To close this door, a later change can move the
+fold of the DAG (`Folded`, `Node`, `fold`, `extend`, `since` and `heads`
+of `registers`) into the data crate, and make the place crate-visible
+again.
 
 **The face.** "Before" is the merge base `6364741`, with the line measure
 of the time.

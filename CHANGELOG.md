@@ -292,7 +292,10 @@ constructor's fields never change, in any release.
   is `#[doc(hidden)]`. Nineteen other items that only `prodrome-core` uses
   are public in `prodrome-data` and `#[doc(hidden)]`, because `pub(crate)`
   does not reach across crates; `docs/design-core-face.md`, section 8,
-  lists them.
+  lists them. A program can also reach a hidden item through a path of
+  the facade, such as `prodrome::event::rests_on`. A hidden item carries
+  no promise at either path, and `prodrome-core` requires the exact
+  version of `prodrome-data`.
 - **The viewer shows every item's text as written, and runs none of it as
   Typst.** An item's text comes from whoever can write to the store, and
   the issue mirror writes each issue's title, which anyone may write. No

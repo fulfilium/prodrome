@@ -245,10 +245,6 @@ pub fn mk_record<P: Payload>(
 
 // --- the literal round trip --------------------------------------------------
 
-fn text(value: impl Into<String>) -> Value {
-    Value::Str(value.into())
-}
-
 impl<P: Payload> TodoEvent<P> {
     /// The event as a literal with every field, in declared order and in
     /// keyword form, so the print does not depend on how the value was built.
@@ -257,11 +253,11 @@ impl<P: Payload> TodoEvent<P> {
             TodoEvent::Created(e) => Value::call(
                 "Created",
                 vec![
-                    field("todo", text(e.todo.as_str())),
+                    field("todo", Value::str(e.todo.as_str())),
                     field("at", Value::Datetime(e.at)),
-                    field("actor", text(e.actor.as_str())),
-                    field("text", text(e.text.clone())),
-                    field("note", text(e.note.clone())),
+                    field("actor", Value::str(e.actor.as_str())),
+                    field("text", Value::str(e.text.clone())),
+                    field("note", Value::str(e.note.clone())),
                 ],
             ),
             TodoEvent::Completed(e)
@@ -270,20 +266,20 @@ impl<P: Payload> TodoEvent<P> {
             | TodoEvent::Tended(e) => Value::call(
                 self.kind_name(),
                 vec![
-                    field("todo", text(e.todo.as_str())),
+                    field("todo", Value::str(e.todo.as_str())),
                     field("at", Value::Datetime(e.at)),
-                    field("actor", text(e.actor.as_str())),
-                    field("note", text(e.note.clone())),
+                    field("actor", Value::str(e.actor.as_str())),
+                    field("note", Value::str(e.note.clone())),
                 ],
             ),
             TodoEvent::SpecRevised(e) => Value::call(
                 "SpecRevised",
                 vec![
-                    field("todo", text(e.todo.as_str())),
+                    field("todo", Value::str(e.todo.as_str())),
                     field("at", Value::Datetime(e.at)),
-                    field("actor", text(e.actor.as_str())),
+                    field("actor", Value::str(e.actor.as_str())),
                     field("spec", e.spec.to_value()),
-                    field("note", text(e.note.clone())),
+                    field("note", Value::str(e.note.clone())),
                 ],
             ),
             TodoEvent::Authored(e) => e.to_value(),
@@ -301,9 +297,9 @@ impl<P: Payload> Authored<P> {
     pub fn to_value(&self) -> Value {
         headed(
             vec![
-                ("todo", text(self.todo.as_str())),
+                ("todo", Value::str(self.todo.as_str())),
                 ("at", Value::Datetime(self.at)),
-                ("actor", text(self.actor.as_str())),
+                ("actor", Value::str(self.actor.as_str())),
             ],
             P::CONSTRUCTOR,
             self.payload.values(),

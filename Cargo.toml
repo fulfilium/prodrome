@@ -52,5 +52,7 @@ strip = true
 # so that a release bumps one file.
 [workspace.dependencies]
 prodrome-core = { path = "core", version = "0.9.0" }
-prodrome-data = { path = "data", version = "0.9.0" }
+# Exact: the core calls items of the data crate that are `#[doc(hidden)]`
+# and carry no promise between versions, so the two crates release together.
+prodrome-data = { path = "data", version = "=0.9.0" }
 prodrome-derive = { path = "derive", version = "0.9.0" }
