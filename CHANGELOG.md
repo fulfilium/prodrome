@@ -242,6 +242,21 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The conversions between a stored `Datetime` and an instant are in
+  `prodrome-data` (issue #92, section 9 of `docs/design-core-face.md`).**
+  The type `Instant`, the functions `instant_of`, `datetime_of`, `iso` and
+  `parse_iso`, and the error `FplError`, which `parse_iso` returns, are in
+  the new module `prodrome_data::instant`. `prodrome-core` re-exports each
+  of them at its old path in `prodrome::fpl`, so a program that depends on
+  `prodrome-core` changes nothing. A program that reads and writes the
+  instants of events can depend on `prodrome-data` alone, and changes
+  `prodrome::fpl::` to `prodrome_data::instant::` in these paths. The doc
+  comments of `prodrome-data` are shorter, by the rule of stage 1, and its
+  root doc lists what a program needs to build, stamp, print, parse and
+  hash events. The face of `prodrome-data` is 19,140 tokens by
+  `scripts/face.py --lines data`, in place of 22,291, and 11,589 tokens by
+  the rustdoc measure, in place of 14,083. This change narrows no item. No
+  behaviour, stored byte, conformance vector or law changes.
 - **The data of a store is its own crate, `prodrome-data` (issue #92,
   stage 3 of `docs/design-core-face.md`).** A program that only builds,
   prints, parses and hashes events can depend on `prodrome-data` alone.

@@ -4,7 +4,10 @@ This note answers issue #92. It measures the public face of the crate
 `prodrome-core`, and it proposes how to make what one task must read
 smaller, in stages. Section 7 records stage 1, which the same pull request
 as this note made. Section 8 records stage 3, the data crate, which a
-later pull request made before stage 2. The other stages are proposals.
+later pull request made before stage 2. Section 9 records the stage after
+it, which moved the instant conversions to the data crate and shortened
+the data crate's doc comments. Section 9 also gives the order of the
+stages that remain. The other stages are proposals.
 For what is implemented, see `SPEC.md` and `CHANGELOG.md`.
 
 Terms used below:
@@ -364,6 +367,7 @@ So the stages of section 5 have these targets, in the line measure:
 | 2, the narrowing | 100,000 | 19,000 | 36,000 |
 | 3, the data crate | | 15,000 | |
 | 3, as made (section 8) | 92,381 without the data crate | 22,260 | |
+| 3, the instants and the words (section 9) | 92,204 without the data crate | 19,140 | |
 | 4, each further crate | | | under 25,000 in each of two crates |
 
 Stage 2 reaches its numbers by removing `pub` from items that only their
@@ -413,6 +417,9 @@ Each stage is one pull request that lands alone.
    3. digest;
    4. reading;
    5. todo.
+
+   Section 9 restates this order by what the units of an application are
+   held by.
 
 `SPEC.md` names no Rust module, so no stage changes it. `CHANGELOG.md`
 announces each stage under "Changed", with the paths a program may change.
@@ -645,3 +652,138 @@ unit tests and 12 doc tests before, and 75 and 8 in the core with 12 and
 event and two objects, prints them, parses them back, and checks their
 names against `sha256sum`, with the data crate as its only crate of the
 workspace.
+
+## 9. The instants and the words of the data crate, as made
+
+An application that adopted the data crate counted which of its units
+still depend on the core. Four of those units depend on the core only
+through the conversions between a stored `literal::Datetime` and an
+instant. The application's tool also measured the face of the data crate
+at about 26,000 tokens, over the budget of 25,000. This stage moved the
+conversions to the data crate and made the data crate's doc comments
+shorter. It made four commits: the cut inside the core, the move of the
+file, the words, and the root doc. A fifth commit records the stage in
+this note and in `CHANGELOG.md`.
+
+**The move.** The method is the method of stage 3. The first commit moved
+the items into a private module `instant` of the core, and `fpl`
+re-exported them. At that commit, `python3 scripts/edges.py core/src
+instant` printed that the module names no module outside the set. The
+second commit moved `core/src/instant.rs` to `data/src/instant.rs`, and
+`python3 scripts/edges.py data/src` passes after it. `prodrome-core`
+re-exports each item at its old path, so `cli/`, `wasm/`, `github/` and
+every test build with no change of an import.
+
+| Item | The path that `prodrome-core` keeps | The path in the data crate |
+|---|---|---|
+| `Instant` | `prodrome::fpl::Instant` | `prodrome_data::instant::Instant` |
+| `instant_of` | `prodrome::fpl::instant_of` | `prodrome_data::instant::instant_of` |
+| `datetime_of` | `prodrome::fpl::datetime_of` | `prodrome_data::instant::datetime_of` |
+| `iso` | `prodrome::fpl::iso` | `prodrome_data::instant::iso` |
+| `parse_iso` | `prodrome::fpl::parse_iso` | `prodrome_data::instant::parse_iso` |
+| `FplError` | `prodrome::fpl::FplError` | `prodrome_data::instant::FplError` |
+
+`Instant` is a type alias of `chrono::NaiveDateTime`, not a type of the
+evaluator. It has no inherent method, so no part of it stays in the core.
+`FplError` moved because `parse_iso` returns it, and a change of that
+return type would change what a program observes. The two `From` impls
+between `FplError` and `ProdromeError` moved with it, because Rust allows
+an impl of a foreign trait only in the crate of one of the two types. The
+core's `fpl` still uses `FplError` for every refusal of a term. The
+functions `instant_of` and `datetime_of` are `#[inline]`, because the
+folds call them for each event, across the crate boundary. No trait was
+added.
+
+Section 8 kept `fold::read` and `fold::readings` in the core in part
+because they read an `fpl::Instant`. That reason is gone, but they still
+read a `Policy` and a `Schedule`, which are not data.
+
+**The other candidates.** The test is the test of stage 3: an item is data
+if it reads or writes a stored value and names no evaluator, store or
+policy.
+
+| Candidate | Moved | Reason |
+|---|---|---|
+| `Instant`, `instant_of`, `datetime_of`, `iso`, `parse_iso` | yes | They read and write the instant of an event, and they name only `chrono` and `literal::Datetime`. |
+| `FplError` | yes | `parse_iso` returns it. It is a newtype of a message. |
+| `event::Lifecycle` | no | It names only data types, but it is a record of the todo schema (SPEC §4). A program gets or stores a `Lifecycle` only through a `TodoEvent`, whose `SpecRevised` holds a `Term` and whose `Authored` holds a `Payload`. So a unit that uses a `Lifecycle` depends on the core in any case. Moved alone, it frees no unit, and it splits the records of the todo schema between two crates. It moves with the todo crate. |
+| The todo schema's constructors (`mk_created`, `mk_completed`, `mk_cancelled`, `mk_reopened`, `mk_tended`, `mk_spec_revised`, `mk_record`) | no | Each returns a `TodoEvent<P: Payload>`. They belong with the reference schema in the todo crate, not in the data crate. |
+| `Delta`, `div_delta`, `total_seconds`, `delta_from_hours`, `hours` | no | They copy CPython's `timedelta` arithmetic for the evaluator. A stored span is already `literal::Timedelta`, in the data crate. |
+
+**The narrowing.** This stage narrowed no item. Every public item of the
+data crate was checked for the code that names it outside its own file.
+The items that only the data crate uses are already crate-visible
+(`literal::print_float`, `event::lower_hex`, `event::optional_hash`). Of
+the items that only the data crate and the tests name, the code that
+`#[derive(Literal)]` writes names `codec::arm`, `call_of`,
+`read_or_default`, `headed_len`, `headed_names`, `headed_table` and
+`names_field`, so they must stay public. The others (`Int::from_i64`,
+`Timedelta::ZERO`, `payload::tuple_or_empty`, `payload::expect_call`,
+`Frontier::is_conflict`, `codec::Site`, `codec::Reader`,
+`printable::is_printable`, `literal::print_str`) are parts of the API
+that a program outside the library can reasonably need.
+
+**The words.** The doc comments of the data crate had a third pass by the
+rule of section 2. The doc characters of `data/src` fell from 50,899 to
+36,695, with the new module `instant` included. Each item that is
+`#[doc(hidden)]` for the core has one doc line, which starts with "For
+the core; no promise." The pass listed each deleted sentence that gave a
+reason, an invariant or a hazard, with the place where it is still
+stated: `SPEC.md`, a design note, or the doc that remains. One detail
+that was stated nowhere else was restored: the path that `Topo::settle`
+gives to `cycle` starts and ends at the key. With blank lines
+and comment lines removed, each file of `data/src` equals the file
+before the pass. The root doc of the data crate lists, in ten lines, what
+a program needs to define a schema, stamp an event, print and parse it,
+put it in an object and name the object.
+
+**The face.** "Before" is the merge base `30ce2c0`, measured with the
+scripts of this tree. Section 8 gives 22,260 for the data crate, because
+it measured before the commits that answered its review.
+
+| Measure | `prodrome-data` before | `prodrome-data` after | `prodrome-core` before | `prodrome-core` after |
+|---|--:|--:|--:|--:|
+| lines (`scripts/face.py --lines`) | 22,291 | 19,140 | 92,533 | 92,204 |
+| rustdoc, default features | 14,083 | 11,589 | 38,480 | 38,311 |
+| rustdoc, with `laws` | | | 42,302 | 42,133 |
+
+The core's figures do not count the data crate. The line measure counts
+the items that are `#[doc(hidden)]` and the module roots: it counts
+`lib.rs` as the module `lib`, and every `//!` line of every file. So the
+script needs no flag for them. The hidden items that are not methods,
+with the impls of the hidden types, are 955 of the 19,140 tokens, and 948
+of the 22,291 before. The rustdoc measure leaves the hidden items out.
+
+The application's own tool gave about 26,000 tokens where
+`scripts/face.py --lines` gave 22,291, which is 17 percent more. This
+note could not run that tool. If the ratio holds, the data crate is
+about 22,400 tokens by that tool, which is under the budget of 25,000.
+
+**The timings.** The benchmark of section 8, in the release profile with
+no link-time optimisation: a store of 15,000 objects over 100 todos,
+about 420 bytes each. The benchmark measures a cold read (`dag()`),
+`registers::fold`, `view::entries`, `Dag::verify` and one append on a
+warm handle. Each binary takes the median of ten runs of each operation.
+The base binary and the branch binary ran in turn, eleven times each, and
+the table gives the median of the eleven medians, in milliseconds.
+
+| Operation | Before | After | Change |
+|---|--:|--:|--:|
+| cold read | 84.6 | 86.9 | +2.7 % |
+| `registers::fold` | 22.8 | 22.7 | −0.3 % |
+| `view::entries` | 27.4 | 26.7 | −2.3 % |
+| `Dag::verify` | 26.0 | 26.0 | +0.1 % |
+| append | 21.4 | 20.8 | −3.1 % |
+
+No operation is slower by more than 3 percent.
+
+**What remains, in order.** The units of the application that still
+depend on the core are held by the readings and by `declared`, so these
+come next:
+
+1. the readings: `fold::read` and `fold::readings`, `policy` and
+   `registers`, which a unit needs to read the registers of an entity
+   from its events;
+2. `declared`, the schemas that a store declares as data;
+3. the rest of the store crate of section 5, item 4.1;
+4. fpl, digest and todo, in the order of section 5, item 4.

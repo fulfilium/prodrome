@@ -44,9 +44,10 @@ dependency at a fixed commit:
 prodrome = { package = "prodrome-core", git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
-A program that only builds, prints, parses and hashes events can depend on
-the smaller crate `prodrome-data` instead, which holds the literals, the
-events, the objects and their names:
+A program that only builds, prints, parses, hashes and time-stamps events
+can depend on the smaller crate `prodrome-data` instead, which holds the
+literals, the events, the objects, their names, and the conversions of an
+event's instant:
 
 ```toml
 [dependencies]
