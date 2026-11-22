@@ -7,7 +7,7 @@
 //! (`event` for §4, `fpl` for §7).
 //!
 //! The printer reproduces CPython's `repr` for every value that a store
-//! holds. Floats ([`print_float`]) and strings ([`print_str`], with the
+//! holds. Floats (`print_float`) and strings ([`print_str`], with the
 //! printable set of Unicode 16.0.0 in [`printable`]) are the two difficult
 //! cases.
 
@@ -581,7 +581,7 @@ fn push_literal(out: &mut String, value: &Value) {
 /// `decpt <= -4 || decpt > 16`. A fixed form with no point gets `.0`
 /// (CPython's `Py_DTSF_ADD_DOT_0`). So `1e+16` prints in scientific form and
 /// `1000000000000000.0` in fixed form.
-pub fn print_float(value: f64) -> String {
+pub(crate) fn print_float(value: f64) -> String {
     debug_assert!(value.is_finite(), "Finite refuses non-finite floats");
     let scientific = format!("{value:e}");
     let (mantissa, exponent) = scientific

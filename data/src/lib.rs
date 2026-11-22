@@ -11,6 +11,7 @@
 //! - A type derives [`literal::codec::Literal`] with
 //!   `#[literal(crate = prodrome_data)]`.
 
+#[doc(hidden)]
 pub mod bitset;
 pub mod change;
 pub mod event;

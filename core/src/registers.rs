@@ -13,7 +13,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-pub use prodrome_data::bitset::BitSet;
 pub use prodrome_data::stamp::Stamp;
 
 use crate::event::{Envelope, Hash};
@@ -21,6 +20,7 @@ use crate::fold::{read, Product};
 use crate::literal::ProdromeError;
 use crate::policy::Everything;
 use crate::schema::Schema;
+use prodrome_data::bitset::BitSet;
 use prodrome_data::stamp::{Place, Scope};
 
 /// The state the fold carries, compared by value.

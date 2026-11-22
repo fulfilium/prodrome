@@ -3,6 +3,7 @@
 
 /// A set of small non-negative integers as a bitmap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[doc(hidden)]
 pub struct BitSet(Vec<u64>);
 
 impl BitSet {
