@@ -2,3 +2,5 @@
 target/
 result
 result-*
+# The bytecode that Python writes when a script imports another.
+__pycache__/
