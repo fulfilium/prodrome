@@ -2,21 +2,9 @@
 //! frontier token"; law 47).
 //!
 //! A token replaces the list of the replica's tips, which can be too long
-//! for one request. [`Frontiers::answer`] reads a pull's [`Since`] and
-//! answers a [`Lacking`]. The host chooses how many of the lacking objects
-//! to send, and [`Lacking::record`] records the frontier of what the replica
-//! then holds. The library builds that set, so it is closed under parents by
-//! construction.
-//!
-//! A token that the store of record does not hold, or one that names a tip
-//! that the store no longer holds, reads as [`Reached::Unknown`], and the
-//! answer then starts from nothing, so no answer leaves out an object that
-//! the replica lacks.
-//!
-//! The host supplies the [`Records`], for example a directory or a table.
-//! A [`Frontiers`] serialises its writes to one store with a lock in its own
-//! process, so a host keeps one [`Frontiers`] for each place where it keeps
-//! records.
+//! for one request. A [`Frontiers`] serialises its writes to one store with
+//! a lock in its own process, so a host keeps one [`Frontiers`] for each
+//! place where it keeps records.
 
 #![warn(clippy::pedantic)]
 
@@ -80,9 +68,8 @@ pub enum Since {
 /// What a [`Since`] reaches in the store's objects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reached<'d> {
-    /// Every object of the store: the frontier's tips are the store's tips.
-    /// The answer builds no set of them and walks none, so a replica that
-    /// lacks nothing costs the store of record a read of its record alone.
+    /// Every object of the store, because the frontier's tips are the
+    /// store's tips; the answer then walks no object.
     Everything,
     /// The objects that the frontier's tips rest on, the tips included,
     /// as positions in the store's linear order (SPEC law 64). The set is
@@ -168,10 +155,8 @@ impl Frontiers {
     /// Frontiers kept in `records`, at most `kept` for each store, the
     /// most recently recorded.
     ///
-    /// A pull ends only while fewer than `kept` other distinct frontiers of
-    /// its store are recorded between each two of its pieces (SPEC law 47).
-    /// So a host chooses `kept` above the number of frontiers that it records
-    /// between two pieces of one pull.
+    /// A host chooses `kept` above the number of frontiers that it records
+    /// between two pieces of one pull, or the pull may not end (SPEC law 47).
     pub fn over(records: impl Records + 'static, kept: NonZeroUsize) -> Self {
         Self {
             records: Box::new(records),
@@ -190,20 +175,10 @@ impl Frontiers {
     /// `since` reaches (SPEC law 47(a)), and the objects outside it in
     /// `dag`'s linear order.
     ///
-    /// Where the tips held under the token are `dag`'s own tips, `since`
-    /// reaches [`Reached::Everything`], and the answer builds no closure and
-    /// orders no object.
-    /// Where the tips held under the token are the tips that the token names,
-    /// and `dag` holds every one of them, `since` reaches their closure.
-    /// Otherwise `since` reaches nothing, and every object is lacking.
-    /// The check against the token means that a torn or misplaced record can
-    /// never widen what a token reaches.
-    /// The check against `dag` is needed because a store can go back to an
-    /// earlier state that holds less, for example when it is restored from a
-    /// copy.
-    /// A DAG keeps its linear order ([`Dag::linearise`]) and its tips
-    /// ([`Dag::tips`]) once derived, so a second answer on a DAG that did not
-    /// change orders no object.
+    /// The recorded tips are checked against the token, so that a torn or
+    /// misplaced record cannot widen what a token reaches, and against
+    /// `dag`, because a store can go back to an earlier state that holds
+    /// less, for example when it is restored from a copy.
     ///
     /// # Errors
     ///

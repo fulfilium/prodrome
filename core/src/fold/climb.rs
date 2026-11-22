@@ -22,7 +22,8 @@ use crate::schema::Schema;
 ///
 /// The register keeps the frontier beside the peak, because a conflict
 /// ([`crate::fold::Product::conflicts`]) and the deps of an append are causal
-/// and not ordered by value.
+/// and not ordered by value. A write below what it rests on cannot lower the
+/// reading, because a write above it is already in the peak.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Climb<'a, E: Schema> {
     frontier: Frontier<'a, E>,

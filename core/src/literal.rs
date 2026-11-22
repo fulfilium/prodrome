@@ -459,10 +459,8 @@ pub trait Vocabulary {
 pub struct Table(pub &'static [codec::Constructor]);
 
 impl Table {
-    /// Looks up `name` with the `'static` lifetime of the table, so that a
-    /// vocabulary composed of several tables
-    /// ([`crate::event::EventVocabulary`]) does not get a signature borrowed
-    /// from a temporary.
+    /// The result is `'static`, so a vocabulary composed of several tables
+    /// ([`crate::event::EventVocabulary`]) can return it.
     pub fn find(&self, name: &str) -> Option<Signature<'static>> {
         self.0
             .iter()

@@ -1,9 +1,6 @@
 //! Detached signatures, keys registered by objects, and the proof that the
 //! history gives (SPEC §3, and SPEC §5, "Proof: who wrote an object, read
 //! from the history").
-//!
-//! A signature is an object of its own that names the signed object by its
-//! content name, so signing changes no object's bytes or name.
 
 mod checks;
 
@@ -38,7 +35,7 @@ impl PublicKey {
     ///
     /// # Errors
     ///
-    /// Any other text, refused as a field of an object is refused.
+    /// Any other text.
     pub fn new(text: impl Into<String>) -> Result<PublicKey, ProdromeError> {
         let text = text.into();
         bytes::<32>(&text)
@@ -105,11 +102,7 @@ fn message(object: &Hash) -> Vec<u8> {
     message
 }
 
-/// `Signed(object, key, signature)`: the signature by `key` of the object
-/// named `object`.
-///
-/// Its one parent is that object, so it joins a history only with what it
-/// signs, and its prodrome is the prodrome of that object.
+/// The detached signature by `key` of the object named `object` (SPEC §3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Signed {
     pub object: Hash,
@@ -161,11 +154,7 @@ impl Signed {
 }
 
 /// `KeyAdded(genesis, actor, key)`: in the prodrome `genesis`, `key`
-/// speaks for `actor`.
-///
-/// Its only parent is its genesis, so adding a key twice writes one object,
-/// and the signatures of a key need not come after it (a device signs
-/// offline and is registered when it is next seen).
+/// speaks for `actor` (SPEC §3).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyAdded {
     pub genesis: Hash,
@@ -199,11 +188,10 @@ impl KeyAdded {
 }
 
 /// `KeyRevoked(genesis, deps, actor, key)`: `key` no longer speaks for
-/// `actor`, except in the signatures that this object rests on.
+/// `actor`, except in the signatures that this object rests on (SPEC §5,
+/// "Proof: who wrote an object, read from the history").
 ///
-/// `deps` are sorted and distinct. A signature by the key beneath `deps`
-/// still proves; any other signature by the key (made after, concurrently,
-/// or never seen by the writer) does not.
+/// `deps` are sorted and distinct.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyRevoked {
     pub genesis: Hash,
@@ -261,9 +249,7 @@ impl KeyRevoked {
 /// A signing key of a device: a 32-byte seed that the host keeps where it
 /// decides, and never in an object.
 ///
-/// Signing is deterministic, so one key that signs one object writes the
-/// same `Signed`, byte for byte, each time. The `Debug` output shows only
-/// the public key.
+/// The `Debug` output shows only the public key.
 pub struct Secret(SigningKey);
 
 impl Secret {
@@ -286,10 +272,10 @@ impl Secret {
 
     /// The signature by this key of the object named `object`.
     ///
-    /// A signature covers a name, so it proves the bytes that hash to the
-    /// name. The caller must have hashed those bytes to `object` itself. To
-    /// sign an object that a DAG holds, use [`Secret::sign_whole`], which
-    /// refuses a name for which the DAG holds no such bytes.
+    /// The signature proves whatever bytes hash to `object`, so the caller
+    /// must have hashed the object's bytes to `object` itself. To sign an
+    /// object that a DAG holds, use [`Secret::sign_whole`], which refuses a
+    /// name for which the DAG holds no such bytes.
     #[must_use]
     pub fn sign(&self, object: &Hash) -> Signed {
         Signed {
@@ -305,10 +291,9 @@ impl Secret {
     /// hold whole in its history (law 80: no signature is made over a name
     /// whose whole the signer does not hold).
     ///
-    /// The clear fields of a husk are not bound to its name. So whoever gave
-    /// the holder the husk may have written another whole under the name,
-    /// and a signature of the name would prove that whole on every replica
-    /// that holds it.
+    /// The clear fields of a husk are not bound to its name, so a signature
+    /// over a husk's name could prove another whole that its giver wrote
+    /// under that name (SPEC §3, "A husk").
     ///
     /// # Errors
     ///
@@ -352,9 +337,8 @@ pub enum Proved {
     /// A signature by a key that speaks for the object's actor covers its
     /// name, and the object is the bytes that hash to the name.
     Proven,
-    /// Such a signature covers the name of a husk (SPEC §3). The husk is
-    /// trusted on the word of its maker, who verified the signature over
-    /// the whole.
+    /// Such a signature covers the name of a husk, which stands on the word
+    /// of its maker (SPEC §3).
     Vouched,
     /// No such signature covers it.
     Unsigned,
@@ -364,24 +348,10 @@ pub enum Proved {
 /// and the actors that have a registered key, each in its prodrome (SPEC
 /// §5, "Proof: who wrote an object, read from the history").
 ///
-/// A signature proves the object that it signs only when the signature
-/// verifies, a `KeyAdded` that counts registers its key to the object's
-/// actor in the object's prodrome, and every `KeyRevoked` of that key for
-/// that actor that counts rests on the signature. So a revocation keeps
-/// only the signatures beneath its deps, and a revocation with no deps
-/// takes every signature away. Only the objects tell which came first, so
-/// a signature made before the revocation but not beneath its deps does
-/// not prove. A revoked key stays revoked, because adding
-/// it again writes the same `KeyAdded` object.
-///
-/// No signature proves a husk (SPEC §3), because a husk is not the bytes
-/// that hash to its name. Where a signature would prove the whole, it
-/// vouches for the husk instead. A replica takes a husk only from its maker
-/// or from the keeper of record, so an object from any other party is
-/// proven or vouched for only if its bytes hash to its name (law 77).
-///
 /// Law 42: the proof depends only on the object set, never on the order in
-/// which the objects arrived.
+/// which the objects arrived. Law 77: no signature proves a husk, and no
+/// object from a party other than its keeper is proven or vouched for
+/// unless the receiver hashed its bytes to its name.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
     // Two sets of names and no third: an object in neither is unsigned.

@@ -8,18 +8,15 @@ use crate::literal::print_literal;
 use crate::memo::{self, Cache, Key, Lookup, Lru};
 use crate::sign::Signed;
 
-/// A table of the results of [`Signed::verifies`], keyed by the content
-/// name of each `Signed` object, which covers its object's name, its key
-/// and its signature.
+/// A bounded table of the results of [`Signed::verifies`], keyed by the
+/// content name of each `Signed` object.
 ///
-/// The table computes that name itself, as the SHA-256 of the print, and
-/// never takes a name from its caller. So no caller can find a check that
-/// one object passed under the name of another object. The SHA-256 costs
-/// far less than the Ed25519 check that it saves.
+/// The table computes that name itself, as the SHA-256 of the print, so no
+/// caller can make the check of one object answer for another object. The
+/// SHA-256 costs far less than the Ed25519 check that it saves.
 ///
-/// Law 49: the table answers exactly as [`Signed::verifies`]. It keeps at
-/// most its capacity of checks and drops the least recently used, so a
-/// table that holds nothing answers as a table that holds everything.
+/// Law 49: the table answers exactly as [`Signed::verifies`], whatever it
+/// holds.
 #[derive(Debug)]
 pub struct Checks(Mutex<Cache<bool, Lru>>);
 

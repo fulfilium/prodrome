@@ -1,10 +1,8 @@
 //! A husk: an object whose sealed parts were dropped, kept under the name of the whole it was
 //! (SPEC §3, "A husk").
 //!
-//! A husk plays the role of git's promisor object, for a store on disk and for a replica.
-//! A schema has husks when it implements [`Husking`] and answers [`Schema::husk`] with
-//! [`HuskObject::of_other`]. Every other schema keeps the default, which reads no husk, so a
-//! print that fails its hash is tampered.
+//! Where no key that a holder keeps opens a sealed part, a husk reads as its
+//! whole, and it does so for good, because keys are only destroyed.
 
 use crate::change::{mk_change, Change};
 use crate::event::{canonical_envelope, Envelope, Hash};
@@ -125,10 +123,8 @@ impl<V: Vocabulary> Vocabulary for ObjectVocabulary<V> {
 impl<E: Husking> HuskObject<E> {
     /// The husk of `change`, or `None` where its event holds no sealed part.
     ///
-    /// The caller must have verified the whole against its name.
-    /// Only a `Change` is husked, because every other envelope that a store writes (a `Genesis`,
-    /// a key's, a `Snapshot`, a `Signed`) carries no event, and no program writes the legacy
-    /// envelopes that do.
+    /// The caller must have verified the whole against its name. Only a `Change` is husked,
+    /// because no other envelope that `append` writes carries an event.
     #[must_use]
     pub fn of(change: &Change<E>) -> Option<Self> {
         let husk = Husk::of(&change.event)?;
@@ -274,11 +270,6 @@ impl<'t> Hashed<'t> {
 }
 
 /// Whose word a receipt takes for a print that does not hash to its name (SPEC §3, "A husk").
-///
-/// A whole proves itself by its hash, and a husk does not, so a replica takes a husk only from
-/// its keeper of record.
-/// The caller names the keeper of record, because a schema cannot: the same schema is read from
-/// many parties.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Sender {
     /// A party whose word is not taken: only prints that hash to their names are read, and any

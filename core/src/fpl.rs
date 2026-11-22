@@ -6,13 +6,6 @@
 //!
 //! The `mk_*` smart constructors check the invariants of a term, and
 //! `parse_term` calls them. `Term::new` skips the checks.
-//!
-//! A term's value is in `[0, 1] ∪ {∅}`, and `∅` is `None`, so [`fulfillment`]
-//! returns `Option<f64>`. Only a [`Closed`] term, which [`link`] returns, can
-//! be evaluated, explained or sampled.
-//!
-//! A term has one serialization, the literal print of SPEC §2. The JSON shape
-//! that a browser reads is in the `json` module of `prodrome-wasm-exports`.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -52,9 +45,6 @@ fn err<T>(msg: impl Into<String>) -> Result<T, FplError> {
 
 /// A term with no [`TermF::Ref`] in it, the only kind of term that evaluation
 /// takes (SPEC §7.2).
-///
-/// The type makes a missing call to [`link`] a type error, because a
-/// reference has no value until it is bound.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Closed(Term);
 
@@ -198,12 +188,11 @@ fn round_half_even(x: f64) -> i64 {
 
 // --- §7 semantics -----------------------------------------------------------
 
-/// The power mean of `values` with exponent `p`, ported from `powerMean` in
-/// `utility.typ`.
+/// The power mean of `values` with exponent `p`, as SPEC §7 defines it for
+/// `Conj`, ported from `powerMean` in `utility.typ` with its summation order.
 ///
-/// It clamps each value to at least 0.001 (a clamp, not the slack form),
-/// computes the geometric mean at `p == 0` in log space, and returns 0.5 for
-/// an empty slice. The summation order is the reference's.
+/// The clamp to 0.001 is a floor, not the slack form, and `p == 0` is
+/// computed in log space.
 pub fn power_mean(values: &[f64], p: f64) -> f64 {
     if values.is_empty() {
         return 0.5;
@@ -285,8 +274,7 @@ pub fn bound<'e>(
     )
 }
 
-/// The latest tending of `todo` at or before `now`. As in [`bound`], a
-/// tending dated after `now` never changes an earlier moment.
+/// The latest tending of `todo` at or before `now`.
 pub fn last_tended(env: &Env, todo: &str, now: Instant) -> Option<Instant> {
     env.tended.get(todo)?.range(..=now).next_back().copied()
 }
@@ -306,8 +294,8 @@ fn conj(values: &[Option<f64>], p: f64) -> Option<f64> {
     (values.is_empty() || !present.is_empty()).then(|| power_mean(&present, p))
 }
 
-/// The fulfillment of a closed term at `now` against `env`: a value in
-/// [0, 1], or `None` (`∅`) where the term has none.
+/// The fulfillment of a closed term at `now` against `env`, with `None` for
+/// `∅` (SPEC §7).
 pub fn fulfillment(term: &Closed, now: Instant, env: &Env) -> Option<f64> {
     eval(term.term(), now, env)
 }
@@ -535,12 +523,9 @@ fn scalar_notes(term: &Term) -> BTreeMap<String, Note> {
         .collect()
 }
 
-/// The explanation of `term` at `now`: the term's shape, with every node
-/// carrying its own fulfillment.
-///
-/// Each child is read at the instant at which its parent used it. `Shift`,
-/// `Within`, `After`, `Recur` and `Periodic` move the time for their subterm,
-/// so a child read at `now` would report a number that the parent never used.
+/// The explanation of `term` at `now`: the term's shape, with each node
+/// carrying its fulfillment at the instant at which its parent used it (SPEC
+/// §7, "Explain").
 pub fn explained(term: &Closed, now: Instant, env: &Env) -> Explanation {
     explain(term.term(), now, env)
 }
@@ -947,11 +932,8 @@ pub fn mk_ref(todo: String) -> Result<Term, FplError> {
 }
 
 /// A qualified reference: the fulfillment of `entity` in the prodrome that
-/// `store` names (SPEC §7.2).
-///
-/// `store` is a genesis's name, whose 64 lowercase hex digits keep the rule
-/// of [`crate::event::TodoId`], or a name that the host declares for one with
-/// [`Stores::named`].
+/// `store` names: a genesis's name, or a name declared with
+/// [`Stores::named`] (SPEC §7.2).
 ///
 /// # Errors
 ///
@@ -1041,18 +1023,13 @@ fn opened(term: Term) -> Schedule<Term> {
 // --- Linking: every Ref bound to the todo it names --------------------------
 
 /// The reason that a term does not link (SPEC §7.2, "Refusals are values.").
-///
-/// A stored term can hold a reference to a todo that is not there, or
-/// references that loop.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum LinkError {
-    /// `specs` holds no function for the todo of a `Ref`. For a store, the
-    /// store has never seen the todo, because a known todo with no function
-    /// links to `Absent`. A todo of another prodrome appears as
-    /// `genesis/todo`.
+    /// `specs` holds no function for the todo of a `Ref`. A todo of another
+    /// prodrome appears as `genesis/todo`.
     #[error("Ref({0:?}) names no known todo")]
     Unknown(String),
-    /// The references loop. The path holds the cycle, with its first todo
+    /// The references loop: the path holds the cycle, with its first todo
     /// repeated at the end. An entity of another prodrome appears as
     /// `genesis/entity`.
     #[error("the references loop: {}", .0.join(" → "))]
@@ -1071,10 +1048,9 @@ pub struct Member {
 /// The set of prodromes that the qualified references of a term read (SPEC
 /// §7.2), keyed by genesis, with the names that the host declares.
 ///
-/// The host passes the set in, because a schema never reads another store
-/// (design §4, `Bind`). Law 41: a reference into one member reads that
-/// member and nothing else. A member is one reading of one prodrome: to join
-/// two replicas, sync their objects and read the union.
+/// Law 41: a reference into one member reads that member and nothing else.
+/// A member is one reading of one prodrome: to join two replicas, sync their
+/// objects and read the union.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Stores {
     members: BTreeMap<Hash, Member>,
@@ -1144,10 +1120,8 @@ pub fn link(term: &Term, specs: &BTreeMap<String, Term>) -> Result<Closed, LinkE
 /// [`link`], with `stores` as the set that the qualified references read
 /// (SPEC §7.2, "A qualified reference.").
 ///
-/// It links `RefIn(s, x)` in the member that `s` names and compiles it
-/// against that member's environment, so that no `After` or `Recur` in it
-/// reads the history of the wrong prodrome. A store that the set does not
-/// hold, or an entity that its member does not hold, reads `∅`.
+/// A store that the set does not hold, or an entity that its member does
+/// not hold, reads `∅`.
 ///
 /// # Errors
 ///

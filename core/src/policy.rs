@@ -1,12 +1,4 @@
 //! Standing (SPEC §5): whether an event binds or only claims.
-//!
-//! The host supplies a [`Policy`], and the folds, [`crate::registers`],
-//! [`crate::view`] and `verify` ask it. [`Untrusted`] is the reference policy,
-//! under which `conformance/` was taken. [`Everything`] binds every event, and
-//! [`crate::view::entries`] takes its claimed reading under it. [`Proven`]
-//! also requires a signature. Standing depends only on the object and on the
-//! policy's reading of the object set, never on the order of the log or on
-//! the time (law 12).
 
 use std::collections::BTreeSet;
 
@@ -51,28 +43,21 @@ impl Standing {
 ///
 /// The standing of an object must depend only on the object and on what the
 /// policy read of the history ([`Policy::at`]), never on the order of the log
-/// or on the time: law 12 depends on it. The folds ask it of every object
-/// that carries an event; [`Schema::asks`] tells which events concern
-/// standing.
+/// or on the time, because law 12 depends on it.
 pub trait Policy<E: Schema> {
     /// Whether the object `object`, which carries `event`, binds or claims.
     fn standing(&self, object: &Hash, event: &E) -> Standing;
 
-    /// Whether the event is the host's own word.
-    ///
-    /// [`crate::view::entries`] marks a row whose winning content record is
-    /// not ([`crate::view::Provisional::Content`]), and `verify` holds such an
-    /// event's `at` to the order of the DAG. The default is SPEC §5: an event
-    /// that binds is the host's word. An implementation must keep
-    /// `standing(o, e) == Claims` implies `!confirms(o, e)`, because the laws
-    /// of SPEC §9 assume it.
+    /// Whether the event is the host's own word (SPEC §5). A policy overrides
+    /// the default to fold a writer's events and still mark them as that
+    /// writer's. An implementation must keep `standing(o, e) == Claims`
+    /// implies `!confirms(o, e)`, because the laws of SPEC §9 assume it.
     fn confirms(&self, object: &Hash, event: &E) -> bool {
         self.standing(object, event).binds()
     }
 
     /// This policy at the history `history`. `None` means that the policy
-    /// reads nothing of a history, so it is the same at every history. The
-    /// store asks its policy at each `verify`.
+    /// reads nothing of a history, so it is the same at every history.
     fn at(&self, history: &Dag<E>) -> Option<Self>
     where
         Self: Sized,
@@ -93,17 +78,13 @@ impl<E: Schema> Policy<E> for Everything {
     }
 }
 
-/// The reference policy (SPEC §5): a roster of actor names.
+/// The reference policy (SPEC §5, "The reference policy"): a roster of actor
+/// names.
 ///
-/// An event by a named actor claims where [`Schema::asks`] about it, and
-/// binds otherwise. Under the todo schema, a named actor's lifecycle,
-/// `Tended` and `SpecRevised` events claim, and its content records bind.
-/// A named actor reads input that an attacker can control, so the
-/// policy does not let an injected completion, tending or repricing bind.
-/// [`Policy::confirms`] still refuses the content records, so the reader marks the
-/// row. The policy is not behind the `reference` feature, because it needs no
-/// payload and the conformance suites read the vectors' `untrusted` fields
-/// through it.
+/// A named actor reads input that an attacker can control, so the policy
+/// does not let an injected completion, tending or repricing bind. The policy
+/// is not behind the `reference` feature, because it needs no payload and the
+/// conformance suites read the vectors' `untrusted` fields through it.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Untrusted(BTreeSet<Actor>);
 
@@ -144,10 +125,9 @@ impl<E: Schema> Policy<E> for Untrusted {
 /// signatures"), over a policy `P`.
 ///
 /// An object binds only where a signature by a key registered to its actor
-/// proves it, and `P` binds it. A key counts where a root key signed its
-/// `KeyAdded`, and a revocation counts where a root key signed its
-/// `KeyRevoked`. An unproven object claims, whatever its kind. A `Proven` is
-/// made at one history; ask it [`Policy::at`] to read another history.
+/// proves it, or, for a husk, the proof vouches for it, and `P` binds it. A
+/// `Proven` is made at one history; ask it [`Policy::at`] to read another
+/// history.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Proven<P> {
     policy: P,

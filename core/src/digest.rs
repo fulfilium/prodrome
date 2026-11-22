@@ -1,23 +1,8 @@
 //! A digest: a summary tree over an append-only log of lines, read through
 //! a view that fits a budget (design §6.5, law 46).
 //!
-//! The lines are the leaves of a tree ([`tree`]) whose shape is
-//! [`fn@memo::balance`] over their names in the crate's one causal order.
-//! So the shape is a function of the set of lines and not of when each line
-//! arrived. A node is named by [`memo::name`] over its children and carries
-//! the [`Measure`] of the lines that it spans.
-//!
-//! An inner node can have a summary: a short text that stands for its
-//! lines. The caller writes a summary elsewhere and records it as an object
-//! of its own. A summary is not a function of the lines, so this module
-//! never makes or caches one. It reads only which nodes have a summary and
-//! its length (`summarized(name)`), and [`pending`] tells which summaries
-//! can be written next.
-//!
-//! A [`View`] is a cut through the tree that tiles the whole log under a
-//! byte budget ([`view`]), and [`zoom`] opens a part into its children.
-//! Everything here is a function of the leaves, the lengths of the
-//! summaries and the budget: no clock and no model.
+//! The caller writes and records each summary; this module reads only which
+//! nodes have a summary and its length in bytes (`summarized(name)`).
 
 #![warn(clippy::pedantic)]
 
@@ -33,8 +18,7 @@ mod prefixes;
 
 use cut::{Arena, Cut};
 
-/// The monoid that every node carries up the tree, such as the count of
-/// its lines, their tokens or the instants they span. `join` must be
+/// The monoid that every node carries up the tree. `join` must be
 /// associative, with `empty` as its unit.
 pub trait Measure: Clone + Eq {
     /// The measure of no lines.
@@ -65,10 +49,9 @@ impl Measure for () {
 /// are keyed by names.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Leaf<M> {
-    /// The line's content name.
     pub name: Hash,
-    /// The lines it rests on: what its writer had seen. A line given none,
-    /// or only lines the log does not hold, rests on nothing here.
+    /// The lines that its writer had seen. A line that names only lines
+    /// that the log does not hold rests on nothing.
     pub parents: Vec<Hash>,
     /// What the line costs in a view, in bytes.
     pub bytes: u32,
@@ -191,16 +174,13 @@ impl<M> Tree<M> {
         node.span.end < self.lines()
     }
 
-    /// The node named `name`, if the tree has one.
     #[must_use]
     pub fn node(&self, name: &Hash) -> Option<&Node<M>> {
         self.root.find(name)
     }
 
-    /// The largest nodes that lie within the lines `span`, in order: the
-    /// one node that spans it where there is one, and otherwise the nodes
-    /// that tile it, each with no ancestor inside `span`. `None` for an
-    /// empty span, or one that reaches past the last line.
+    /// The largest nodes that lie within the lines `span`, in order (law 50).
+    /// `None` for an empty span, or one that reaches past the last line.
     #[must_use]
     pub fn cover(&self, span: Range<usize>) -> Option<Vec<&Node<M>>> {
         fn within<'t, M>(node: &'t Node<M>, span: &Range<usize>, out: &mut Vec<&'t Node<M>>) {
@@ -228,11 +208,7 @@ impl<M> Tree<M> {
 pub struct Cycle(pub Hash);
 
 /// The tree over the set of `leaves`, given in any order and any number of
-/// times, or `None` for no lines.
-///
-/// The lines are in the crate's one causal order ([`topo::linear`]): each
-/// after the lines it rests on, and unrelated lines by name. So two
-/// replicas that hold one set of lines build one tree.
+/// times, or `None` for no lines (law 46).
 ///
 /// # Errors
 ///
@@ -275,9 +251,9 @@ pub fn tree<M: Measure>(leaves: Vec<Leaf<M>>) -> Result<Option<Tree<M>>, Cycle> 
     .map(|root| Tree { root }))
 }
 
-/// The measure as an algebra for [`fn@memo::fold`]: a line has its own, and
-/// a chunk has the join of its children's. A fold can memoise it by node
-/// name because a line's measure is a function of its name ([`Leaf`]).
+/// The measure as an algebra for [`fn@memo::fold`]. A fold can memoise it
+/// by node name because a line's measure is a function of its name
+/// ([`Leaf`]).
 #[derive(Debug, Clone)]
 pub struct Measured(Hash);
 
@@ -305,9 +281,9 @@ impl<M: Measure> Algebra<Node<M>> for Measured {
 /// and, in order, every line's cost and every inner node's summary length
 /// or its absence.
 ///
-/// [`view`] and [`pending`] read nothing else except the budget, so a cache
-/// keyed by this name is never stale. A line's measure is not covered,
-/// because it is a function of the line's name ([`Leaf`]).
+/// A cache of [`view`] or [`pending`] keyed by this name is never stale
+/// (law 46). A line's measure is not covered, because it is a function of
+/// the line's name ([`Leaf`]).
 #[must_use]
 pub fn read<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>) -> Hash {
     let mut own = Vec::new();
@@ -332,7 +308,7 @@ pub fn read<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>) -> Has
 /// A part of a view: a node, standing for the lines it spans.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Part {
-    /// The node's content name, its identity.
+    /// The node's content name.
     pub node: Hash,
     /// The lines it spans.
     pub span: Range<usize>,
@@ -355,19 +331,14 @@ pub struct View {
     pub parts: Vec<Part>,
     /// What the parts cost in bytes: each line's bytes and each summary's.
     pub bytes: u64,
-    /// The nodes to summarise next for this view, in the log's order: the
-    /// pending nodes at or under each node without a summary in a closing
-    /// more due than the one made, or in any closing when none could be
-    /// made. Writing them round after round ends with the view in its
-    /// budget or with no closing that lowers its cost.
+    /// The nodes to summarise next for this view, in the log's order
+    /// (design §6.5, "What waits is what to summarise").
     pub waiting: Vec<Hash>,
 }
 
 /// The nodes whose summary can be written now, smallest first and then
-/// leftmost: each is settled and has no summary, and each of its children
-/// is a line or has a summary. The result depends only on which nodes have
-/// a summary, so a caller can write summaries of different nodes in any
-/// order, or at once.
+/// leftmost (law 46). A caller can write summaries of different nodes in
+/// any order, or at once.
 #[must_use]
 pub fn pending<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>) -> Vec<Hash> {
     let mut ready = Vec::new();
@@ -399,55 +370,21 @@ pub fn zoom<M>(tree: &Tree<M>, name: &Hash) -> Option<Vec<Part>> {
     Some(node.children.iter().map(Node::part).collect())
 }
 
-/// The view of the log under `budget` bytes (law 46).
+/// The view of the log under `budget` bytes (design §6.5, law 46).
 ///
-/// The view is built line by line, each line appended as a part of its
-/// own. While the parts cost more than the budget, the view makes a
-/// closing: settled nodes ([`Tree::settled`], so that no later line renames
-/// a closed part) replace the parts that they span and are shown as their
-/// summaries. A closing starts at one node and also holds the nodes that
-/// decay forces. Decay means that the levels of the parts never rise toward
-/// the present: where the part before a node is lower than the node, the
-/// node at its level over that part closes too, and so on leftward until a
-/// part as high or the start of the log. A closing is admissible when each
-/// of its nodes has a summary and every leftward prefix of it costs less
-/// than the parts it replaces. So every closing lowers the cost of the
-/// view, and the view never costs more than its lines. A start that would
-/// not lower the cost itself never closes on the account of a forced node.
-///
-/// Of the admissible closings, the one started at the most due node
-/// closes. The due of a node is its age over its size: the lines from its
-/// first line to the present, over the lines that it spans. Of two nodes
-/// that are as due, the older closes. A closing started at a more due node
-/// that lacks a summary, or every closing when none is admissible, puts in
-/// `waiting` the pending nodes at or under each of its nodes that lacks
-/// one. The view stops over its budget only when no closing is admissible.
-/// The view is greedy: decay forces nodes only at the level of the start,
-/// so the view can stop over its budget although a fit with a coarser node
-/// to the left exists. A closed part is never renamed and never opens as
-/// lines arrive, so what a reader was shown of the past stays as it was
-/// shown, or coarser.
-///
-/// A part costs its summary's bytes, or a line's own bytes.
-///
-/// From decay, a reader can infer that a part never sits at a lower level
-/// of the tree than a part after it, and a settled node at level `h` spans
-/// between `2^h` and `16^h` lines. A reader cannot infer that an earlier
-/// part spans more lines than a later one: chunks hold two to sixteen
-/// nodes, and no view can keep both decay in lines and its budget.
+/// Of the admissible closings, the one started at the most due node closes.
+/// The due of a node is its age over its size, both in lines, and of two
+/// nodes that are as due, the older closes. The view is greedy, so it can
+/// stop over its budget although a fit with a coarser node to the left
+/// exists.
 ///
 /// # Cost
 ///
-/// Let the tree have `n` nodes and depth `d`. A line's arrival, and each
-/// node's closing, updates the node's `d` ancestors in time `O(d log n)`;
-/// each node closes, or comes to lie within a part, at most once. Trying a
-/// closing takes two queries of time `O(log n)` and reads no part (see
-/// `cut.rs`). A refused node is tried again only after a closing that
-/// starts before its end changes the parts it reads, or after the first
-/// node without a summary at its level moves past it, which happens once.
-/// Each step that looks for a closing puts the nodes that may close and are
-/// not yet refused in a heap, in time linear in their number. They are open
-/// nodes, so there are at most `d` for each part of the view.
+/// For a tree of `n` nodes and depth `d`, a line's arrival and each closing
+/// update `d` ancestors in time `O(d log n)`, and each node closes, or comes
+/// to lie within a part, at most once. Trying a closing takes time
+/// `O(log n)`, and a search for a closing keeps at most `d` candidate nodes
+/// for each part of the view.
 #[must_use]
 pub fn view<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>, budget: u64) -> View {
     let arena = Arena::of(tree);

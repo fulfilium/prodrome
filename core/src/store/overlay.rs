@@ -14,16 +14,6 @@ use crate::store::Sender;
 /// A replica over `base`: it holds what it appends or receives (its own
 /// objects) in memory, and reads `own ∪ base`; its own objects reach `base`
 /// only by [`Overlay::flush`] or [`Overlay::accept`].
-///
-/// Its memory is the base's memory ([`Replica::held`], shared and not
-/// copied) with its own objects admitted over it. When the base changes, the
-/// next read takes the base's memory again and admits its own objects over
-/// it. A read copies none of the base's files. The memory that it extends
-/// is copied once for each change of the base, and only while the overlay
-/// holds an object of its own.
-///
-/// It has no lock that another writer takes, so no [`super::Decision`] is
-/// asked of it.
 #[derive(Debug)]
 pub struct Overlay<E: Schema, B> {
     base: B,
@@ -68,8 +58,8 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
         &self.base
     }
 
-    /// `sync(self, base)`: [`Overlay::accept`] with everything chosen.
-    /// Answers what the base took.
+    /// `sync(self, base)`, [`Overlay::accept`] with everything chosen;
+    /// answers what the base took.
     ///
     /// # Errors
     ///
@@ -79,22 +69,18 @@ impl<E: Schema, B: Replica<E>> Overlay<E, B> {
         self.accept(self.tips()?)
     }
 
-    /// The restricted join (design §6.3): the base takes in the objects that
-    /// `chosen` rest on and that it lacks, verified, and answers them,
-    /// parents first.
+    /// [`accept`] from this overlay into its base (design §6.3); answers
+    /// what the base took, parents first.
     ///
-    /// Where `chosen` is closed under parents over the base, the base reads
-    /// as it did plus exactly `chosen`. What is not chosen stays this
-    /// overlay's own, and a later flush takes it.
+    /// What is not chosen stays this overlay's own, and a later flush takes
+    /// it. The base takes the overlay's husks as its keeper's
+    /// ([`Sender::Keeper`]), because the overlay took each one from a keeper
+    /// of its own.
     ///
     /// # Errors
     ///
     /// [`accept`]'s, a chosen name this overlay does not hold among them;
     /// the base takes nothing then.
-    ///
-    /// The overlay is its base's own layer, so the base takes its husks
-    /// as its keeper's ([`Sender::Keeper`]): each one the overlay took
-    /// from a keeper of its own.
     pub fn accept(&self, chosen: BTreeSet<Hash>) -> Result<Vec<Hash>, ProdromeError> {
         accept(self, &self.base, chosen, Sender::Keeper)
     }

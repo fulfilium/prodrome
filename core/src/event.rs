@@ -379,7 +379,7 @@ pub enum TodoEvent<P> {
     /// `Recur` re-anchors to these events (SPEC §7.3).
     Tended(Lifecycle),
     SpecRevised(SpecRevised),
-    /// Boxed, because a content record is about ten times wider than a
+    /// Boxed, because a content record is an order of magnitude wider than a
     /// lifecycle event, and a log holds mostly lifecycle events.
     Authored(Box<Authored<P>>),
 }

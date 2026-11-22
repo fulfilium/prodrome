@@ -21,19 +21,14 @@ pub struct Held<E: Schema> {
 /// A set of objects named by the hash of their prints and closed under
 /// parents: on disk ([`super::EventStore`]), in memory
 /// ([`super::MemoryStore`]) or over another replica ([`super::Overlay`]).
-///
-/// Its reads, appends and receipts need no coordination; only a
-/// [`super::Decision`] does.
 pub trait Replica<E: Schema> {
     /// The schema that every object it holds or receives parses at (SPEC
-    /// §4). No object carries it.
+    /// §4).
     fn schema(&self) -> &E::Vocabulary;
 
-    /// Its objects, their fold and their tips, as of one look.
-    ///
-    /// The reading is total over what it holds: a print that is no object is
-    /// left out with what rests on it, and named by its `dag`'s
-    /// [`Dag::excluded`] (SPEC laws 44 and 45).
+    /// Its objects, their fold and their tips, as of one look; a print that
+    /// is no object is left out, and named in [`Dag::excluded`] (SPEC laws 44
+    /// and 45).
     ///
     /// # Errors
     ///
@@ -48,9 +43,8 @@ pub trait Replica<E: Schema> {
     /// [`Replica::held`]'s.
     fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError>;
 
-    /// Its tips and the count of the objects of its history. A replica in
-    /// memory answers them from what it holds. A store on disk reads its
-    /// record of them ([`super::EventStore::heads`]).
+    /// Its tips and the count of the objects of its history; a store on disk
+    /// reads its record of them ([`super::EventStore::heads`]).
     ///
     /// # Errors
     ///
@@ -59,10 +53,8 @@ pub trait Replica<E: Schema> {
         Ok(self.held()?.dag.heads())
     }
 
-    /// The print it keeps under `name`, unchecked: the bytes that hash to
-    /// `name`, or a husk of them (SPEC §3).
-    ///
-    /// The receiver must verify it: rehash the bytes, and read bytes that are
+    /// The print it keeps under `name`, unchecked: the whole or a husk of it
+    /// (SPEC §3). The receiver must rehash the bytes, and read bytes that are
     /// not the whole as a husk or refuse them.
     fn kept(&self, name: &Hash) -> Option<Vec<u8>>;
 
@@ -76,8 +68,6 @@ pub trait Replica<E: Schema> {
     /// Write `event` as a `Change` over its entity's heads in this
     /// replica, or nothing where it holds a twin (SPEC §3).
     ///
-    /// Two replicas that hold the same objects write the same bytes.
-    ///
     /// # Errors
     ///
     /// The append's refusals (SPEC §3), and the replica's own.
@@ -86,11 +76,9 @@ pub trait Replica<E: Schema> {
     /// Take in what `seeds` rest on that it lacks, each object read by
     /// `print_of`, and answer what it took, parents first.
     ///
-    /// Each object must hash to its name and parse, or, where `sender` is
-    /// its keeper of record, read as a husk at the replica's schema.
-    /// Nothing is taken unless every object verifies.
-    /// A name that it keeps, whole or husk, in its history or waiting outside
-    /// it, is not replaced.
+    /// It takes nothing unless every object hashes to its name and parses,
+    /// or, from its keeper of record, reads as a husk; and it never replaces
+    /// a name that it keeps, whole or husk.
     ///
     /// # Errors
     ///
@@ -145,14 +133,8 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 /// that `chosen` rest on and `to` lacks, each verified, and answers them,
 /// parents first.
 ///
-/// [`sync`], [`super::Overlay::flush`], [`super::Overlay::accept`] and
-/// [`super::EventStore::adopt`] are this function with a choice of `chosen`.
-/// What arrives is the bytes that `from` keeps under each name
-/// ([`Replica::kept`]), a whole or a husk, and `to` does not ask for a name
-/// that it already holds.
-///
 /// Where `sender` is [`Sender::Keeper`], `to` takes the husks that `from`
-/// keeps; from a stranger it refuses them (SPEC §3).
+/// keeps; from a stranger it refuses them.
 ///
 /// # Errors
 ///
@@ -170,12 +152,8 @@ pub fn accept<E: Schema>(
 /// The join `to ∪ from` (SPEC §3, "`sync(from, to)`"; law 35): [`accept`]
 /// with everything chosen.
 ///
-/// A sync is safe to cut short and repeat, since what one sync placed is a
-/// down-set of `from` and the next adopts the rest.
-/// A sync from a stranger that keeps a husk takes nothing, objects that do
-/// not rest on the husk included, because a receipt takes nothing unless
-/// everything verified: so a sync cut short by a refusal leaves `to` as it
-/// was, and the refusal names the husk.
+/// A sync from a stranger that keeps a husk takes nothing, also of the
+/// objects that do not rest on the husk, and its refusal names the husk.
 ///
 /// # Errors
 ///
