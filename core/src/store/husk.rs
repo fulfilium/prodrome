@@ -124,7 +124,8 @@ impl<E: Husking> HuskObject<E> {
     /// The husk of `change`, or `None` where its event holds no sealed part.
     ///
     /// The caller must have verified the whole against its name. Only a `Change` is husked,
-    /// because no other envelope that `append` writes carries an event.
+    /// because no other envelope that `append` writes carries an event. `merge` with an event
+    /// writes a `Woven` that carries one, and that `Woven` is not husked.
     #[must_use]
     pub fn of(change: &Change<E>) -> Option<Self> {
         let husk = Husk::of(&change.event)?;

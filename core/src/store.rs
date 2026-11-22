@@ -327,9 +327,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     ///
     /// Law 61: no stop of a write of the store leaves a served record that
     /// is not the derived heads. After a change by another door, the record
-    /// can be older than the objects until a host calls
-    /// [`EventStore::record_heads`] (law 62). Where the record is not served
-    /// (law 63), each call lists `objects/` until the next hold of the lock.
+    /// can be older than the objects until the next hold of the lock that
+    /// lists `objects/`: every hold of a store opened as shared, and
+    /// [`EventStore::record_heads`] or `fsck` in any store (law 62). Where
+    /// the record is not served (SPEC §3, "The record of heads"), each call
+    /// lists `objects/` until the next hold of the lock.
     ///
     /// # Errors
     ///
@@ -751,7 +753,9 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
 
     /// Set aside, under the lock, every object file that fails its hash and
     /// is no husk, then run [`EventStore::verify`] (SPEC §3, "`fsck`"); an
-    /// empty result means that the store is healthy.
+    /// empty result means that the store is healthy. It never overwrites or
+    /// deletes bytes already in `quarantine/`, and it never moves a file that
+    /// hashes to its name.
     #[must_use]
     pub fn fsck(&self) -> Vec<Finding> {
         match self.quarantine() {
@@ -852,7 +856,11 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// "`verify`"); an empty result means that the store is healthy.
     ///
     /// It rehashes every file, whatever the memory holds, and asks the
-    /// store's policy at what it read ([`Policy::at`]).
+    /// store's policy at what it read ([`Policy::at`]). It reads the record
+    /// before and after its look and reports it stale only when both reads
+    /// found the same record, because it holds no lock and a write between
+    /// the reads would make the finding false (SPEC §3, "The record of
+    /// heads").
     pub fn verify(&self) -> Vec<Finding> {
         let (recorded, looked) = record::bracketed(&self.root, || {
             self.listing()
