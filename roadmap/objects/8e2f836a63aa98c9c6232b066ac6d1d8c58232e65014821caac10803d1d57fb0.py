@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='gh-92', at=datetime(2026, 11, 22, 17, 48, 23), actor='github-mirror', text='A program that uses the core reads all of its public face', note=''))
