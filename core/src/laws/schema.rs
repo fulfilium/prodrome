@@ -46,11 +46,13 @@ fn plain<E: Schema>(ranked: &[(u32, Node<E>)]) -> Vec<Node<E>> {
     ranked.iter().map(|(_, node)| node.clone()).collect()
 }
 
-/// The first clause of law 33 over `objects`, a history closed under
-/// parents: folded in the order `shuffle` gives, with the objects it names
-/// folded twice, and split into its two replicas folded apart and then
-/// merged, it reads as it reads folded once in its own order, register by
-/// register.
+/// The first clause of law 33 over `objects`, which must be a history
+/// closed under parents.
+///
+/// The history must read the same, register by register, in three
+/// foldings: in the order that `shuffle` gives, with the objects that it
+/// names folded twice; split into the two replicas of `shuffle`, folded
+/// apart and merged; and folded once in its own order.
 ///
 /// # Errors
 ///

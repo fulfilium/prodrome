@@ -3,8 +3,7 @@ use crate::fpl::{self, Instant, Outcome};
 use crate::payload::Payload;
 use crate::term::Term;
 
-/// What one event writes, once per register it touches: the classification
-/// every reading of the log shares.
+/// What one event writes, once for each register that it touches.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Write<'e, P> {
     /// A lifecycle write: bound, or `None` for a `Reopened`.
@@ -23,8 +22,8 @@ pub enum Kind {
 }
 
 impl<'e, P: Payload> Write<'e, P> {
-    /// A record writes its content and, when it carries one, its spec.
-    /// `Created` writes nothing.
+    /// The writes of `event`. A record writes its content and, where it
+    /// carries a spec, its spec. `Created` writes nothing.
     pub fn of(event: &'e TodoEvent<P>) -> impl Iterator<Item = Write<'e, P>> {
         let at = fpl::instant_of(event.at());
         let (first, second) = match event {

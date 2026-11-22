@@ -1,32 +1,19 @@
-//! A SCHEMA AS DATA (`docs/design-register-types.md` §5, §6.0): a schema
-//! that arrives at run time, as text, and is admitted only when its laws
-//! hold.
+//! A schema that a host declares as text at run time, and that the crate
+//! admits only when its laws hold (SPEC §6, "A schema may be declared";
+//! `docs/design-register-types.md` §5, §6.0).
 //!
-//! A Rust schema is a type ([`crate::schema::Schema`]); its vocabulary is a
-//! unit, since the type says everything. A DECLARED schema is a value of
-//! one type, [`Declaration`]: its event constructors and their typed
-//! fields, its key, and its registers, each with an order from a closed
-//! vocabulary (discrete, total over an integer, a finite state machine given
-//! by its covering relation, sets under inclusion) and whether it is
-//! inflationary. No valuation: a price is Rust's (design §4).
+//! [`Declared`], an event of a declared schema, implements
+//! [`crate::schema::Schema`] by interpreting its [`Declaration`]. A register
+//! is read by [`crate::fold::maximal`], and by [`crate::fold::grows`] where
+//! it is declared inflationary. An `EventStore<Declared>` opened at a
+//! declaration (`EventStore::at`) runs the same code as the store of a Rust
+//! schema. A declared schema has no price (design §4).
 //!
-//! [`Declared`], an event of a declared schema, implements `Schema` BY
-//! INTERPRETATION, with the declaration as its vocabulary: the parse reads
-//! its constructors, the route its writes, and a register is read under its
-//! order by the completion every register is read by ([`crate::fold::maximal`]),
-//! and climbs by [`crate::fold::grows`] where declared inflationary. So an
-//! `EventStore<Declared>` opened at a declaration (`EventStore::at`) reads,
-//! appends, syncs, nests and memoises by the code a Rust schema's store
-//! runs, and by no other.
-//!
-//! THE TEXT FORM is the objects' own §2 literal grammar under the schema
-//! language's closed vocabulary ([`Form`]), not JSON: one grammar, one
-//! printer and one whitelist walker for objects and schemas alike, a
-//! canonical print by construction, and so a CONTENT NAME, the hash of the
-//! text, exactly as an object has one. A schema's sets (its events, its
-//! registers, an enum's alternatives, a machine's covers, a register's
-//! writes) print sorted, so the text is a function of the schema and never
-//! of the order it was written in.
+//! The text form is the literal grammar of SPEC §2 under the closed
+//! vocabulary [`Form`], not JSON, so that objects and schemas share one
+//! parser, one printer and one whitelist. Every set in a declaration prints
+//! sorted, so the text depends only on the schema, and its hash is the
+//! schema's name.
 //!
 //! ```
 //! use prodrome::declared::{Declaration, Law};
@@ -63,16 +50,15 @@ use crate::event::Hash;
 use crate::literal::{Signature, Vocabulary};
 use admit::{Admitted, Reg, Shape};
 
-/// A declared schema, ADMITTED: every law held (see [`Law`]). The only way
-/// to one is [`Declaration::admit`], so a declaration that exists is lawful.
+/// An admitted declared schema: only [`Declaration::admit`] makes one, so
+/// every [`Law`] holds for it.
 ///
-/// Cheap to clone (one shared value), and equal exactly when its name is:
-/// the hash of its canonical text.
+/// A clone shares one value. Two declarations are equal exactly when their
+/// names (the hashes of their canonical texts) are equal.
 #[derive(Clone)]
 pub struct Declaration(Arc<Admitted>);
 
-/// A register of a declared schema: its place in the declaration, which
-/// [`Declaration::register_name`] names.
+/// A register of a declared schema, by its position in the declaration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Slot(usize);
 
@@ -84,7 +70,7 @@ impl Slot {
 }
 
 impl Declaration {
-    /// `text`, admitted as a schema.
+    /// Admits `text` as a schema.
     ///
     /// # Errors
     ///
@@ -93,25 +79,26 @@ impl Declaration {
         admit::admit(text).map(|admitted| Declaration(Arc::new(admitted)))
     }
 
-    /// The canonical text it was admitted as.
+    /// The canonical text of the declaration.
     #[must_use]
     pub fn text(&self) -> &str {
         &self.0.text
     }
 
-    /// Its content name: the hash of its text.
+    /// The hash of the canonical text.
     #[must_use]
     pub fn name(&self) -> &Hash {
         &self.0.name
     }
 
-    /// The field every event names its entity by.
+    /// The field by which every event names its entity.
     #[must_use]
     pub fn key(&self) -> &str {
         &self.0.key
     }
 
-    /// Every register, in the order a reading lists them (by name).
+    /// Every register, sorted by name, which is the order that a reading
+    /// lists them in.
     pub fn registers(&self) -> impl Iterator<Item = Slot> {
         (0..self.0.registers.len()).map(Slot)
     }
@@ -130,13 +117,14 @@ impl Declaration {
     ///
     /// # Panics
     ///
-    /// A slot of another declaration, past this one's registers.
+    /// Panics if `slot` comes from another declaration and lies past this
+    /// declaration's registers.
     #[must_use]
     pub fn register_name(&self, slot: Slot) -> &str {
         &self.reg(slot).name
     }
 
-    /// Is the register `slot` declared inflationary?
+    /// Whether the register `slot` is declared inflationary.
     ///
     /// # Panics
     ///
@@ -146,8 +134,8 @@ impl Declaration {
         self.reg(slot).inflationary
     }
 
-    /// `datum` under the order of the register `slot`: what that register's
-    /// completion compares.
+    /// `datum` under the order of the register `slot`, as the register's
+    /// reading compares it.
     ///
     /// # Panics
     ///

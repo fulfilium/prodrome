@@ -10,30 +10,20 @@ use crate::literal::ProdromeError;
 use crate::registers::Stamp;
 use crate::schema::Schema;
 
-/// One inflationary register: its [`Frontier`], and its PEAK.
+/// One inflationary register: its [`Frontier`] and its peak (SPEC §6, "A
+/// schema's registers").
 ///
-/// The peak is the set of writes that no other write OUTRANKS. A write `u`
+/// The peak is the set of writes that no other write outranks. A write `u`
 /// outranks a write `w` when the value of `u` is strictly greater than the
-/// value of `w`, or when the two values are equal and `u` descends from
-/// `w`. This relation is a strict partial order on writes, so its maximal
-/// writes are a function of the set of writes, and the order in which the
-/// writes arrive changes nothing. Every value in the peak is a maximal
-/// value of all the writes, and two writes in the peak with equal values
-/// are concurrent (twins).
+/// value of `w`, or when the two values are equal and `u` descends from `w`.
+/// This relation is a strict partial order, so the peak does not depend on
+/// the order in which the writes arrive. The reading is the values of the
+/// peak, each named by the least write that carries it ([`maximal`]).
 ///
-/// The reading is the peak's values, each named by the least write that
-/// carries it ([`maximal`]). Where the order is partial, two writes whose
-/// values are incomparable both stay in the peak, and the reading holds
-/// both values: a conflict, as a frontier's reading is.
-///
-/// The frontier is kept beside the peak, because a conflict
-/// ([`crate::fold::Product::conflicts`]) and an append's deps are causal and
-/// not ordered by value.
-///
-/// In a history where every write stands at or above every write it
-/// descends from, the peak's reading is the frontier's reading, write for
-/// write. A write that falls below what it rests on cannot lower the
-/// reading: a write above it is already in the set.
+/// The register keeps the frontier beside the peak, because a conflict
+/// ([`crate::fold::Product::conflicts`]) and the deps of an append are causal
+/// and not ordered by value. A write below what it rests on cannot lower the
+/// reading, because a write above it is already in the peak.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Climb<'a, E: Schema> {
     frontier: Frontier<'a, E>,
@@ -61,18 +51,17 @@ fn outranks<E: Schema, V: Order>(
 }
 
 impl<'a, E: Schema> Climb<'a, E> {
-    /// The register's frontier: the writes that no other write descends
-    /// from.
+    /// The register's frontier.
     #[must_use]
     pub fn frontier(&self) -> &Frontier<'a, E> {
         &self.frontier
     }
 
-    /// Join `stamp`, whose value under the register's order `value` gives.
-    /// The peak loses every write that `stamp` outranks, and takes `stamp`
-    /// unless a write in it outranks `stamp`. One comparison with each write
-    /// of the peak, so the cost of a join does not grow with the number of
-    /// writes, only with the number of incomparable maximal values.
+    /// Joins `stamp`, whose value under the register's order is `value(stamp)`.
+    ///
+    /// A join compares `stamp` once with each write of the peak, so its cost
+    /// grows with the number of incomparable maximal values and not with the
+    /// number of writes.
     pub fn join_by<V: Inflationary>(
         &mut self,
         stamp: &'a Stamp<E>,
@@ -96,7 +85,7 @@ impl<'a, E: Schema> Climb<'a, E> {
         self.peak.insert(at, stamp);
     }
 
-    /// Join `stamp`, a write to a register of the inflationary type `R`.
+    /// Joins `stamp`, a write to a register of the inflationary type `R`.
     pub fn join<R>(&mut self, stamp: &'a Stamp<E>)
     where
         R: RegisterType<E>,
@@ -105,8 +94,7 @@ impl<'a, E: Schema> Climb<'a, E> {
         self.join_by(stamp, |stamp| value::<E, R>(stamp));
     }
 
-    /// The register's reading under `value`: the peak's values, each named
-    /// by the least write that carries it.
+    /// The register's reading under `value`.
     pub fn read<V: Order>(&self, value: impl Fn(&'a Stamp<E>) -> V) -> Vec<&'a Stamp<E>> {
         maximal(&self.peak, value)
     }
@@ -117,12 +105,13 @@ impl<'a, E: Schema> Climb<'a, E> {
         self.read(|stamp| value::<E, R>(stamp))
     }
 
-    /// The append's refusal: `event`'s value in this register must stand at
-    /// or above every value of its reading.
+    /// The refusal of an append: the value of `event` in this register must
+    /// stand at or above every value of its reading.
     ///
     /// # Errors
     ///
-    /// A value below, or beside, one that the reading holds.
+    /// Returns an error where the value is below a value of the reading or
+    /// incomparable with it.
     pub fn grows<'s, R>(&'s self, event: &'s E) -> Result<(), ProdromeError>
     where
         R: RegisterType<E>,
@@ -145,8 +134,8 @@ impl<'a, E: Schema> Climb<'a, E> {
     ///
     /// # Errors
     ///
-    /// A value that `earlier` reads and that no value of this reading
-    /// stands at or above.
+    /// Returns an error that names a value that `earlier` reads and that no
+    /// value of this reading stands at or above.
     pub fn climbed_by<V: Inflationary>(
         &self,
         earlier: &Self,
@@ -170,7 +159,7 @@ impl<'a, E: Schema> Climb<'a, E> {
     ///
     /// # Errors
     ///
-    /// As [`Climb::climbed_by`].
+    /// Returns the errors of [`Climb::climbed_by`].
     pub fn climbed<R>(&self, earlier: &Self) -> Result<(), ProdromeError>
     where
         R: RegisterType<E>,

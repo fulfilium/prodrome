@@ -46,22 +46,23 @@ impl<'a, E: Schema> Frontier<'a, E> {
         self.0.len() > 1
     }
 
-    /// The register's reading: the writes whose values are maximal under
-    /// the values' order, each value named by the least write carrying it.
+    /// The register's reading: the writes whose values are maximal, each
+    /// value named by the least write that carries it.
     pub fn read<V: Order>(&self, value: impl Fn(&'a Stamp<E>) -> V) -> Vec<&'a Stamp<E>> {
         maximal(&self.0, value)
     }
 
-    /// The reading under the register's type `R`: the maximal values.
+    /// The reading under the register's type `R`.
     #[must_use]
     pub fn reading<R: RegisterType<E>>(&self) -> Vec<&'a Stamp<E>> {
         self.read(|stamp| value::<E, R>(stamp))
     }
 
-    /// The reading under the discrete order on events, the todo registers'
-    /// own: agreeing twins are one candidate. The value is the whole event,
-    /// not the field the register reads, so two events that agree on a spec
-    /// stay two candidates as they always were.
+    /// The reading under the discrete order on whole events, which the todo
+    /// registers use: twins are one candidate.
+    ///
+    /// The value is the whole event and not the field that the register
+    /// reads, so two events that agree only on a spec stay two candidates.
     pub fn candidates(&self) -> Vec<&'a Stamp<E>> {
         self.read(|stamp| Discrete::<&E>(&stamp.event))
     }

@@ -1,11 +1,10 @@
-//! §6 — belief at a moment: each entity's stream folded into its registers
-//! ([`read`], under any schema), and the todo's readings (§6.1–6.5) each a
-//! projection of its [`Registers`].
+//! Folds (SPEC §6): each entity's stream folded into its registers
+//! ([`read`], under any schema), and the readings of a todo (SPEC §6.1 to
+//! §6.5), each a projection of its [`Registers`].
 //!
-//! See ../../SPEC.md §6. ORDER IS CAUSAL, TIME IS DATA (§1): a write
-//! joins its register when it is dated by the moment asked and the policy
-//! admits it, and what it supersedes is ancestry alone. No clock and no
-//! linearisation picks a winner; a conflict is its candidates.
+//! A write joins its register when it is dated at or before the moment asked
+//! and the policy binds it. Only ancestry decides what a write supersedes: no
+//! clock and no linearisation picks a winner.
 
 mod climb;
 mod frontier;
@@ -35,8 +34,8 @@ use crate::schema::{Bind, History, Price, Schema};
 use crate::term::Term;
 use crate::todo::{Content, Spec, State};
 
-/// An entity's registers at `at` (`None`: ever) under `policy`: [`readings`]
-/// at its end, the scan keeping nothing but its last value.
+/// An entity's registers at `at` (`None`: ever) under `policy`, which is the
+/// last value of [`readings`].
 #[must_use]
 pub fn read<'a, E: Schema>(
     stream: &'a [Stamp<E>],
@@ -46,12 +45,12 @@ pub fn read<'a, E: Schema>(
     scan(stream, at, policy, |_, _| {})
 }
 
-/// An entity's registers as a function of time, as of `at` (`None`: ever)
-/// under `policy`: the empty product before anything, and from each instant
-/// a write is dated, every write dated at or before it joined (§6.5's
-/// `history`). The one fold over time: `read` is its value at `at`, and
-/// every reading of an entity's past (§6.4's function, §6.5's environment)
-/// is a function of it.
+/// An entity's registers as a schedule over time, as of `at` (`None`: ever)
+/// under `policy` (SPEC §6.5, `history`).
+///
+/// The value is the empty product before the first write. From each instant
+/// at which a write is dated, the value joins every write dated at or before
+/// that instant.
 #[must_use]
 pub fn readings<'a, E: Schema>(
     stream: &'a [Stamp<E>],
@@ -102,9 +101,8 @@ fn admits<E: Schema>(stamp: &Stamp<E>, at: Option<Instant>, policy: &impl Policy
         && policy.standing(&stamp.name, &stamp.event).binds()
 }
 
-/// One todo's registers at a moment: the todo schema's product. The state,
-/// spec and content are discrete; the tendings, a grow-only set, are ordered
-/// by inclusion.
+/// One todo's registers at a moment (SPEC §6, "The todo schema's
+/// registers").
 #[derive(Debug, Clone, PartialEq)]
 pub struct Registers<'a, P: Payload> {
     pub state: Frontier<'a, TodoEvent<P>>,
@@ -229,8 +227,8 @@ impl<'a, P: Payload> Registers<'a, P> {
             .collect()
     }
 
-    /// Record this todo in `env`: its bindings unless simply open, and its
-    /// tendings.
+    /// Records this todo in `env`: its candidate bindings unless it is simply
+    /// open, and its tendings.
     pub fn bind(&self, todo: &TodoId, env: &mut Env) {
         let outcomes = self.outcomes();
         if outcomes != Candidates::from([None]) {
@@ -287,8 +285,8 @@ fn or_first<T>(mine: Vec<T>, theirs: Vec<T>) -> Vec<T> {
     }
 }
 
-/// §6.1 — the environment at `at`: what FPL's terms read of each entity (a
-/// todo's candidate bindings and its tendings).
+/// The environment at `at` that FPL terms read (SPEC §6.1): the candidate
+/// bindings and the tendings of each entity.
 pub fn env<E: Bind>(prodrome: &Prodrome<E>, at: Instant, policy: &impl Policy<E>) -> Env {
     let mut env = Env::new();
     for (key, stream) in prodrome {
@@ -297,8 +295,10 @@ pub fn env<E: Bind>(prodrome: &Prodrome<E>, at: Instant, policy: &impl Policy<E>
     env
 }
 
-/// §6.2 — each todo's candidate specs at `at`. Absence is not zero: a todo
-/// missing here has no price, not a price of nothing.
+/// Each todo's candidate specs at `at` (SPEC §6.2).
+///
+/// A todo that is missing from the map has no price, which is not a price of
+/// zero.
 pub fn specs<P: Payload>(
     prodrome: &Prodrome<TodoEvent<P>>,
     at: Instant,
@@ -314,8 +314,10 @@ pub fn specs<P: Payload>(
         .collect()
 }
 
-/// §6.3 — each todo's candidate records at `at`, whoever wrote them: the
-/// reader marks an unconfirmed one ([`crate::view::Provisional::Content`]).
+/// Each todo's candidate records at `at`, whoever wrote them (SPEC §6.3).
+///
+/// [`crate::view::entries`] marks an unconfirmed record
+/// ([`crate::view::Provisional::Content`]).
 pub fn content<P: Payload>(
     prodrome: &Prodrome<TodoEvent<P>>,
     at: Instant,
@@ -333,15 +335,18 @@ pub fn content<P: Payload>(
         .collect()
 }
 
-/// §6.4 — each entity's history as of `at`, as ONE fulfillment function: a
-/// piece at every instant one of its registers was written, the term in each
-/// `Least` over that [`History::moment`]'s terms. The head, extending to −∞,
-/// is the price of each register's earliest writes; an entity they price
-/// nothing has no function.
+/// Each entity's history as of `at`, as one fulfillment function (SPEC
+/// §6.4).
+///
+/// The function has a piece at every instant at which one of the entity's
+/// registers was written. The term of each piece is `Least` over the terms
+/// of [`History::moment`] at that instant. The head extends to −∞ and is the
+/// price of each register's earliest writes. An entity whose earliest writes
+/// have no price has no function.
 ///
 /// # Errors
 ///
-/// A piece a smart constructor refuses.
+/// Returns an error where a smart constructor refuses a piece.
 pub fn flatten<E: History>(
     prodrome: &Prodrome<E>,
     at: Instant,
@@ -356,13 +361,15 @@ pub fn flatten<E: History>(
     Ok(out)
 }
 
-/// A reading's price (design §4): `Least` over the terms its candidates
-/// price as ([`Price::terms`]), so a conflict prices as its most urgent
-/// candidate; none where no candidate has one.
+/// The price of a reading (design §4): `Least` over the terms of its
+/// candidates ([`Price::terms`]), or `None` where no candidate has a term.
+///
+/// Law 34: a conflict prices as `Least` over its candidates.
 ///
 /// # Errors
 ///
-/// A candidate's term a smart constructor refuses.
+/// Returns an error where a smart constructor refuses the term of a
+/// candidate.
 pub fn price<E: Price>(registers: &E::Registers<'_>) -> Result<Option<Term>, FplError> {
     least(E::terms(registers)?)
 }
@@ -422,8 +429,10 @@ fn function<E: History>(
     Ok(Some(fpl::piecewise(Schedule::of(head, pieces))))
 }
 
-/// [`flatten`]'s functions as [`fpl::link`] reads them, over every entity in
-/// `known`: `Absent` where a known entity has none (§7.2).
+/// The functions of [`flatten`] in the form that [`fpl::link`] reads, over
+/// every entity in `known` (SPEC §7.2).
+///
+/// A known entity with no function maps to `Absent`.
 pub fn link_specs<'a, K: AsRef<str> + 'a>(
     functions: &BTreeMap<K, Term>,
     known: impl IntoIterator<Item = &'a K>,
@@ -440,13 +449,13 @@ pub fn link_specs<'a, K: AsRef<str> + 'a>(
     specs
 }
 
-/// One prodrome as a term elsewhere reads it (SPEC §7.2): each entity's
-/// [`flatten`] function, `Absent` for an entity with none, and the
-/// environment ([`env`]) its terms read, at `at` under `policy`.
+/// One prodrome in the form that a term in another prodrome reads (SPEC
+/// §7.2): the functions of [`link_specs`] and the environment of [`fn@env`],
+/// at `at` under `policy`.
 ///
 /// # Errors
 ///
-/// A function [`flatten`] cannot build.
+/// Returns an error where [`flatten`] cannot build a function.
 pub fn member<E: History + Bind>(
     prodrome: &Prodrome<E>,
     at: Instant,
@@ -458,15 +467,16 @@ pub fn member<E: History + Bind>(
     })
 }
 
-/// A REPLICA'S PRODROMES AS A SET (design §6.3.1, SPEC §7.2): each
-/// prodrome a `Genesis` begins, a [`member`] by its genesis. The product of
-/// its members' readings, each read from its own prodrome alone, so what
-/// one member holds never moves another's reading (the disjointness law,
-/// §3). The legacy prodrome, which no `Genesis` begins, is no member.
+/// The prodromes of a replica as a set (design §6.3.1, SPEC §7.2): one
+/// [`member`] for each prodrome that a `Genesis` begins, keyed by its genesis.
+///
+/// The function reads each member from its own prodrome alone, so the
+/// objects of one member never move the reading of another (law 23, SPEC
+/// §3). The legacy prodrome, which no `Genesis` begins, is not a member.
 ///
 /// # Errors
 ///
-/// A function [`flatten`] cannot build.
+/// Returns an error where [`flatten`] cannot build a function.
 pub fn stores<E: History + Bind>(
     folded: &Folded<E>,
     at: Instant,

@@ -1,15 +1,9 @@
-//! The product of a schema whose events write one register.
+//! The product of a schema whose events write one register, [`Only`].
 //!
-//! The register is named [`Only`]. The register's type is a
-//! [`RegisterType`] that also implements [`Sole`], and [`One`] is then the
-//! schema's product. The type chooses how the register is held
-//! ([`Sole::Held`]): a [`Frontier`], the writes that no later write
-//! descends from, for a register that may go back, or a [`Climb`], for an
-//! inflationary register, whose reading is the greatest of all its writes.
-//! [`Whole`] is the register type whose value is the whole event, so its
-//! reading is the frontier's candidates. [`Bodies`] is the register type
-//! whose value is the body of an [`Event`](crate::schema::headed::Event),
-//! under the body's own order.
+//! The register's type implements [`RegisterType`] and [`Sole`], and [`One`]
+//! is then the schema's product. Through [`Sole::Held`], the type chooses a
+//! [`Frontier`] for a register that may go back, or a [`Climb`] for an
+//! inflationary register.
 
 #![warn(clippy::pedantic)]
 
@@ -56,15 +50,15 @@ pub trait Hold<'a, R: Sole>: Default + Clone + Debug + PartialEq {
     ///
     /// # Errors
     ///
-    /// A write whose value falls below, or beside, the reading that it
-    /// supersedes.
+    /// Returns an error where the value of a write falls below the reading
+    /// that it supersedes or is incomparable with it.
     fn grows(&self, event: &R::Schema) -> Result<(), ProdromeError>;
 
     /// Law 32 between two readings ([`Product::climbed`]).
     ///
     /// # Errors
     ///
-    /// A reading that fell.
+    /// Returns an error where a reading fell.
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
 
     /// [`Only`] where the register is inflationary, and nothing where it
@@ -200,8 +194,7 @@ impl<'a, R: Sole> Product<'a> for One<'a, R> {
 }
 
 /// The register type whose value is the whole event that writes [`Only`],
-/// under the discrete order: the register reads the frontier's candidates.
-/// An event that writes no register has no value, so it joins nothing.
+/// under the discrete order, so the register reads the frontier's candidates.
 pub struct Whole<E>(PhantomData<fn() -> E>);
 
 impl<E: Schema<Register = Only>> RegisterType<E> for Whole<E> {
@@ -217,11 +210,11 @@ impl<E: Schema<Register = Only>> Sole for Whole<E> {
     type Held<'a> = Frontier<'a, E>;
 }
 
-/// The register type whose value is the body of an `Event<B>` that writes
-/// [`Only`], under the body's own [`Order`]. Two writes whose bodies are
-/// equal under it are one value, named by the least write, whoever wrote
-/// them and whenever. An event whose body writes no register has no value,
-/// so it joins nothing.
+/// The register type whose value is the body of an [`Event`] that writes
+/// [`Only`], under the body's own [`Order`].
+///
+/// Two writes whose bodies are equal under the order are one value, named by
+/// the least write, whoever wrote them and whenever.
 pub struct Bodies<B>(PhantomData<fn() -> B>);
 
 impl<B: Body<Register = Only> + Order> RegisterType<Event<B>> for Bodies<B> {

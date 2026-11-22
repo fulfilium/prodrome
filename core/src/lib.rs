@@ -1,20 +1,12 @@
-//! Prodrome — a temporal, content-addressed event database with
+//! Prodrome: a temporal, content-addressed event database with
 //! fulfillment-priority semantics.
 //!
-//! A store is a directory of plain files: one file per object, holding that
-//! object's canonical print, named by the SHA-256 of those bytes. Objects name
-//! their parents, so the history is a DAG; order is causal and the `at` a
-//! writer stamped is data, read by the folds and never by the merge. A fold
-//! turns the DAG into what is believed at an instant; a term of FPL turns a
-//! todo into what it is worth as a function of time.
-//!
-//! The specification is `../SPEC.md` — it is the contract, and this crate is
-//! the reference implementation of it. The vectors in `../conformance/` are
-//! frozen evidence that an independent implementation once answered the same:
-//! prints, hashes, linearisations, frontiers and verify findings exactly,
-//! fulfillments to 1e-9. Types first (§1): every value is a closed algebraic
-//! type, invariants live in smart constructors, and a record that exists is
-//! valid.
+//! This crate is the reference implementation of `SPEC.md`. A store is a
+//! directory with one file for each object, which holds the canonical print
+//! of the object and is named by the SHA-256 of those bytes. The writer of
+//! an event sets its `at`; the folds read it, and the merge never does. The
+//! vectors in `conformance/` fix prints, hashes, linearisations, frontiers
+//! and `verify` findings exactly, and fulfillments to within 1e-9.
 //!
 //! # Quick start
 //!
@@ -90,36 +82,34 @@
 //! # }
 //! ```
 //!
-//! Layout, one module per layer of the spec:
-//! - `literal`  — §2: the grammar, its printer (Python `repr` rules) and parser
-//! - `schema`   — §4–§6: a store's events, their entities and registers
-//! - `declared` — design §5, §6.0: a schema as data, admitted when its laws hold
-//! - `todo`     — the todo schema, the reference one: §4's kinds, §6's registers
-//! - `payload`  — §4: the record kind's fields, as a type parameter
-//! - `event`    — §4: the event kinds, envelopes, hashing (§3)
-//! - `genesis`, `change`, `snapshot` — §3: a prodrome, a change, an attestation
-//! - `sign`     — §3, §5: detached signatures, keys as objects, and their proof
-//! - `dag`      — §3: the DAG as a value: tips, closure, linearisation, verify
-//! - `store`    — §3: the files around a `Dag` (the lock, placement, quarantine),
-//!   and replicas: one in memory, an overlay, `sync` and a `Decision`
-//! - `memo`     — design §6.2: caches as tabulations of pure functions
-//! - `digest`   — design §6.5: a summary tree over a log, and its budgeted view
-//! - `nest`     — design §6.3: histories held in registers, and their join
-//! - `term`     — §7: the functor `TermF`, its fixed point `Term`, normal form
-//! - `fpl`      — §7: smart constructors, evaluation, explain (Cofree), link
-//! - `chain`    — §7.1: the chain compiler, `After` erased against a snapshot
-//! - `policy`   — §5: `Standing`, the `Policy` trait, the reference policy, and
-//!   `Proven`, the policy that requires signatures
-//! - `registers`— §6.6: the DAG's structure and each todo's stream, a monoid action
-//! - `schedule` — a step function of time, and its algebra: what a
-//!   `Piecewise`, a register's history and an observed value each are
-//! - `fold`     — §6.1–6.5: the registers, and every reading a projection of them
-//! - `breaks`   — §7 breakpoints and series knots
-//! - `observe`  — §7: a view's precision, and when the value it shows next changes
-//! - `view`     — §6.7: the entry, the composition of the folds above
-//! - `reference`— the payload the vectors were taken with (feature `reference`)
-//! - `laws`     — §9: the laws that ask nothing of a schema, as functions a
-//!   program runs over its own schemas and stores (feature `laws`)
+//! Modules, with the section of `SPEC.md` (or of a design note) for each:
+//! - `literal`: values and the literal grammar (§2)
+//! - `schema`: the events, entities and registers of a store (§4 to §6)
+//! - `declared`: a schema as data (design §5, §6.0)
+//! - `todo`: the reference todo schema (§4, §6)
+//! - `payload`: the fields of the record kind (§4)
+//! - `event`: event kinds, envelopes and hashing (§3, §4)
+//! - `genesis`, `change`, `snapshot`: objects of a prodrome (§3)
+//! - `sign`: signatures, keys and their proof (§3, §5)
+//! - `dag`: the DAG as a value (§3)
+//! - `store`: the files around a DAG, and replicas (§3)
+//! - `topo`: the one causal order (§3)
+//! - `memo`: caches (design §6.2)
+//! - `digest`: a summary tree over a log (design §6.5)
+//! - `nest`: histories held in registers (design §6.3)
+//! - `term`: the term functor and normal form (§7)
+//! - `fpl`: construction, evaluation, explanation and linking of terms (§7)
+//! - `chain`: the chain compiler (§7.1)
+//! - `policy`: standing and policies (§5)
+//! - `registers`: the register action over the DAG (§6.6)
+//! - `schedule`: step functions of time (design §6.2)
+//! - `fold`: the folds (§6.1 to §6.5)
+//! - `breaks`: breakpoints and series knots (§7)
+//! - `observe`: precision of a view, and its next change (§7)
+//! - `view`: the entry (§6.7)
+//! - `tags`: mergeable tag sets (law 48)
+//! - `reference`: the payload of the vectors (feature `reference`)
+//! - `laws`: laws as functions over a program's schemas (§9, feature `laws`)
 
 // The code that `#[derive(Literal)]` writes names this crate `::prodrome`,
 // as a program that depends on it does. This line makes the same path work
@@ -127,8 +117,7 @@
 extern crate self as prodrome;
 
 pub mod breaks;
-/// §7.1 — the chain compiler: `After` erased against a snapshot, so a chain
-/// composes into one evaluable term instead of a lookup per node per sample.
+/// The chain compiler (SPEC §7.1).
 pub mod chain;
 pub mod change;
 pub mod dag;
@@ -146,9 +135,8 @@ pub mod nest;
 pub mod observe;
 pub mod payload;
 pub mod policy;
-/// The reference payload — the record shape `conformance/*.py` was taken
-/// with. A host defines its own; this one is behind a default feature so a
-/// host that wants none of it can turn it off.
+/// The reference payload, with which `conformance/*.py` was taken. A host
+/// defines its own payload and can turn off this default feature.
 #[cfg(feature = "reference")]
 pub mod reference;
 pub mod registers;

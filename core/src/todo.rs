@@ -1,9 +1,8 @@
-//! The todo schema, the reference instance of [`Schema`]: §4's six kinds and
-//! the record kind, about a todo, routed into its state, spec and content
-//! registers and its tendings (§6).
+//! The todo schema, the reference implementation of [`Schema`] (SPEC §4, and
+//! SPEC §6, "The todo schema's registers").
 //!
-//! Every legacy envelope belongs to it, and every conformance vector was taken
-//! at it.
+//! Every legacy envelope holds an event of this schema, and every
+//! conformance vector was taken with it.
 
 use std::marker::PhantomData;
 
@@ -19,8 +18,7 @@ use crate::schema::{Bind, History, Price, Row, Schema};
 use crate::term::schema::signatures;
 use crate::term::Term;
 
-/// The todo's six kinds, name and declared field order: lifecycle, care and
-/// price, whose fields are the database's semantics.
+/// The six todo kinds, each with its name and its declared field order.
 pub const TODO_SIGNATURES: &[(&str, &[&str])] = &[
     ("Created", &["todo", "at", "actor", "text", "note"]),
     ("Completed", &["todo", "at", "actor", "note"]),
@@ -30,11 +28,13 @@ pub const TODO_SIGNATURES: &[(&str, &[&str])] = &[
     ("SpecRevised", &["todo", "at", "actor", "spec", "note"]),
 ];
 
-/// The todo schema's whitelist: §7's terms (a spec nests in a `SpecRevised`
-/// or a record), the six kinds, and the PAYLOAD's record kind, whose fields
-/// are `todo, at, actor` and then the payload's, with the constructors those
-/// fields nest. The core's names win: a payload that named its record
-/// `Created` would be unreachable, not in force.
+/// The constructors that the todo schema parses: the terms of SPEC §7, the
+/// six kinds, and the payload's record kind with the constructors that its
+/// fields nest.
+///
+/// The record kind has the fields `todo, at, actor` and then the payload's
+/// fields. The core's names take precedence, so a payload record named
+/// `Created` cannot be parsed as a record.
 #[derive(Debug, Clone)]
 pub struct TodoVocabulary<P> {
     /// `todo, at, actor` then the payload's fields, owned: the one signature that is
@@ -112,8 +112,8 @@ impl<P: Payload> Schema for TodoEvent<P> {
     }
 }
 
-/// What a todo's row shows (§6.7): its candidate outcomes, `{None}` for
-/// open, and the NAMES of its candidate content records, sorted.
+/// What a todo's row shows (SPEC §6.7): its candidate outcomes, with `None`
+/// for open, and the sorted names of its candidate content records.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reading {
     pub outcome: Candidates,
@@ -187,13 +187,13 @@ fn kinds(candidates: &Candidates) -> BTreeSet<&'static str> {
         .collect()
 }
 
-/// The state register: a todo's lifecycle, discrete.
+/// The discrete register of a todo's lifecycle.
 pub struct State;
 
-/// The spec register: a todo's authored price, discrete.
+/// The discrete register of a todo's authored price.
 pub struct Spec;
 
-/// The content register: a todo's record, discrete.
+/// The discrete register of a todo's record.
 pub struct Content;
 
 /// A discrete register's value is the WHOLE EVENT that wrote it, not the

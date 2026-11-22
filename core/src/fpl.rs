@@ -1,28 +1,11 @@
-//! §7 — FPL: the term language, one evaluator.
+//! FPL, the term language, and its one evaluator (SPEC §7).
 //!
-//! See ../../SPEC.md. Implemented against ../../conformance/fpl.py, and
-//! ported from the reference `fpl.py` — the arithmetic ORDER is part
-//! of the port, because the vectors are the reference's floats.
+//! The code is a port of the reference `fpl.py`, checked against
+//! `conformance/fpl.py`. The port keeps the reference's order of arithmetic,
+//! because the vectors hold the reference's floats.
 //!
-//! `Explanation` is the term's shape carrying an annotation — the Cofree the
-//! spec calls "decoration, not evaluation". Invariants live in the `mk_*`
-//! smart constructors; a `Term` that exists came through one of them (or
-//! through `parse_term`, which calls them).
-//!
-//! ABSENT IS A VALUE. A term's value is `[0, 1] ∪ {∅}`, and `∅` is `None`:
-//! [`fulfillment`] answers `Option<f64>`, so an object with no claim on
-//! attention — the `Absent` leaf, or anything composed only of it — cannot be
-//! read as a number. `∅` is the identity of composition: it neither raises
-//! nor lowers anything it is composed with.
-//!
-//! OPEN AND CLOSED. `Ref(todo)` names another todo's fulfillment, so a term
-//! holding one is open; [`link`] binds every reference and answers a
-//! [`Closed`] term, and only a closed term is evaluated, explained or sampled.
-//!
-//! NO JSON HERE. A term has ONE serialization and it is §2's literal print;
-//! the JSON shape a browser reads is `prodrome-wasm-exports`'s `json` module,
-//! built on the types below, because JSON is JavaScript's literal grammar and
-//! this crate has its own.
+//! The `mk_*` smart constructors check the invariants of a term, and
+//! `parse_term` calls them. `Term::new` skips the checks.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -36,18 +19,20 @@ use crate::term::schema::{self, signatures, Field, FieldSource, Fields, Slot};
 use crate::term::{normalize, CurvePoint, Term, TermF};
 use crate::topo::Topo;
 
-/// Naive local time only (§2): a stored instant never carries a zone.
+/// A naive local time: a stored instant never carries a time zone (SPEC §2).
 pub type Instant = NaiveDateTime;
-/// A signed span, printed as §2's `timedelta(...)`.
+/// A signed span, printed as `timedelta(...)` (SPEC §2).
 pub type Delta = Duration;
 
-/// The production conjunction exponent — a graded ∀, not a connective.
+/// The conjunction exponent of a checklist, and of a `Conj` whose literal
+/// leaves out `p`.
 pub const PRIORITY_POWER: f64 = -4.0;
-/// `Within` is 64 intervals, 65 evenly spaced points (§7, and the stated limit).
+/// The number of intervals of a `Within` window, which `Within` samples at 65
+/// evenly spaced points (SPEC §7).
 pub const WITHIN_SAMPLES: i64 = 64;
 
-/// A refusal from a smart constructor or the literal parser. §2: malformed
-/// input is a `ValueError`-shaped refusal, never a crash.
+/// A refusal from a smart constructor or the literal parser. Malformed input
+/// gets this refusal, never a crash (SPEC §2).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{0}")]
 pub struct FplError(pub String);
@@ -58,10 +43,8 @@ fn err<T>(msg: impl Into<String>) -> Result<T, FplError> {
 
 // --- §7 closed terms and the environment ------------------------------------
 
-/// A term with no [`TermF::Ref`] anywhere in it: what evaluation takes (§7).
-///
-/// A newtype so that forgetting to [`link`] is a type error: a reference has
-/// no value until it is bound.
+/// A term with no [`TermF::Ref`] in it, the only kind of term that evaluation
+/// takes (SPEC §7.2).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Closed(Term);
 
@@ -88,13 +71,13 @@ fn is_closed(term: &Term) -> bool {
     !term.any(|node| matches!(node, TermF::Ref { .. }))
 }
 
-/// Whether an `Absent` is anywhere in `term`, the only way a closed term reads `∅`.
+/// Whether `term` holds an `Absent`, which is the only way that a closed term
+/// reads `∅`.
 pub fn holds_absent(term: &Term) -> bool {
     term.any(|node| matches!(node, TermF::Absent))
 }
 
-/// What history says about a named event. The two ways an event can be over
-/// mean OPPOSITE things downstream, so they are an ADT and never a boolean.
+/// The end of a named event that history records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Outcome {
     Completed(Instant),
@@ -117,14 +100,13 @@ impl Outcome {
     }
 }
 
-/// A register's candidate bindings (§6.6), `None` where a candidate is open:
-/// one member is a value, more are a conflict.
+/// A register's candidate bindings (SPEC §6.6), with `None` for an open
+/// candidate. One member is a value, and several members are a conflict.
 pub type Candidates = BTreeSet<Option<Outcome>>;
 
-/// What history says, as a snapshot: `After`'s freeze variables, each the
-/// candidate bindings of a todo that is not simply open, and the tendings
-/// `Recur` re-anchors to — a grow-only set per todo, so two replicas' tendings
-/// merge by union and never conflict.
+/// A snapshot of history (SPEC §6.1): the candidate bindings that `After`
+/// reads for each todo that is not simply open, and the tendings that `Recur`
+/// reads for each todo.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Env {
     pub outcomes: BTreeMap<String, Candidates>,
@@ -137,7 +119,7 @@ impl Env {
         Env::default()
     }
 
-    /// `event` bound to exactly `outcome`.
+    /// Binds `event` to exactly `outcome`, in place of its earlier candidates.
     pub fn bind(&mut self, event: impl Into<String>, outcome: Outcome) {
         self.outcomes.insert(event.into(), [Some(outcome)].into());
     }
@@ -206,9 +188,11 @@ fn round_half_even(x: f64) -> i64 {
 
 // --- §7 semantics -----------------------------------------------------------
 
-/// utility.typ's `powerMean`, ported: a 0.001 floor CLAMP (not the slack
-/// form), the geometric branch at `p == 0` taken in log space, and an empty
-/// collection reading 0.5. The summation order is the reference's.
+/// The power mean of `values` with exponent `p`, as SPEC §7 defines it for
+/// `Conj`, ported from `powerMean` in `utility.typ` with its summation order.
+///
+/// The clamp to 0.001 is a floor, not the slack form, and `p == 0` is
+/// computed in log space.
 pub fn power_mean(values: &[f64], p: f64) -> f64 {
     if values.is_empty() {
         return 0.5;
@@ -229,7 +213,7 @@ pub fn power_mean(values: &[f64], p: f64) -> f64 {
     (s / n).powf(1.0 / p)
 }
 
-/// `[φ]_δ`, the CORRECTED form: `x·(1−|δ|) + max(0, δ)`.
+/// The offset `[φ]_δ` in its corrected form, `x·(1−|δ|) + max(0, δ)`.
 pub fn offset(x: f64, delta: f64) -> f64 {
     x * (1.0 - delta.abs()) + 0.0f64.max(delta)
 }
@@ -273,10 +257,10 @@ fn eval_curve(points: &[CurvePoint], now: Instant) -> f64 {
     points[points.len() - 1].value
 }
 
-/// What history says about `event` AS OF `now`, one reading per candidate. A
-/// snapshot taken later may hold a binding dated after `now`; that binding is
-/// not in force yet, and reading it would let a later completion rewrite an
-/// earlier moment.
+/// The bindings of `event` as of `now`, one reading for each candidate.
+///
+/// A binding dated after `now` is not in force yet: reading it would let a
+/// later completion change an earlier moment.
 pub fn bound<'e>(
     env: &'e Env,
     event: &str,
@@ -290,14 +274,13 @@ pub fn bound<'e>(
     )
 }
 
-/// The latest tending of `todo` AS OF `now`, under `bound`'s guard: a pass
-/// recorded later never rewrites an earlier moment.
+/// The latest tending of `todo` at or before `now`.
 pub fn last_tended(env: &Env, todo: &str, now: Instant) -> Option<Instant> {
     env.tended.get(todo)?.range(..=now).next_back().copied()
 }
 
-/// Where a `Periodic` reads its body: `now` folded into `[anchor, anchor +
-/// period)` by a Euclidean remainder, so a moment before `anchor` folds too.
+/// The instant at which a `Periodic` reads its body: `now` folded into
+/// `[anchor, anchor + period)` by a Euclidean remainder, also before `anchor`.
 pub fn phase(period: Delta, anchor: Instant, now: Instant) -> Instant {
     after(anchor, us_of(now - anchor).rem_euclid(us_of(period)))
 }
@@ -311,9 +294,8 @@ fn conj(values: &[Option<f64>], p: f64) -> Option<f64> {
     (values.is_empty() || !present.is_empty()).then(|| power_mean(&present, p))
 }
 
-/// Evaluate a closed term at a moment against what history says. Total by
-/// structure; every branch returns a value in [0, 1], or `∅` (`None`) where
-/// the term has none.
+/// The fulfillment of a closed term at `now` against `env`, with `None` for
+/// `∅` (SPEC §7).
 pub fn fulfillment(term: &Closed, now: Instant, env: &Env) -> Option<f64> {
     eval(term.term(), now, env)
 }
@@ -408,10 +390,12 @@ pub(crate) fn eval(term: &Term, now: Instant, env: &Env) -> Option<f64> {
 
 // --- The explanation: Cofree TermF Annotation -------------------------------
 
-/// The Minimum Fulfillment Bound (Theorem IV.1): the floor a composed p-mean
-/// score PROVES about its worst DIRECT member. Applied per node — the flat
-/// bound is unsound across the levels of a nested composition. The reference
-/// refuses `n < 1`; here the formula is simply total (an empty `Conj` reads 1.0).
+/// The Minimum Fulfillment Bound (Theorem IV.1): the floor that a composed
+/// p-mean score proves about its worst direct member.
+///
+/// Apply it to one node at a time, because the flat bound is unsound across
+/// the levels of a nested composition. The reference refuses `n < 1`; this
+/// function is total and returns 1.0 for `n == 0`.
 pub fn min_fulfillment(composed: f64, n: usize, p: f64) -> f64 {
     let nf = n as f64;
     if p == 0.0 {
@@ -425,9 +409,11 @@ pub fn min_fulfillment(composed: f64, n: usize, p: f64) -> f64 {
     }
 }
 
-/// Each member's SHARE of responsibility for the p-mean it composes into:
-/// `eᵢ = (1/n)·(xᵢ/M)ᵖ`, summing to exactly 1. Applies power_mean's clamp to
-/// the same values, or the shares would not describe the number returned.
+/// Each member's share of responsibility for the p-mean it composes into,
+/// `eᵢ = (1/n)·(xᵢ/M)ᵖ`; the shares sum to 1.
+///
+/// It applies the clamp of [`power_mean`] to the values, so that the shares
+/// describe the number that `power_mean` returns.
 pub fn member_shares(values: &[f64], p: f64) -> Vec<f64> {
     if values.is_empty() {
         return vec![];
@@ -452,8 +438,8 @@ pub enum Scalar {
     Bool(bool),
 }
 
-/// `Scalar | tuple[Scalar, …] | tuple[Mapping[str, Scalar], …]` — the
-/// reference's `Note`, as a closed type.
+/// The reference's `Note` as a closed type:
+/// `Scalar | tuple[Scalar, …] | tuple[Mapping[str, Scalar], …]`.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Note {
     One(Scalar),
@@ -461,17 +447,12 @@ pub enum Note {
     Maps(Vec<BTreeMap<String, Scalar>>),
 }
 
-/// `Cofree TermF Annotation`: the term's OWN shape, each node carrying its
-/// fulfillment at the moment the parent actually used it — `∅` where the node
-/// has none — plus the notes.
+/// The term's own shape, with each node carrying its notes and its
+/// fulfillment at the moment the parent used it (SPEC §7, "Explain").
 ///
-/// One documented bend in the shape: a `Piecewise` node's decoration is the
-/// PIECE IN FORCE, which rides in the `head` slot with `pieces` empty — head
-/// and pieces are transitions, not subterms, and the schedule's size and start
-/// are notes. Every other constructor's children line up one for one.
-///
-/// The layer is boxed for the same reason `Term`'s is: `TermF` holds its
-/// children by value, so the fixed point needs exactly one indirection.
+/// A `Piecewise` node is the one exception to the shape: its `head` slot
+/// holds the explanation of the piece in force, its `pieces` are empty, and
+/// its notes hold the size and the start of the schedule.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Explanation {
     pub value: Option<f64>,
@@ -483,7 +464,8 @@ fn iso_note(t: Instant) -> Note {
     Note::One(Scalar::Text(iso(t)))
 }
 
-/// A field's key in the notes and on the wire: camelCase, a span suffixed `Hours`.
+/// A field's key in the notes and on the wire: camelCase, with the suffix
+/// `Hours` for a span.
 pub fn wire_key(name: &str, span: bool) -> String {
     let mut words = name.split('_');
     let mut key = words.next().unwrap_or_default().to_owned();
@@ -502,7 +484,8 @@ pub fn hours(d: Delta) -> f64 {
     total_seconds(d) / 3600.0
 }
 
-/// A leaf field as a note's scalar; an unset optional or an empty text is none.
+/// A leaf field as a note's scalar, or `None` for an unset optional field or
+/// an empty text.
 pub fn scalar<A>(slot: &Slot<A>) -> Option<Scalar> {
     match slot {
         Slot::Real(value) => Some(Scalar::Float(*value)),
@@ -540,11 +523,9 @@ fn scalar_notes(term: &Term) -> BTreeMap<String, Note> {
         .collect()
 }
 
-/// The term's own shape, with every node carrying its own fulfillment.
-///
-/// ⚠️ CHILDREN ARE ANNOTATED AT THE TIME THE PARENT ACTUALLY USED: Shift,
-/// Within, After, Recur and Periodic re-anchor time for their subterm, and a
-/// child evaluated at `now` would report a number the parent never consumed.
+/// The explanation of `term` at `now`: the term's shape, with each node
+/// carrying its fulfillment at the instant at which its parent used it (SPEC
+/// §7, "Explain").
 pub fn explained(term: &Closed, now: Instant, env: &Env) -> Explanation {
     explain(term.term(), now, env)
 }
@@ -821,7 +802,8 @@ pub fn mk_conj(terms: Vec<Term>, p: f64) -> Result<Term, FplError> {
     Ok(Term::new(TermF::Conj { terms, p }))
 }
 
-/// Never empty, so a term reads `∅` only where it holds an `Absent`.
+/// It refuses an empty `terms`, so that a term reads `∅` only where it holds
+/// an `Absent`.
 pub fn mk_least(terms: Vec<Term>) -> Result<Term, FplError> {
     if terms.is_empty() {
         return err("Least needs a member");
@@ -829,8 +811,8 @@ pub fn mk_least(terms: Vec<Term>) -> Result<Term, FplError> {
     Ok(Term::new(TermF::Least { terms }))
 }
 
-/// `Least` of the distinct `terms`: one is itself, so a reading with no
-/// conflict is written exactly as it was.
+/// `Least` of the distinct `terms`, or the one term where all are equal, so
+/// that a reading without a conflict keeps its form.
 pub fn least_of(terms: Vec<Term>) -> Result<Term, FplError> {
     let mut distinct: Vec<Term> = Vec::with_capacity(terms.len());
     for term in terms {
@@ -909,8 +891,8 @@ pub fn mk_after(
     }))
 }
 
-/// `term` re-anchored to the last tending of `todo`, whose id obeys the rule
-/// a [`crate::event::TodoId`] does.
+/// `term` re-anchored to the last tending of `todo`. It refuses a `todo` that
+/// breaks the rule of [`crate::event::TodoId`].
 pub fn mk_recur(
     todo: String,
     anchor: Instant,
@@ -926,7 +908,8 @@ pub fn mk_recur(
     }))
 }
 
-/// `term` repeated every `period` from `anchor`, both ways in time.
+/// `term` repeated every `period` from `anchor`, both ways in time. It refuses
+/// a `period` that is not positive.
 pub fn mk_periodic(period: Delta, anchor: Instant, term: Term) -> Result<Term, FplError> {
     if period <= Duration::zero() {
         return err("Periodic.period must be positive");
@@ -938,8 +921,8 @@ pub fn mk_periodic(period: Delta, anchor: Instant, term: Term) -> Result<Term, F
     }))
 }
 
-/// A reference to todo `todo`'s fulfillment. The id obeys the rule a
-/// [`crate::event::TodoId`] does, checked by that type's own constructor.
+/// A reference to the fulfillment of todo `todo`. It refuses a `todo` that
+/// breaks the rule of [`crate::event::TodoId`].
 pub fn mk_ref(todo: String) -> Result<Term, FplError> {
     crate::event::TodoId::new(todo.as_str()).map_err(|e| FplError(format!("Ref.todo: {e}")))?;
     Ok(Term::new(TermF::Ref {
@@ -948,15 +931,15 @@ pub fn mk_ref(todo: String) -> Result<Term, FplError> {
     }))
 }
 
-/// A QUALIFIED reference: the fulfillment of `entity` in the prodrome
-/// `store` names, a genesis's name or a name the host declares for one
-/// ([`Stores::named`]); both obey [`crate::event::TodoId`]'s rule, which a
-/// genesis's 64 lowercase hex does. `entity` is a key as a nest's path
-/// holds it ([`crate::nest::Segment`]): not empty, no `/`.
+/// A qualified reference: the fulfillment of `entity` in the prodrome that
+/// `store` names: a genesis's name, or a name declared with
+/// [`Stores::named`] (SPEC §7.2).
 ///
 /// # Errors
 ///
-/// A store or an entity that breaks its rule.
+/// It refuses a `store` that breaks the rule of [`crate::event::TodoId`], or
+/// an `entity` that breaks the rule of [`crate::nest::Segment`] (not empty,
+/// no `/`).
 pub fn mk_ref_in(store: String, entity: String) -> Result<Term, FplError> {
     crate::event::TodoId::new(store.as_str()).map_err(|e| FplError(format!("RefIn.store: {e}")))?;
     crate::nest::Segment::new(entity.as_str())
@@ -967,15 +950,14 @@ pub fn mk_ref_in(store: String, entity: String) -> Result<Term, FplError> {
     }))
 }
 
-/// No temporal value. It has no field, so there is nothing to refuse.
+/// The term with no value at any instant. It refuses nothing.
 pub fn mk_absent() -> Term {
     Term::new(TermF::Absent)
 }
 
-/// A todo's fulfillment function given its own spec and its checklist: each
-/// item is a leaf worth 0.5, the checklist is their conjunction, and the
-/// parent's own value is an OFFSET on that aggregate. No items: the spec
-/// itself. No spec: the aggregate alone. Neither: `None`.
+/// A todo's fulfillment function from its own spec and the number of items
+/// of its checklist, `checklist(own, n)` in SPEC §6, "The todo schema's
+/// registers". With neither a spec nor an item, it returns `None`.
 pub fn checklist(own: Option<Term>, items: usize) -> Result<Option<Term>, FplError> {
     if items == 0 {
         return Ok(own);
@@ -991,16 +973,16 @@ pub fn checklist(own: Option<Term>, items: usize) -> Result<Option<Term>, FplErr
     }))
 }
 
-/// The NORMAL FORM of a schedule of functions, and the laws it satisfies:
-/// unit (no pieces IS the head), join (a piece whose term is a Piecewise is
-/// spliced in, so no Piecewise ever nests), two adjacent pieces with the same
-/// term are one piece, and instants strictly increase or this refuses.
-/// `fulfillment` gives the raw record and its normal form the same reading at
-/// every instant.
+/// A schedule of terms in normal form (SPEC §7, "Normal form"), which reads
+/// as the raw schedule at every instant.
+///
+/// Law 5: the normal form is a unit (no pieces is the head) and a join (no
+/// `Piecewise` nests), it is idempotent, and it has no two adjacent equal
+/// pieces.
 ///
 /// # Errors
 ///
-/// Two pieces whose instants do not strictly increase.
+/// It refuses two pieces whose instants do not strictly increase.
 pub fn mk_piecewise(head: Term, pieces: Vec<(Instant, Term)>) -> Result<Term, FplError> {
     Schedule::new(head, pieces)
         .map(piecewise)
@@ -1040,42 +1022,35 @@ fn opened(term: Term) -> Schedule<Term> {
 
 // --- Linking: every Ref bound to the todo it names --------------------------
 
-/// Why a term does not link. A value like every refusal here: a reference is
-/// stored data, and stored data can name a todo that is not there, or loop.
+/// The reason that a term does not link (SPEC §7.2, "Refusals are values.").
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum LinkError {
-    /// A `Ref` names a todo `specs` does not hold — for a store, one it has
-    /// never seen, since a known todo with no function is `Absent` there.
-    /// Inside another prodrome, reached through a qualified reference, the
-    /// todo is named `genesis/todo`.
+    /// `specs` holds no function for the todo of a `Ref`. A todo of another
+    /// prodrome appears as `genesis/todo`.
     #[error("Ref({0:?}) names no known todo")]
     Unknown(String),
-    /// The references loop. The path names the cycle, its first todo repeated
-    /// at the end; an entity of another prodrome as `genesis/entity`.
+    /// The references loop: the path holds the cycle, with its first todo
+    /// repeated at the end. An entity of another prodrome appears as
+    /// `genesis/entity`.
     #[error("the references loop: {}", .0.join(" → "))]
     Cycle(Vec<String>),
 }
 
-/// One prodrome as a qualified reference reads it (§7.2): each entity's
-/// own function, under the key an unqualified `Ref` inside the prodrome
-/// gives it, and the environment its `After`s and `Recur`s read.
+/// One prodrome as a qualified reference reads it (SPEC §7.2): the function
+/// of each entity, under the key that an unqualified `Ref` inside the
+/// prodrome uses, and the environment that its `After` and `Recur` nodes read.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Member {
     pub specs: BTreeMap<String, Term>,
     pub env: Env,
 }
 
-/// THE SET OF PRODROMES a term's qualified references read (§7.2), each
-/// member by its genesis's name, its content name, and the names a host
-/// declares for some of them. A host's environment, passed in: a schema
-/// never reads another store (design §4, `Bind`). Its reading is the
-/// product of its members' readings, so a reference into one member reads
-/// that member and nothing else (the disjointness law).
+/// The set of prodromes that the qualified references of a term read (SPEC
+/// §7.2), keyed by genesis, with the names that the host declares.
 ///
-/// A member is ONE READING of one prodrome: two replicas of a prodrome are
-/// joined by syncing their objects and reading the union, never by setting
-/// two readings side by side, so `with` a genesis the set holds replaces
-/// its reading.
+/// Law 41: a reference into one member reads that member and nothing else.
+/// A member is one reading of one prodrome: to join two replicas, sync their
+/// objects and read the union.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Stores {
     members: BTreeMap<Hash, Member>,
@@ -1089,8 +1064,8 @@ impl Stores {
         Stores::default()
     }
 
-    /// These stores with `member`, the reading of the prodrome `genesis`
-    /// begins.
+    /// These stores with `member` as the reading of the prodrome that
+    /// `genesis` begins. It replaces an earlier reading of `genesis`.
     #[must_use]
     pub fn with(mut self, genesis: Hash, member: Member) -> Stores {
         self.members.insert(genesis, member);
@@ -1104,7 +1079,7 @@ impl Stores {
         self
     }
 
-    /// The member the prodrome `genesis` begins, where the set holds it.
+    /// The member of the prodrome that `genesis` begins, if the set holds it.
     #[must_use]
     pub fn member(&self, genesis: &Hash) -> Option<&Member> {
         self.members.get(genesis)
@@ -1131,27 +1106,27 @@ impl FromIterator<(Hash, Member)> for Stores {
     }
 }
 
-/// §7.2: every `Ref(x)` bound to `specs[x]`, linked in turn, and refused as a
-/// cycle where it is reached again on its own expansion. A closed term is its
-/// own link, untouched. A qualified reference reads `∅`: no other prodrome
-/// is given ([`link_in`] with no stores).
+/// The term with every `Ref(x)` bound to `specs[x]`, linked in turn (SPEC
+/// §7.2).
+///
+/// Law 14: linking is bind, and a closed term links to itself. A qualified
+/// reference reads `∅`, because `link` is [`link_in`] with no stores. It
+/// refuses a `Ref` to a todo that `specs` does not hold, and references that
+/// loop.
 pub fn link(term: &Term, specs: &BTreeMap<String, Term>) -> Result<Closed, LinkError> {
     link_in(term, specs, &Stores::new())
 }
 
-/// [`link`], with `stores` the set its qualified references read. A
-/// `RefIn(s, x)` is `x`'s function in the member `s` names, linked there
-/// (an unqualified `Ref` inside it names that member's own entity) and
-/// compiled against that member's environment (§7.1), so the term it lands
-/// in reads it as the member does and no `After` or `Recur` of it reads the
-/// wrong history. A store the set does not hold, or an entity its member
-/// does not, reads `∅`: the documented absence, no claim on attention.
-/// Cycles are refused across members as within one.
+/// [`link`], with `stores` as the set that the qualified references read
+/// (SPEC §7.2, "A qualified reference.").
+///
+/// A store that the set does not hold, or an entity that its member does
+/// not hold, reads `∅`.
 ///
 /// # Errors
 ///
-/// An unqualified `Ref` its prodrome does not hold, or references that
-/// loop.
+/// It refuses an unqualified `Ref` that its prodrome does not hold, and
+/// references that loop, within one member or across members.
 pub fn link_in(
     term: &Term,
     specs: &BTreeMap<String, Term>,
@@ -1233,7 +1208,8 @@ fn resolved(
 
 // --- ISO instants: the one instant SPELLING every boundary shares ------------
 
-/// Python's `datetime.isoformat()`: microseconds only when non-zero.
+/// The text of Python's `datetime.isoformat()`, with microseconds only when
+/// they are not zero.
 pub fn iso(t: Instant) -> String {
     if t.and_utc().timestamp_subsec_micros() == 0 {
         t.format("%Y-%m-%dT%H:%M:%S").to_string()
@@ -1242,7 +1218,7 @@ pub fn iso(t: Instant) -> String {
     }
 }
 
-/// `iso`'s inverse, for anything reading an instant off a wire.
+/// The inverse of [`iso`].
 pub fn parse_iso(s: &str) -> Result<Instant, FplError> {
     NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f")
         .or_else(|_| NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S"))
@@ -1286,8 +1262,7 @@ fn float_value(value: f64) -> literal::Value {
     )
 }
 
-/// The grammar's `datetime` as an evaluable instant; `fold` reads an event's
-/// `at` through it.
+/// The grammar's `datetime` as an [`Instant`].
 pub fn instant_of(at: literal::Datetime) -> Instant {
     NaiveDate::from_ymd_opt(at.year(), at.month(), at.day())
         .and_then(|day| {
@@ -1296,7 +1271,8 @@ pub fn instant_of(at: literal::Datetime) -> Instant {
         .expect("literal::Datetime::new admits only representable instants")
 }
 
-/// And back; fallible, since the grammar's years are 1..=9999.
+/// The inverse of [`instant_of`]. It refuses a year outside 1..=9999, the
+/// years of the grammar.
 pub fn datetime_of(t: Instant) -> Result<literal::Datetime, ProdromeError> {
     literal::Datetime::new(
         t.year(),
@@ -1430,13 +1406,14 @@ impl FieldSource for CallSource<'_> {
 }
 
 impl Term {
-    /// The term as one expression of §2's grammar.
+    /// The term as one expression of the grammar of SPEC §2.
     pub fn to_value(&self) -> literal::Value {
         let (kind, fields) = schema::fields(self.out());
         call_value(kind, fields)
     }
 
-    /// One expression of §2's grammar, through the smart constructors.
+    /// The term that one expression of the grammar of SPEC §2 denotes, built
+    /// by the smart constructors.
     pub fn from_value(value: &literal::Value) -> Result<Term, FplError> {
         let call = value
             .as_call()
@@ -1458,12 +1435,12 @@ impl crate::literal::codec::Literal for Term {
     }
 }
 
-/// The canonical §2 print of a term.
+/// The canonical print of a term (SPEC §2).
 pub fn print_term(term: &Term) -> String {
     print_literal(&term.to_value())
 }
 
-/// `print_term`'s inverse.
+/// The inverse of [`print_term`], through the smart constructors.
 pub fn parse_term(text: &str) -> Result<Term, FplError> {
     Term::from_value(&literal::parse_literal(text, signatures())?)
 }

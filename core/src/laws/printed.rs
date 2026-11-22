@@ -2,9 +2,8 @@ use crate::event::{canonical_envelope, parse_envelope, seal_hash, Hash};
 use crate::laws::Broken;
 use crate::schema::Schema;
 
-/// Law 1 over `prints`, each an object's name and its print: every print
-/// parses at the schema `vocabulary`, prints back byte for byte, and hashes
-/// to its name.
+/// Law 1 over `prints`: every print parses at `vocabulary`, prints back
+/// byte for byte, and hashes to its name.
 ///
 /// # Errors
 ///

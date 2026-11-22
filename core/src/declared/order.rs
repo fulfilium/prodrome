@@ -74,8 +74,8 @@ impl Closure {
     }
 }
 
-/// A value of a declared register under that register's order: what the
-/// completion compares. Built by [`super::Declaration::value`].
+/// A value of a declared register under that register's order. Only
+/// [`super::Declaration::value`] builds one.
 #[derive(Debug, Clone, Copy)]
 pub struct Valued<'d> {
     pub(crate) order: &'d Interpreted,
@@ -83,10 +83,11 @@ pub struct Valued<'d> {
 }
 
 impl Valued<'_> {
-    /// The value the order compares, as a datum: itself, but under
-    /// inclusion a list's SET, its items sorted and each once. So two writes
-    /// the order cannot tell apart answer one datum, and anything printed of
-    /// a reading is a function of the reading.
+    /// The value that the order compares: the datum itself, but under
+    /// inclusion the list's items sorted and each once.
+    ///
+    /// So two writes that the order cannot tell apart give one datum, and a
+    /// print of a reading depends only on the reading.
     #[must_use]
     pub fn value(&self) -> Datum {
         match (self.order, self.datum) {

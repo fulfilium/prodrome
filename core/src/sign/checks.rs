@@ -8,21 +8,15 @@ use crate::literal::print_literal;
 use crate::memo::{self, Cache, Key, Lookup, Lru};
 use crate::sign::Signed;
 
-/// Whether each signature verifies, as a table. [`Signed::verifies`] is a
-/// function of one `Signed` object: its object's name, its key and its
-/// signature. The `Signed` object's content name covers all three, so the
-/// table keeps each check under that name, and a program that reads a
-/// history again checks only the signatures that the table does not hold.
+/// A bounded table of the results of [`Signed::verifies`], keyed by the
+/// content name of each `Signed` object.
 ///
-/// The table computes that name from the `Signed` object itself, the
-/// sha256 of its print, and never takes a name from its caller. So no
-/// caller can find a check that one object passed under another object's
-/// name. The sha256 costs far less than the Ed25519 check it saves.
+/// The table computes that name itself, as the SHA-256 of the print, so no
+/// caller can make the check of one object answer for another object. The
+/// SHA-256 costs far less than the Ed25519 check that it saves.
 ///
-/// The table means [`Signed::verifies`] and nothing else (SPEC law 49). It
-/// keeps at most its capacity of checks and drops the least recently used,
-/// and a table that holds nothing answers the same as one that holds
-/// everything.
+/// Law 49: the table answers exactly as [`Signed::verifies`], whatever it
+/// holds.
 #[derive(Debug)]
 pub struct Checks(Mutex<Cache<bool, Lru>>);
 
@@ -33,7 +27,7 @@ impl Checks {
         Checks(Mutex::new(Cache::new(Lru::new(capacity))))
     }
 
-    /// Does `signed` verify?
+    /// Whether `signed` verifies.
     #[must_use]
     pub fn verifies(&self, signed: &Signed) -> bool {
         let key = Key {

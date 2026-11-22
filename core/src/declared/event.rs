@@ -14,8 +14,8 @@ use super::{Declaration, Slot};
 
 /// A field's value, of one of the declared types.
 ///
-/// `Ord` only so a list can be read as a set; a register's order is never
-/// this one but its declared order ([`Valued`]).
+/// The `Ord` exists only to read a list as a set; a register compares
+/// values by its declared order ([`Valued`]), never by this one.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Datum {
     Text(String),
@@ -64,7 +64,7 @@ impl Datum {
     }
 }
 
-/// What a declared event is about: its key field's text.
+/// The entity of a declared event: the text of its key field.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Key(String);
 
@@ -74,9 +74,11 @@ impl AsRef<str> for Key {
     }
 }
 
-/// An event of a declared schema: one of its constructors, every field a
-/// value of its declared type. It holds its declaration (one shared value),
-/// so it routes itself; it never prints it, so no object carries a schema.
+/// An event of a declared schema: one of its constructors, with every field
+/// a value of its declared type.
+///
+/// The event holds its declaration to find the registers it writes, and it
+/// never prints the declaration, so no object carries a schema.
 #[derive(Debug, Clone)]
 pub struct Declared {
     schema: Declaration,
@@ -94,13 +96,13 @@ impl PartialEq for Declared {
 }
 
 impl Declared {
-    /// The declaration this event is of.
+    /// The declaration of this event.
     #[must_use]
     pub fn schema(&self) -> &Declaration {
         &self.schema
     }
 
-    /// Its constructor's name.
+    /// The name of the event's constructor.
     #[must_use]
     pub fn constructor(&self) -> &str {
         &self.schema.shape(self.event).name
@@ -112,8 +114,7 @@ impl Declared {
         &self.data
     }
 
-    /// The value this event writes to the register `slot`, none where it
-    /// writes none.
+    /// The value that this event writes to the register `slot`, if any.
     #[must_use]
     pub fn written(&self, slot: Slot) -> Option<&Datum> {
         self.schema
@@ -208,10 +209,11 @@ impl Schema for Declared {
     }
 }
 
-/// An entity's registers under a declared schema: a product of one
-/// register per declared register, each read under its declared order. It
-/// learns the declaration from the first write it joins; before one it
-/// holds nothing, which is every register unwritten.
+/// An entity's registers under a declared schema, each read under its
+/// declared order.
+///
+/// The value learns the declaration from the first write that it joins;
+/// before that write, every register is unwritten.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Registers<'a> {
     held: Vec<Held<'a>>,

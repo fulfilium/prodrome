@@ -6,16 +6,12 @@ use crate::event::Hash;
 use crate::literal::codec::{Literal, Record};
 use crate::literal::{parse_literal, print_literal, ProdromeError, Table};
 
-/// The tips of a history and the count of its objects. A store records
-/// its heads in a file (SPEC §3), and a replica answers them from what it
-/// holds.
+/// The tips of a history and the count of its objects (SPEC §3, "The record
+/// of heads").
 ///
-/// The fields are private. A program gets a `Heads` from a derivation in
-/// this crate, or from a read of its literal ([`Heads::parse`] or
-/// [`Literal::from_value`]), so a `Heads` value is always one of the two.
-///
-/// It prints as `Heads(count=<n>, tips=(<names>))`, with the fields in
-/// their order here.
+/// A program gets a `Heads` only from a derivation in this crate or from a
+/// read of its literal ([`Heads::parse`] or [`Literal::from_value`]). It
+/// prints as `Heads(count=<n>, tips=(<names>))`.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
 pub struct Heads {
     count: usize,
@@ -48,9 +44,9 @@ impl Heads {
         print_literal(&self.to_value())
     }
 
-    /// `text` read as a record of heads. Only the canonical print of a
-    /// value reads. The print ends with the closing parenthesis of its
-    /// constructor, so no proper prefix of a print reads.
+    /// Reads `text` as a record of heads. Only a canonical print reads. A
+    /// print ends with the closing parenthesis of its constructor, so no
+    /// proper prefix of a print reads.
     ///
     /// # Errors
     ///

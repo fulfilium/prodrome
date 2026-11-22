@@ -5,7 +5,7 @@ use super::Heads;
 use crate::event::{Actor, Hash};
 use crate::literal::{Datetime, ProdromeError};
 
-/// One thing `verify` says about a store, in §3's words.
+/// One result of `verify` about a store (SPEC §3, "`verify`").
 #[derive(Debug, Clone, PartialEq)]
 pub enum Finding {
     /// The listing of `objects/` or `quarantine/` failed.
@@ -14,10 +14,11 @@ pub enum Finding {
         name: Hash,
         why: Unread,
     },
-    /// An entry of `objects/` not named like an object, or a temp in the
-    /// root: its path within the store.
+    /// The path, within the store, of an entry of `objects/` that is not
+    /// named like an object, or of a temporary file in the root.
     Garbage(String),
-    /// `HEAD` or `refs/`, from before the tips were derived.
+    /// A `HEAD` file or a `refs/` directory, which a store from before the
+    /// tips were derived holds and nothing reads.
     Leftover(&'static str),
     /// A file in `quarantine/`.
     Quarantined(String),
@@ -25,7 +26,7 @@ pub enum Finding {
     /// `.writes`), which the store's `.gitignore` does not name, so that
     /// git can track it.
     Unignored(&'static str),
-    /// A parent no readable object is: absent, or unread for `why`.
+    /// A parent that no readable object is: absent, or unread for `why`.
     Broken {
         at: Hash,
         why: Option<Unread>,
@@ -36,7 +37,8 @@ pub enum Finding {
         at: Datetime,
         behind: Datetime,
     },
-    /// A change or snapshot naming what is not a genesis this store holds.
+    /// A change or a snapshot that names a genesis that this store does not
+    /// hold.
     Stranger {
         object: Hash,
         genesis: Hash,
@@ -45,7 +47,7 @@ pub enum Finding {
         object: Hash,
         parent: Hash,
     },
-    /// A change depending on what is not a write to its entity.
+    /// A change with a dep that is not a write to its entity.
     Foreign {
         change: Hash,
         dep: Hash,
@@ -64,31 +66,34 @@ pub enum Finding {
         signed: Hash,
     },
     /// An object whose actor has a key, and which no signature by a key of
-    /// that actor's proves (§5).
+    /// that actor proves (SPEC §5).
     Unsigned {
         object: Hash,
         actor: Actor,
     },
     /// A write to an inflationary register whose value falls below, or
-    /// beside, the reading of the writes that it rests on (SPEC §6): an
-    /// append refuses such a write, and only a change built by hand writes
-    /// one. `why` is the append's refusal.
+    /// beside, the reading of the writes that it rests on (SPEC §6).
+    ///
+    /// An append refuses such a write, so only a change built by hand
+    /// contains one. `why` is the refusal of the append.
     Below {
         write: Hash,
         why: ProdromeError,
     },
-    /// The store's record of its heads, `.heads`, which parses and differs
-    /// from the heads that the store derives (SPEC §3).
+    /// A `.heads` file that parses and differs from the heads that the store
+    /// derives (SPEC §3, "The record of heads").
     StaleHeads {
         recorded: Heads,
         derived: Heads,
     },
 }
 
-/// A name the history of a set of prints lacks, and what it leaves out with
-/// it ([`crate::dag::Dag::excluded`]): `why` it is no object, a print that
-/// is not one or, `None`, a parent no print is; and every object held that
-/// rests on it, which the history lacks too (law 40).
+/// A name that the history of a set of prints lacks
+/// ([`crate::dag::Dag::excluded`]).
+///
+/// `why` is `None` for a parent that no print has. `resting` holds every
+/// object held that rests on the name, which the history also lacks
+/// (law 40).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Excluded {
     pub name: Hash,
@@ -107,7 +112,8 @@ pub enum Unread {
 }
 
 impl Unread {
-    /// What a read of the object refuses with; a tampered file's names the way out.
+    /// The error that a read of the object refuses with. For a tampered
+    /// file, the error names `fsck` as the remedy.
     pub fn refusal(&self, name: &Hash) -> ProdromeError {
         match self {
             Unread::Io(error) | Unread::Unparsed(error) => error.clone(),

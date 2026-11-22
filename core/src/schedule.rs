@@ -1,27 +1,24 @@
 //! A behaviour that is piecewise constant (design §6.2, time).
 //!
-//! A [`Schedule<A>`] MEANS a function of time, `Instant → A`: its value at
-//! `t` is the value of the last knot at or before `t`, and the head before
-//! the first. Everything below is stated as that meaning, [`Schedule::at`],
-//! and each law is a property test of it (`tests/all/schedule.rs`):
+//! A [`Schedule<A>`] means a function of time, `Instant → A`: its value at
+//! `t` is the value of the last knot at or before `t`, or the head before the
+//! first knot. `tests/all/schedule.rs` checks each of these laws against
+//! [`Schedule::at`]:
 //!
 //! - `map f s` at `t` is `f` of `s` at `t` (a functor);
 //! - `zip a b` at `t` is `(a at t, b at t)`, and `constant` is its unit (an
-//!   applicative: two step functions combine pointwise, their knots merged);
+//!   applicative);
 //! - `a + b` at `t` is `a at t + b at t` where `A` is a monoid (`Default` and
 //!   `Add`), so `at` is a monoid homomorphism;
-//! - `join ss` at `t` is `ss at t` at `t` (the reader monad's diagonal, which
-//!   is what splicing nested pieces is);
+//! - `join ss` at `t` is `ss at t` at `t` (the diagonal of the reader monad);
 //! - `shift δ s` at `t` is `s` at `t + δ`;
 //! - `normal s` reads as `s` everywhere, and two schedules read alike
 //!   everywhere exactly when their normal forms are equal;
 //! - `next_change s t` is the first knot after `t` whose value differs from
 //!   `s` at `t`, so `s` is constant on `[t, next)` and differs at `next`.
 //!
-//! The representation is the free one, a head and a finite map from
-//! instants to values: knots strictly increase and nothing else is assumed,
-//! so `map` needs nothing of its result and a knot may repeat its
-//! predecessor. [`Schedule::normal`] is the quotient by meaning.
+//! Knots strictly increase, and a knot may repeat the value before it.
+//! [`Schedule::normal`] removes such repeats.
 
 use std::collections::BTreeMap;
 use std::iter::Sum;
@@ -39,7 +36,8 @@ pub struct Schedule<A> {
     knots: Vec<(Instant, A)>,
 }
 
-/// Two knots out of order: a schedule's instants strictly increase.
+/// The refusal of [`Schedule::new`]: two knots whose instants do not strictly
+/// increase.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("a schedule's instants must strictly increase: {before} then {after}")]
 pub struct Unordered {
@@ -48,7 +46,7 @@ pub struct Unordered {
 }
 
 impl<A> Schedule<A> {
-    /// `value` at every instant: the applicative's unit.
+    /// `value` at every instant.
     pub fn constant(value: A) -> Schedule<A> {
         Schedule {
             head: value,
@@ -60,7 +58,8 @@ impl<A> Schedule<A> {
     ///
     /// # Errors
     ///
-    /// Two knots whose instants do not strictly increase.
+    /// Returns [`Unordered`] where two knots' instants do not strictly
+    /// increase.
     pub fn new(head: A, knots: Vec<(Instant, A)>) -> Result<Schedule<A>, Unordered> {
         if let Some(pair) = knots.windows(2).find(|pair| pair[0].0 >= pair[1].0) {
             return Err(Unordered {
@@ -71,8 +70,7 @@ impl<A> Schedule<A> {
         Ok(Schedule { head, knots })
     }
 
-    /// `head`, then each value of `knots` from its instant: a function of the
-    /// map, whatever order it was built in.
+    /// `head`, then each value of `knots` from its instant.
     pub fn of(head: A, knots: BTreeMap<Instant, A>) -> Schedule<A> {
         Schedule {
             head,
@@ -94,7 +92,7 @@ impl<A> Schedule<A> {
         (self.head, self.knots)
     }
 
-    /// The meaning: the value in force at `t`.
+    /// The value in force at `t`.
     pub fn at(&self, t: Instant) -> &A {
         self.since(t).1
     }
@@ -116,7 +114,7 @@ impl<A> Schedule<A> {
         self.knots.last().map_or(&self.head, |(_, value)| value)
     }
 
-    /// The functor: `f` of the value at every instant.
+    /// `f` of the value at every instant.
     #[must_use]
     pub fn map<B>(self, mut f: impl FnMut(A) -> B) -> Schedule<B> {
         Schedule {
@@ -129,11 +127,11 @@ impl<A> Schedule<A> {
         }
     }
 
-    /// `map` by reference, stopping at the first error, head first.
+    /// `map` by reference, head first, stopping at the first error.
     ///
     /// # Errors
     ///
-    /// The first `f` refuses.
+    /// Returns the first error of `f`.
     pub fn traverse<'a, B, E>(
         &'a self,
         mut f: impl FnMut(&'a A) -> Result<B, E>,
@@ -148,8 +146,8 @@ impl<A> Schedule<A> {
         })
     }
 
-    /// Read `by` later: at `t` the result is this schedule at `t + by`, so a
-    /// knot at `τ` holds from `τ − by`.
+    /// At `t`, the result is this schedule at `t + by`, so a knot at `τ`
+    /// holds from `τ − by`.
     #[must_use]
     pub fn shift(self, by: Delta) -> Schedule<A> {
         Schedule {
@@ -162,8 +160,8 @@ impl<A> Schedule<A> {
         }
     }
 
-    /// The applicative's product: both values at every instant, a knot
-    /// wherever either has one.
+    /// Both values at every instant, with a knot wherever either schedule has
+    /// one.
     #[must_use]
     pub fn zip<B>(self, other: Schedule<B>) -> Schedule<(A, B)>
     where
@@ -193,7 +191,7 @@ impl<A> Schedule<A> {
         Schedule { head, knots }
     }
 
-    /// Every schedule's value at every instant: `zip` over a sequence.
+    /// Every schedule's value at every instant, as `zip` over a sequence.
     pub fn sequence(schedules: impl IntoIterator<Item = Schedule<A>>) -> Schedule<Vec<A>>
     where
         A: Clone,
@@ -208,8 +206,8 @@ impl<A> Schedule<A> {
             })
     }
 
-    /// The quotient by meaning: a knot that repeats the value before it is
-    /// dropped, so two schedules that read alike everywhere are equal.
+    /// Drops each knot that repeats the value before it, so two schedules that
+    /// read alike everywhere become equal.
     #[must_use]
     pub fn normal(self) -> Schedule<A>
     where
@@ -228,9 +226,8 @@ impl<A> Schedule<A> {
         }
     }
 
-    /// The push half: the first knot after `t` whose value differs from the
-    /// value at `t`, `None` where none does. The schedule is constant on
-    /// `[t, next)`.
+    /// The first knot after `t` whose value differs from the value at `t`, or
+    /// `None`. The schedule is constant on `[t, next)`.
     pub fn next_change(&self, t: Instant) -> Option<Instant>
     where
         A: PartialEq,
@@ -245,9 +242,9 @@ impl<A> Schedule<A> {
 }
 
 impl<A> Schedule<Schedule<A>> {
-    /// The monad's join, the diagonal: at `t`, the inner schedule in force at
-    /// `t`, read at `t`. Each inner schedule's knots outside the stretch its
-    /// outer knot holds are not read.
+    /// The diagonal: at `t`, the inner schedule in force at `t`, read at `t`.
+    /// The knots of an inner schedule outside the stretch of its outer knot
+    /// are not read.
     #[must_use]
     pub fn join(self) -> Schedule<A> {
         let first = self.knots.first().map(|(at, _)| *at);

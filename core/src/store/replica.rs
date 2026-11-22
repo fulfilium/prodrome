@@ -1,5 +1,4 @@
-//! A replica (design §1, §6.1): a set of objects closed under their parents,
-//! wherever it is held, and sync, the semilattice's join of two.
+//! Replicas and sync (design §1, §6.1; SPEC §3, "A replica").
 
 use std::collections::BTreeSet;
 use std::sync::Arc;
@@ -11,8 +10,7 @@ use crate::registers::Folded;
 use crate::schema::Schema;
 use crate::store::Sender;
 
-/// What a replica holds, of one look: its objects, their fold and their
-/// tips.
+/// What a replica holds, as of one look.
 #[derive(Debug, Clone)]
 pub struct Held<E: Schema> {
     pub dag: Arc<Dag<E>>,
@@ -20,22 +18,17 @@ pub struct Held<E: Schema> {
     pub tips: BTreeSet<Hash>,
 }
 
-/// A REPLICA OF THE FREE SEMILATTICE: objects named by the hash of their
-/// prints, closed under parents, on disk ([`super::EventStore`]), in memory
-/// ([`super::MemoryStore`]) or over another ([`super::Overlay`]).
-///
-/// Every replica reads, appends a MONOTONE write (a `Change` decided on
-/// what it holds, by the same rules wherever it is held) and receives. None
-/// of that needs coordination, so none of it is the store of record's
-/// alone; a decision is ([`super::Decision`]).
+/// A set of objects named by the hash of their prints and closed under
+/// parents: on disk ([`super::EventStore`]), in memory
+/// ([`super::MemoryStore`]) or over another replica ([`super::Overlay`]).
 pub trait Replica<E: Schema> {
-    /// The schema it is opened at: what every object it holds or receives
-    /// parses at (§5). No object carries it.
+    /// The schema that every object it holds or receives parses at (SPEC
+    /// §4).
     fn schema(&self) -> &E::Vocabulary;
 
-    /// Its objects, their fold and their tips, of one look: TOTAL over what
-    /// it holds, a print that is no object left out with what rests on it,
-    /// and named by its `dag`'s [`Dag::excluded`] (SPEC laws 44 and 45).
+    /// Its objects, their fold and their tips, as of one look; a print that
+    /// is no object is left out, and named in [`Dag::excluded`] (SPEC laws 44
+    /// and 45).
     ///
     /// # Errors
     ///
@@ -43,16 +36,15 @@ pub trait Replica<E: Schema> {
     /// listed.
     fn held(&self) -> Result<Held<E>, ProdromeError>;
 
-    /// Its tips: what a sync from it starts from.
+    /// Its tips, from which a sync from it starts.
     ///
     /// # Errors
     ///
     /// [`Replica::held`]'s.
     fn tips(&self) -> Result<BTreeSet<Hash>, ProdromeError>;
 
-    /// Its tips and the count of the objects of its history. A replica in
-    /// memory answers them from what it holds. A store on disk reads its
-    /// record of them ([`super::EventStore::heads`]).
+    /// Its tips and the count of the objects of its history; a store on disk
+    /// reads its record of them ([`super::EventStore::heads`]).
     ///
     /// # Errors
     ///
@@ -61,24 +53,20 @@ pub trait Replica<E: Schema> {
         Ok(self.held()?.dag.heads())
     }
 
-    /// The print it keeps under `name`, unchecked: the bytes that name is
-    /// the hash of, or a husk of them (SPEC §3). Whoever receives it
-    /// verifies it: it rehashes the bytes, and reads bytes that are not the
-    /// whole as a husk or refuses them.
+    /// The print it keeps under `name`, unchecked: the whole or a husk of it
+    /// (SPEC §3). The receiver must rehash the bytes, and read bytes that are
+    /// not the whole as a husk or refuse them.
     fn kept(&self, name: &Hash) -> Option<Vec<u8>>;
 
-    /// The print it holds under `name` whose hash is `name`: what
-    /// [`Replica::kept`] answers, and nothing for a husk, which holds no
-    /// such bytes.
+    /// What [`Replica::kept`] answers where its hash is `name`, and nothing
+    /// for a husk.
     fn print(&self, name: &Hash) -> Option<Vec<u8>> {
         self.kept(name)
             .filter(|bytes| Hash::of_bytes(bytes) == *name)
     }
 
     /// Write `event` as a `Change` over its entity's heads in this
-    /// replica, or nothing where it holds a twin (SPEC §3): the decision is
-    /// the same wherever the objects are held, so two replicas holding the
-    /// same objects write the same bytes.
+    /// replica, or nothing where it holds a twin (SPEC §3).
     ///
     /// # Errors
     ///
@@ -86,12 +74,11 @@ pub trait Replica<E: Schema> {
     fn append(&self, event: E) -> Result<Hash, ProdromeError>;
 
     /// Take in what `seeds` rest on that it lacks, each object read by
-    /// `print_of` and VERIFIED on receipt (it hashes to its name and
-    /// parses, or, where `sender` is its keeper of record, it reads as a
-    /// husk at the replica's schema), nothing taken unless all of it
-    /// verified, and held parents first. A name it keeps, whole or husk, in
-    /// its history or waiting outside it, is not replaced. Answers what it
-    /// took, parents first.
+    /// `print_of`, and answer what it took, parents first.
+    ///
+    /// It takes nothing unless every object hashes to its name and parses,
+    /// or, from its keeper of record, reads as a husk; and it never replaces
+    /// a name that it keeps, whole or husk.
     ///
     /// # Errors
     ///
@@ -141,25 +128,13 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
     }
 }
 
-/// THE RESTRICTED JOIN (design §6.3): `to ∪ ↓chosen`, adopting into `to`
-/// the objects of `from` that `chosen` rest on and `to` lacks, each verified
-/// on adoption, and answering them, parents first.
+/// The restricted join `to ∪ ↓chosen` (design §6.3; SPEC §3,
+/// "`accept(from, to, chosen)`"): adopts into `to` the objects of `from`
+/// that `chosen` rest on and `to` lacks, each verified, and answers them,
+/// parents first.
 ///
-/// Every way one replica takes objects from another is this, with a choice
-/// of `chosen`: a sync chooses everything `from` holds (its tips), an
-/// overlay's flush chooses all of its own objects ([`super::Overlay::flush`])
-/// and its acceptance chooses some ([`super::Overlay::accept`]), and an
-/// adoption chooses one tip ([`super::EventStore::adopt`]). Where `chosen`
-/// is closed under parents over what `to` holds, `to` reads as it did plus
-/// exactly `chosen`; elsewhere it takes what they rest on too, since a
-/// replica is closed under parents. No object is renamed or rewritten: what
-/// arrives is the bytes `from` keeps under each name ([`Replica::kept`]), a
-/// whole or a husk, and a name `to` already holds, whole or husk, is not
-/// asked for.
-///
-/// `sender` names whose word `from` is to `to`: where `from` is `to`'s
-/// keeper of record ([`Sender::Keeper`]), `to` takes the husks `from`
-/// keeps; from a stranger it refuses them (SPEC §3).
+/// Where `sender` is [`Sender::Keeper`], `to` takes the husks that `from`
+/// keeps; from a stranger it refuses them.
 ///
 /// # Errors
 ///
@@ -174,20 +149,11 @@ pub fn accept<E: Schema>(
     to.receive(chosen, &|name| from.kept(name), sender)
 }
 
-/// `to ∪ from`: adopt into `to` every object of `from` that `to` lacks,
-/// each verified on adoption, and answer them, parents first. [`accept`]
+/// The join `to ∪ from` (SPEC §3, "`sync(from, to)`"; law 35): [`accept`]
 /// with everything chosen.
 ///
-/// THE JOIN, AND NOTHING ELSE. It reads no register and asks no schema:
-/// idempotent (an object adopted twice is one object), order-free (union
-/// commutes), and safe to cut short and repeat, since what one sync placed
-/// is a down-set of `from` and the next adopts the rest. Between any two
-/// replicas at one schema whose prints `to` reads: every whole, and every
-/// husk where `from` is `to`'s keeper of record. A sync from a stranger
-/// that keeps a husk takes nothing, objects that do not rest on the husk
-/// included, because a receipt takes nothing unless everything verified:
-/// so a sync cut short by a refusal leaves `to` as it was, and the refusal
-/// names the husk.
+/// A sync from a stranger that keeps a husk takes nothing, also of the
+/// objects that do not rest on the husk, and its refusal names the husk.
 ///
 /// # Errors
 ///

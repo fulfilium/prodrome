@@ -8,8 +8,10 @@ use crate::fpl::{div_delta, eval, fulfillment, Closed, Env, Instant};
 use crate::term::{Term, TermF};
 
 /// Where a term changes slope, where it jumps, and whether knots there are the
-/// whole curve (§7, §9.7). A monoid: the instants concatenate and `exact` is
-/// their conjunction.
+/// whole curve (SPEC §7, "Breakpoints"; law 7).
+///
+/// The type is a monoid: the instants concatenate, and `exact` is their
+/// conjunction.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Breaks {
     pub slopes: Vec<Instant>,
@@ -57,9 +59,11 @@ impl Sum for Breaks {
     }
 }
 
+/// The breakpoints of `term`.
+///
 /// A jump needs a knot a second before it too, or the line across it would be
-/// a ramp the evaluator never produced. A piecewise part keeps its transitions
-/// as knots even when a composite part makes the whole sampled.
+/// a ramp that the evaluator never produced. A piecewise part keeps its
+/// transitions as knots even when a composite part makes the whole sampled.
 pub fn breakpoints(term: &Term) -> Breaks {
     term.para(|layer| match layer {
         TermF::Least { terms } => least(terms),
@@ -164,19 +168,20 @@ fn crossings(terms: &[&Term], from: Instant, to: Instant) -> Vec<Instant> {
     out
 }
 
-/// For terms that are not piecewise-linear: every ~1.9 h over a week, every
-/// ~9 h over a month.
+/// The number of evaluations for a term that is not piecewise-linear: one
+/// every ~1.9 h over a week, one every ~9 h over a month.
 pub const SAMPLES: i64 = 96;
 
-/// One point of a drawn curve: `∅` where the term has no value there, and a
-/// reader draws no line to or from it.
+/// One point of a drawn curve. The value is `∅` where the term has no value,
+/// and a reader must draw no line to or from that point.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Knot {
     pub at: Instant,
     pub value: Option<f64>,
 }
 
-/// A term's fulfillment over a window, and whether the knots ARE the curve.
+/// A term's fulfillment over a window, and whether the knots are the whole
+/// curve.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Series {
     pub knots: Vec<Knot>,
@@ -187,10 +192,10 @@ pub struct Series {
 ///
 /// Exact where the term is piecewise-linear: knots at the window edges, at
 /// every slope change inside it, and a second on either side of every jump.
-/// Composite terms get `SAMPLES` evenly spaced evaluations on top. Every knot
-/// is evaluated against `env_at(t)`, the environment AS OF that instant, so a
-/// dependency an `After` reads is unbound before it completed and bound from
-/// then — the same rule for the environment as for the term.
+/// Composite terms also get [`SAMPLES`] evenly spaced evaluations. Each knot
+/// is evaluated against `env_at(t)`, the environment as of that instant, so a
+/// dependency that an `After` reads is unbound before it completed and bound
+/// from then on.
 pub fn series_knots(
     term: &Closed,
     from: Instant,

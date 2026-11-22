@@ -1,23 +1,14 @@
-//! §6.6 — the DAG as the registers read it: each object's place and ancestry,
-//! and each entity's stream of writes, under any [`Schema`].
+//! Each object's place and ancestry in the DAG, and each entity's stream of
+//! writes, under any [`Schema`] (SPEC §6.6).
 //!
-//! See ../../SPEC.md §6.6. [`crate::fold`] folds a stream into its
-//! registers; this module only says what descends from what.
-//!
-//! THE FOLD IS A MONOID ACTION. `fold(nodes) == extend(EMPTY, nodes)` and
-//! `extend(extend(s, xs), ys) == extend(s, xs ++ ys)`, so a consumer keeps the
-//! state for a tip and applies only the objects since.
-//!
-//! AND AN ACTION OF THE SET. [`Folded::insert`] puts an object where the
-//! linearisation of everything folded and it would: on a linearised suffix
-//! that is the end, so it is `extend`, and in any other order that puts
-//! parents first it is still `fold` of the union. The state is a function of
-//! the objects (§1), whatever order they arrive in, wherever each object
-//! rests only on objects of its own scope ([`Folded::local`]).
+//! The fold is a monoid action: `fold(nodes) == extend(EMPTY, nodes)` and
+//! `extend(extend(s, xs), ys) == extend(s, xs ++ ys)`, so a consumer can keep
+//! the state for a tip and apply only the newer objects.
 //!
 //! Ancestry is a [`BitSet`] over positions. A legacy object is placed among
-//! every legacy object, O(n²) bits for the store; a change's deps never leave
-//! its entity, so a change is placed within its `(genesis, key)`, O(Σ kᵢ²).
+//! every legacy object, which costs O(n²) bits for the store. A change's deps
+//! never leave its entity, so a change is placed within its `(genesis, key)`,
+//! which costs O(Σ kᵢ²) bits.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -44,7 +35,7 @@ pub struct Folded<E: Schema> {
 /// one prodrome.
 type Scope<K> = Option<(Hash, K)>;
 
-/// [`Folded::insert`]'s refusal: where this object goes in the
+/// The refusal of [`Folded::insert`]: the place of the object in the
 /// linearisation depends on objects outside its scope, so only a fold of
 /// everything can place it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,7 +44,7 @@ pub struct Elsewhere;
 /// Which prodrome: a genesis object's name, or `None` for the legacy one.
 pub type Genesis = Option<Hash>;
 
-/// One prodrome's entities, each its stream of writes in causal order.
+/// One prodrome's entities, each with its stream of writes in causal order.
 pub type Prodrome<E> = BTreeMap<<E as Schema>::Key, Vec<Stamp<E>>>;
 
 /// One object that carries an event, where its entity's registers can see it.
@@ -65,7 +56,10 @@ pub struct Stamp<E: Schema> {
 }
 
 impl<E: Schema> Stamp<E> {
-    /// Does this write descend from `earlier`, a write to the same entity?
+    /// Whether this write descends from `earlier`.
+    ///
+    /// The caller must pass a write to the same entity, because positions are
+    /// compared within one scope.
     pub fn descends(&self, earlier: &Stamp<E>) -> bool {
         self.place.ancestry.contains(earlier.place.position)
     }
@@ -100,16 +94,14 @@ impl<K> Place<K> {
 }
 
 /// What the fold reads of a stored object: its name, its parents, its event
-/// and its PLACE, the prodrome it is in. `genesis` is `None` for a legacy
-/// object, and for a change in the legacy prodrome.
+/// and the prodrome that it is in.
 ///
-/// ONLY A [`crate::dag::Dag`] MAKES ONE ([`Dag::nodes`](crate::dag::Dag::nodes)).
-/// An object's prodrome is a function of the SET it is in, not of the
-/// object: a `Change` naming a legacy root is in the legacy prodrome, with
-/// every `Sealed` of its todo, and nothing in the change's bytes says that
-/// its genesis is a root rather than a `Genesis`. A node built from one
-/// envelope would put that change in a prodrome of its own and split its
-/// todo in two, so the fields are private and no constructor is public.
+/// Only [`crate::dag::Dag::nodes`] makes a node. The prodrome of an object
+/// depends on the set of objects that it is in: a `Change` that names a
+/// legacy root is in the legacy prodrome, and nothing in the change's bytes
+/// tells whether its genesis is a root or a `Genesis`. A node built from one
+/// envelope would put that change in a prodrome of its own and split its todo
+/// in two, so the fields are private and no constructor is public.
 ///
 /// ```compile_fail
 /// use prodrome::event::{Hash, TodoEvent};
@@ -212,19 +204,21 @@ impl<E: Schema> Folded<E> {
         }
     }
 
-    /// Does every object folded rest only on objects of its own scope and
-    /// on its genesis? Then each scope's order is decided within it, and
-    /// [`Folded::insert`] can place an object without the rest: every
-    /// object of a scope rests on its genesis, which rests on nothing, so
-    /// the genesis orders nothing within one. True of every store an append
-    /// wrote: a change's deps never leave its entity, a legacy object's
-    /// parents are legacy.
+    /// Whether every object folded rests only on objects of its own scope and
+    /// on its genesis.
+    ///
+    /// Where it does, each scope's order is decided within the scope, and
+    /// [`Folded::insert`] can place an object without the rest. The genesis
+    /// orders nothing within a scope, because every object of the scope rests
+    /// on it and it rests on nothing. Every store
+    /// that appends wrote is local: a change's deps never leave its entity,
+    /// and a legacy object's parents are legacy.
     pub fn local(&self) -> bool {
         self.local
     }
 
-    /// Is `earlier` among `later`'s ancestors in one index? False for a name
-    /// this state has never placed.
+    /// Whether `earlier` is among the ancestors of `later` in one index.
+    /// `false` for a name that this state has never placed.
     pub fn descends(&self, later: &Hash, earlier: &Hash) -> bool {
         match (self.index.get(later), self.index.get(earlier)) {
             (Some(later), Some(earlier)) => {
@@ -238,9 +232,8 @@ impl<E: Schema> Folded<E> {
         &self.prodromes
     }
 
-    /// The stream of the entity `key` in the prodrome `genesis`: the empty
-    /// stream where nothing is written to the entity, because an entity
-    /// that no write names reads as the empty product.
+    /// The stream of the entity `key` in the prodrome `genesis`, empty where
+    /// no write names the entity.
     pub fn stream(&self, genesis: &Genesis, key: &E::Key) -> &[Stamp<E>] {
         self.prodromes
             .get(genesis)
@@ -256,7 +249,10 @@ impl<E: Schema> Folded<E> {
             .map(|(key, stream)| (key, stream.as_slice()))
     }
 
-    /// Fold `node` in after everything folded: the monoid action's step.
+    /// Folds `node` in after everything folded, as one step of the monoid
+    /// action.
+    ///
+    /// The caller must give the nodes parents first.
     pub fn push(&mut self, node: &Node<E>) {
         if self.holds(&node.name) {
             return;
@@ -270,19 +266,18 @@ impl<E: Schema> Folded<E> {
         self.put(node, scope, slot);
     }
 
-    /// Fold `node` in WHERE THE LINEARISATION OF THE UNION PUTS IT: after its
-    /// parents, and before the first object of its scope after them whose
-    /// name is greater, which is where Kahn's walk, taking the least ready
-    /// name, takes it. Everything of its scope after that moves up one.
+    /// Folds `node` in where the linearisation of the union puts it: after
+    /// its parents, and before the first later object of its scope whose
+    /// name is greater, where Kahn's walk takes it.
     ///
-    /// So for objects given parents first, in any order, inserting each is
-    /// `fold` of them all, and on a linearised suffix it is
-    /// [`Folded::push`]. An object already folded changes nothing.
+    /// For objects given parents first, in any order, inserting each gives
+    /// the `fold` of them all, so the state depends only on the set of
+    /// objects. An object already folded changes nothing.
     ///
     /// # Errors
     ///
-    /// [`Elsewhere`], changing nothing, where `node` or anything folded
-    /// rests on an object of another scope ([`Folded::local`]).
+    /// Returns [`Elsewhere`], and changes nothing, where `node` or anything
+    /// folded rests on an object of another scope ([`Folded::local`]).
     pub fn insert(&mut self, node: &Node<E>) -> Result<(), Elsewhere> {
         if self.holds(&node.name) {
             return Ok(());
@@ -431,8 +426,10 @@ fn scope<E: Schema>(node: &Node<E>) -> Option<Scope<E::Key>> {
     }
 }
 
-/// Apply `nodes` (parents first) to `state`. Structure is folded for every
-/// object; standing and time are the readers' business.
+/// Applies `nodes`, parents first, to `state`.
+///
+/// The function folds structure for every object. The readers apply standing
+/// and time.
 pub fn extend<E: Schema>(state: &Folded<E>, nodes: &[Node<E>]) -> Folded<E> {
     let mut next = state.clone();
     for node in nodes {
@@ -453,18 +450,20 @@ pub fn since<'a, E: Schema>(state: &Folded<E>, nodes: &'a [Node<E>]) -> Vec<&'a 
         .collect()
 }
 
-/// A change's deps: its entity's HEADS, the writes to it, in any register,
-/// that no other write to it descends from, read structurally — everything
-/// binds, at no moment. What the writer saw of the entity, as a commit's
-/// parents are what its author had: each written register's frontier is
-/// beneath them, and so is every other write the writer held.
+/// The deps of a change: the heads of its entity, which are the writes to the
+/// entity, in any register, that no other write to it descends from.
+///
+/// The function reads the heads under the policy that binds everything and
+/// at no moment, so the deps cover every write to the entity that the writer
+/// holds.
 ///
 /// # Errors
 ///
-/// The append's refusal, before any object exists: `event` does not stand
-/// on the reading it supersedes ([`Product::grows`]). For the first write
-/// to an entity, that reading is the empty product's, so the append asks
-/// the same question of every write that `verify` asks.
+/// Returns the refusal of the append, before any object exists, where
+/// `event` does not stand on the reading that it supersedes
+/// ([`Product::grows`]). For the first write to an entity, that reading is
+/// the empty product's, so the append asks every write the same question
+/// that `verify` asks.
 pub fn deps_for<E: Schema>(
     state: &Folded<E>,
     genesis: &Genesis,
@@ -491,7 +490,7 @@ pub fn heads<E: Schema>(stream: &[Stamp<E>]) -> Vec<Hash> {
     heads
 }
 
-/// A set of small non-negative integers as a bitmap: set, test, union.
+/// A set of small non-negative integers as a bitmap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BitSet(Vec<u64>);
 
@@ -510,7 +509,7 @@ impl BitSet {
         self.0[word] |= 1 << (bit % 64);
     }
 
-    /// Insert a clear bit at `at`: every bit at or above it moves up one.
+    /// Inserts a clear bit at `at`: every bit at or above it moves up one.
     pub fn open(&mut self, at: usize) {
         let bits: Vec<usize> = self.iter().collect();
         *self = BitSet::default();

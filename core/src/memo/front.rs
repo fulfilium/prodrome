@@ -1,21 +1,14 @@
-//! A holder read through a cache in memory (design §6.2): memory in front of
-//! a file.
+//! A holder read through a cache in memory, such as memory in front of a
+//! file (design §6.2).
 //!
-//! A [`Front`] is the memoisation of its back holder's reads. It answers a
-//! key from its memory when the memory holds it, and otherwise asks the
-//! back and copies the whole answer into the memory. It writes every pair
-//! to the back only, and drops the key from the memory, so the memory holds
-//! only what the back answered. Its meaning is the back's (`memo f = f`
-//! again, with `f` the back's `get`), and its memory is a cost:
-//!
-//! - in front of a holder that drops nothing by itself, every answer of the
-//!   front is the back's answer (SPEC law 57);
-//! - in front of any holder, every value the front answers is one that the
-//!   back held at that key.
-//!
-//! A front is not [`super::Cache::join`]. A join adds the pairs of one
-//! holder to another. A front adds no pair: its memory holds a subset of
-//! what its back held, so the union of the two is the back.
+//! A [`Front`] answers a key from its memory when the memory holds it, and
+//! otherwise asks the back holder and copies the whole answer into the
+//! memory. It writes every pair to the back only, and drops the key from
+//! the memory, so the memory holds only what the back answered. In front of
+//! a holder that drops nothing by itself, every answer of the front is the
+//! back's answer (law 57). In front of any holder, every value that the
+//! front answers is one that the back held at that key. Unlike
+//! [`super::Cache::join`], a front adds no pair.
 //!
 //! The front reads what the back held when the front first asked. A
 //! second process that writes another value at a key that the front holds

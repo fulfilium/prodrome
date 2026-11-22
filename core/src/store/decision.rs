@@ -1,6 +1,5 @@
-//! A coordinated decision (design §6, §6.1): a non-monotone question asked
-//! of the replica of record under its lock, and the record of the answer
-//! written through, before anything is performed.
+//! A coordinated decision (design §6, §6.1; SPEC §3, "A decision is the
+//! store of record's").
 
 use std::fs::{self, File};
 use std::sync::{Arc, MutexGuard};
@@ -18,23 +17,14 @@ use crate::policy::Policy;
 use crate::registers::Folded;
 use crate::schema::Schema;
 
-/// THE STORE OF RECORD, LOCKED: [`EventStore::decide`]'s answer, and the
-/// only value that can answer a question no monotone reading can ("is this
-/// proposal still standing, so I may send?"), because while it lives no
-/// writer of the store, in this process or another, finishes a write.
+/// The store of record under its lock, which [`EventStore::decide`] returns.
 ///
-/// What it reads is everything any writer finished; what it appends is on
-/// disk, synced, when the append returns (WRITTEN THROUGH). So a host
-/// decides, appends the record of its decision, and only then performs the
-/// effect: a crash at any point leaves either no record and no effect, or a
-/// record a later decision reads. Dropping it lets the lock go, and
-/// first writes the store's record of its heads (SPEC §3), once for the
-/// whole hold.
-///
-/// Only [`EventStore`] makes one. A store in memory and an overlay hold no
-/// lock any other writer takes and do not write through, so a decision
-/// cannot be written against either: the CALM line (§6), as a type. Monotone
-/// writes need none of this, and every replica appends them.
+/// While it lives, no writer of the store, in this process or another,
+/// finishes a write. An object that it appends is on disk, synced, when the
+/// append returns, so a host that appends the record of its decision before
+/// it performs the effect leaves, at a crash, either no record and no
+/// effect, or a record that a later decision reads. Dropping it writes the
+/// record of heads, once for the whole hold, and then lets the lock go.
 ///
 /// ```
 /// # use prodrome::event::{mk_completed, TodoEvent, TodoId};
@@ -131,8 +121,8 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
         self.memory.folded()
     }
 
-    /// [`EventStore::append`] under this lock, written through: the object
-    /// is on disk when this returns. A run of one ([`Decision::append_all`]).
+    /// [`EventStore::append`] under this lock; the object is on disk,
+    /// synced, when this returns.
     ///
     /// # Errors
     ///
@@ -144,20 +134,16 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
         Ok(name)
     }
 
-    /// A RUN OF APPENDS, decided over this one look and placed at its end.
-    /// Each event is decided as [`Decision::append`] decides it, over the
-    /// memory that holds every change decided before it, so the run writes
-    /// the objects that one append after another writes. The new objects
-    /// are placed once every event is decided, in the order decided, with
-    /// one directory sync. Answers each event's name: the change written, or
-    /// the twin that stands for it.
+    /// Decide each event as [`Decision::append`] does, over the changes
+    /// decided before it, and answer each event's name: the change written,
+    /// or the twin that stands for it. Law 76: the run writes the objects
+    /// that one append after another writes.
     ///
     /// # Errors
     ///
-    /// [`Stopped`] at the first event refused, with the names of the events
-    /// decided before it, which are placed; or where the placement fails,
-    /// with no names, and the objects renamed into place before the failure
-    /// are in the store, as an adoption cut short is.
+    /// [`Stopped`] at the first event refused, with the names of the placed
+    /// events before it; or where the placement fails, with no names, and
+    /// the objects renamed into place before the failure are in the store.
     pub fn append_all(
         &mut self,
         events: impl IntoIterator<Item = E>,
@@ -297,15 +283,8 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
         self.memory.admit(&names, Vec::new());
     }
 
-    /// [`EventStore::husk`] under this lock: each object `names` names that
-    /// the history holds whole, as a `Change` whose event holds a sealed
-    /// part, replaced by its husk, file by file, and in the memory. The
-    /// husk is made from the object in memory, which the look under this
-    /// lock verified against its name. Every other name is passed over.
-    /// Answers the names husked.
-    ///
-    /// The heads do not change, so the record of heads stays true at every
-    /// stop, and is not removed.
+    /// [`EventStore::husk`] under this lock, in the files and in the memory;
+    /// answers the names husked.
     ///
     /// # Errors
     ///
@@ -385,7 +364,7 @@ enum Run {
 }
 
 /// A run of appends that stopped ([`Decision::append_all`]): the names of
-/// the events decided and placed before it stopped, and why it stopped.
+/// the events placed before it stopped, and why it stopped.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Stopped {
     pub placed: Vec<Hash>,

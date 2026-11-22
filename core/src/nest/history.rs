@@ -5,25 +5,13 @@ use std::collections::BTreeSet;
 
 use super::path::Path;
 
-/// A HISTORY KEYED BY PATH: a finite set of `(path, value)` pairs.
+/// A history keyed by path: a finite set of `(path, value)` pairs, which
+/// forms a monad, `P(Path × T)` (law 39).
 ///
-/// THE MONAD IS BUILT FROM TWO FREE STRUCTURES. Values form the finite
-/// powerset, whose join is union (design §1); keys are paths, the free
-/// monoid ([`Path`]). A history is the powerset of the monoid's writer,
-/// `P(Path × T)`: Haskell's `WriterT Path Set`, were `Set` a `Monad`:
-///
-/// - [`History::unit`] is a value at the root, `{(ε, v)}`;
-/// - [`History::join`] flattens a history of histories, putting each inner
-///   value at its outer key then its inner one, `{(p·q, v)}`;
-/// - [`History::bind`] is `join ∘ fmap f`: every value given its own
-///   sub-history, flattened under its key.
-///
-/// Unit and associativity are those two structures' laws: `ε` is the unit
-/// of `·` and `·` is associative, and a union of unions is one union
-/// (`core/tests/all/nest.rs`). A value is never changed by flattening; only
-/// its key gains a prefix. Which is why a content-addressed object, whose
-/// name is its bytes, is never renamed by one and none of its deps is
-/// rewritten.
+/// [`History::join`] puts each inner value at its outer key and then its
+/// inner key, `{(p·q, v)}`. Flattening never changes a value and only adds
+/// a prefix to its key, so it renames no content-addressed object and
+/// rewrites none of its deps.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct History<T>(BTreeSet<(Path, T)>);
 
@@ -62,9 +50,8 @@ impl<T: Ord> History<T> {
             .collect()
     }
 
-    /// `join ∘ fmap f`: each value given the sub-history `f` makes of it,
-    /// flattened under that value's key. Local state per entity: each
-    /// todo's draft, each conversation's lines, as one history.
+    /// `join ∘ fmap f`: each value given the sub-history that `f` makes of
+    /// it, flattened under that value's key.
     pub fn bind<U: Ord>(self, f: impl FnMut(T) -> History<U>) -> History<U> {
         self.fmap(f).join()
     }
@@ -87,13 +74,9 @@ impl<T: Ord> History<T> {
         )
     }
 
-    /// THE RESTRICTED JOIN: this history, and the values `chosen` keeps of
-    /// `inner` held at `at`, flattened. It reads as this history plus exactly
-    /// the chosen values, each under `at`; at the root, `at` is no prefix and
-    /// they read as this history's own. An agent's batch accepted object by
-    /// object, an overlay's flush (everything chosen) and an admitted
-    /// plugin's store are this shape, and [`crate::store::accept`] is it for
-    /// replicas.
+    /// The restricted join: this history plus exactly the values that
+    /// `chosen` keeps of `inner`, each under `at`. At the root, `at` adds no
+    /// prefix. [`crate::store::accept`] does the same for replicas.
     #[must_use]
     pub fn accept(
         self,
@@ -125,10 +108,9 @@ impl<T: Ord> History<T> {
 }
 
 impl<T: Ord + Clone> History<T> {
-    /// READING AT A PATH: the values whose keys begin with `path`, each at
-    /// what follows it. Reading commutes with join: where a nest holds its
-    /// histories at keys none of which begins another, reading the joined
-    /// history at one of them is reading the history held there.
+    /// The values whose keys begin with `path`, each at what follows it.
+    /// Where no key of a joined history begins another, reading the joined
+    /// history at one of them reads the history held there (law 39).
     #[must_use]
     pub fn at(&self, path: &Path) -> History<T> {
         self.0
@@ -139,8 +121,8 @@ impl<T: Ord + Clone> History<T> {
 }
 
 impl<T: Ord> History<History<T>> {
-    /// `P (P e) → P e`: every inner value at its outer key then its inner
-    /// one. Renames no value; only keys gain a prefix.
+    /// `P (P e) → P e`: every inner value at its outer key and then its
+    /// inner key.
     #[must_use]
     pub fn join(self) -> History<T> {
         self.0

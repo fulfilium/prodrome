@@ -1,19 +1,19 @@
 //! A holder whose pairs are in one file (design §6.2; SPEC §6, "A cache
 //! file").
 //!
-//! The file is a header and then a run of records, each one
-//! pair, each carrying the SHA-256 of its own bytes. A holder keeps an index
-//! in memory from each key to where its records lie, and checks a record
-//! each time it reads one. So a record that a stop cut short, that the disk
-//! damaged, or that another program wrote in another form is not a value:
-//! its key misses (SPEC law 52).
+//! The file is a header and then a run of records, each record one pair
+//! with the SHA-256 of its own bytes. A holder keeps an index in memory
+//! from each key to where its records lie, and checks a record each time it
+//! reads one. So a record that a stop cut short, that the disk damaged, or
+//! that another program wrote in another form is not a value: its key
+//! misses (law 52).
 //!
-//! A DEAD RECORD keeps its mark and its length, and has zeros for the rest:
+//! A dead record keeps its mark and its length, and has zeros for the rest:
 //! its names, its value and its check. A dead record frames as a record of
-//! that length, so every holder agrees where the records of a file end,
-//! and no byte of its value is left.
+//! that length, so every holder agrees where the records of a file end, and
+//! no byte of its value is left.
 //!
-//! THE ORDER OF WRITES. A holder puts each new record in a buffer in memory.
+//! The order of writes. A holder puts each new record in a buffer in memory.
 //! It writes the buffer when the buffer is full, at [`Holder::settle`], and
 //! when the holder is dropped. To write, it takes an exclusive `flock` on
 //! the file and reads the records that other holders appended. It first
@@ -25,36 +25,37 @@
 //! whole records and one record cut short at the end, which is no entry. A
 //! record that the disk did not keep, or kept in part, is no entry. So a
 //! stop at any point leaves a file that holds a subset of the pairs that
-//! were written (SPEC law 54).
+//! were written (law 54).
 //!
-//! TWO PROCESSES that write one file each take the lock for each write. A
+//! Two processes that write one file each take the lock for each write. A
 //! holder reads a record without a lock and checks it instead. When a
 //! record that its index names does not check, the holder reads the file
 //! again under a shared lock. A removal kills every record of the key that
 //! the file holds when the holder writes, a copy that another holder wrote
-//! included (SPEC law 57).
+//! included (law 57).
 //!
-//! THE BOUND. When the dead bytes are more than the live bytes and more
-//! than [`SLACK`], the holder COMPACTS the file in place. Under the
+//! The bound. When the dead bytes are more than the live bytes and more
+//! than [`SLACK`], the holder compacts the file in place. Under the
 //! exclusive lock it raises the generation in the header, writes the live
 //! records that check one after the other from the header, truncates the
 //! rest, and syncs. So a file is at most twice its live records, the slack
 //! and one buffer long, and a policy that bounds the keys bounds the file
-//! ([`super::Cache`], SPEC law 58). Another process sees the new generation
-//! and reads the file again. The file keeps its inode, so every process that
-//! holds it open reads the compacted file. A stop during a compaction can
-//! lose a live record: a record that moves toward the header by less than
-//! its own length is overwritten by the start of its own new copy. What is
-//! left is still a subset of what was written.
+//! (law 58). Another process sees the new generation and reads the file
+//! again. The file keeps its inode, so every process that holds it open
+//! reads the compacted file. A stop during a compaction can lose a live
+//! record: a record that moves toward the header by less than its own
+//! length is overwritten by the start of its own new copy. What is left is
+//! still a subset of what was written.
 //!
-//! MEMORY. A holder reads the whole file into memory to read it again, and
-//! a compaction holds the old file and the new one at once: at most twice
-//! the file's length, with an index of about 100 bytes for each key.
+//! A holder reads the whole file into memory to read it again, and a
+//! compaction holds the old file and the new one at once. So a holder needs
+//! memory of at most twice the file's length, and an index of about 100
+//! bytes for each key.
 //!
-//! FORGETTING ([`Holder::forget`]) kills every record of each doomed key,
-//! no further than the next mark where a length was never checked, syncs,
-//! and then compacts and syncs. Then no record of a doomed key, and no
-//! damaged remnant of any record, is left in the file (SPEC law 55).
+//! A forget ([`Holder::forget`]) kills every record of each doomed key, no
+//! further than the next mark where a length was never checked, syncs, and
+//! then compacts and syncs. Then no record of a doomed key, and no damaged
+//! remnant of any record, is left in the file (law 55).
 
 mod record;
 
@@ -79,10 +80,11 @@ const MAGIC: [u8; 8] = *b"\xffprodmc1";
 /// The length of the header: the magic and the generation.
 const HEADER: u64 = 16;
 
-/// The dead bytes that a file may hold however few its live bytes are.
+/// The dead bytes that a file may hold, however few its live bytes are.
 pub const SLACK: u64 = 1 << 16;
 
-/// The length of the buffer of new records at which a holder writes it.
+/// The length in bytes of the buffer of new records at which a holder
+/// writes the buffer.
 pub const BATCH: usize = 1 << 18;
 
 /// The pairs of a cache, in one file. A value is kept as the canonical

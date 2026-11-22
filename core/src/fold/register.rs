@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use crate::fold::{Inflationary, Order};
 use crate::schema::Schema;
 
-/// A join-semilattice: joining the same writes in any order is one value.
+/// A join-semilattice: joining the same writes in any order gives one value.
 pub trait Register: Default {
     type Write;
 
@@ -30,8 +30,9 @@ pub trait RegisterType<E: Schema> {
     /// The register's values, under their order.
     type Value<'e>: Order;
 
-    /// The value `event` writes to this register, `None` where it writes
-    /// none: the route, one register at a time. `Some` exactly for the events
-    /// whose [`Schema::writes`] names the register.
+    /// The value that `event` writes to this register, or `None`.
+    ///
+    /// An implementation must return `Some` exactly for the events whose
+    /// [`Schema::writes`] names the register.
     fn value(event: &E) -> Option<Self::Value<'_>>;
 }
