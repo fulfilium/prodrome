@@ -74,7 +74,8 @@ pub struct Int {
 }
 
 impl Int {
-    /// Refuses `digits` unless they are nonempty ASCII decimal digits.
+    /// Refuses `digits` unless they are nonempty ASCII decimal digits. Strips
+    /// leading zeros; `-0` is `0`.
     pub fn new(negative: bool, digits: &str) -> Result<Int, ProdromeError> {
         if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
             return Err(ProdromeError::parse(format!(
@@ -658,7 +659,8 @@ fn push_str_repr(out: &mut String, text: &str) {
 
 /// How deep a literal may nest before the parser refuses. CPython refuses a
 /// deeper one with a `ValueError`; without the limit, a recursive parser in
-/// Rust would overflow its stack, which aborts instead of refusing.
+/// Rust would overflow its stack, which aborts instead of refusing. The bound
+/// is that guarantee: do not raise it past what the stack allows.
 const MAX_DEPTH: usize = 128;
 
 /// Parses exactly the grammar of SPEC §2 against `vocabulary`.

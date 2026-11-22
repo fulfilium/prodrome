@@ -253,8 +253,8 @@ constructor's fields never change, in any release.
   `prodrome::fpl::` to `prodrome_data::instant::` in these paths. The doc
   comments of `prodrome-data` are shorter, by the rule of stage 1, and its
   root doc lists what a program needs to build, stamp, print, parse and
-  hash events. The face of `prodrome-data` is 19,140 tokens by
-  `scripts/face.py --lines data`, in place of 22,291, and 11,589 tokens by
+  hash events. The face of `prodrome-data` is 19,231 tokens by
+  `scripts/face.py --lines data`, in place of 22,291, and 11,669 tokens by
   the rustdoc measure, in place of 14,083. This change narrows no item. No
   behaviour, stored byte, conformance vector or law changes.
 - **The data of a store is its own crate, `prodrome-data` (issue #92,

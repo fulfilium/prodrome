@@ -415,7 +415,7 @@ pub fn tuple<'v>(value: &'v Value, context: &dyn Display) -> Result<&'v [Value],
 }
 
 /// A set prints as a sorted tuple with each member once; a read refuses any
-/// other order, so a set has one print.
+/// other order and a repeated member, so a set has one print.
 impl<T: Literal + Ord> Literal for BTreeSet<T> {
     fn to_value(&self) -> Value {
         Value::Tuple(self.iter().map(Literal::to_value).collect())

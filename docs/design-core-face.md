@@ -367,7 +367,7 @@ So the stages of section 5 have these targets, in the line measure:
 | 2, the narrowing | 100,000 | 19,000 | 36,000 |
 | 3, the data crate | | 15,000 | |
 | 3, as made (section 8) | 92,381 without the data crate | 22,260 | |
-| 3, the instants and the words (section 9) | 92,204 without the data crate | 19,140 | |
+| 3, the instants and the words (section 9) | 92,204 without the data crate | 19,231 | |
 | 4, each further crate | | | under 25,000 in each of two crates |
 
 Stage 2 reaches its numbers by removing `pub` from items that only their
@@ -725,7 +725,7 @@ that a program outside the library can reasonably need.
 
 **The words.** The doc comments of the data crate had a third pass by the
 rule of section 2. The doc characters of `data/src` fell from 50,899 to
-36,695, with the new module `instant` included. Each item that is
+37,135, with the new module `instant` included. Each item that is
 `#[doc(hidden)]` for the core has one doc line, which starts with "For
 the core; no promise." The pass listed each deleted sentence that gave a
 reason, an invariant or a hazard, with the place where it is still
@@ -733,7 +733,7 @@ stated: `SPEC.md`, a design note, or the doc that remains. One detail
 that was stated nowhere else was restored: the path that `Topo::settle`
 gives to `cycle` starts and ends at the key. With blank lines
 and comment lines removed, each file of `data/src` equals the file
-before the pass. The root doc of the data crate lists, in ten lines, what
+before the pass. The root doc of the data crate lists, in eleven lines, what
 a program needs to define a schema, stamp an event, print and parse it,
 put it in an object and name the object.
 
@@ -743,21 +743,21 @@ it measured before the commits that answered its review.
 
 | Measure | `prodrome-data` before | `prodrome-data` after | `prodrome-core` before | `prodrome-core` after |
 |---|--:|--:|--:|--:|
-| lines (`scripts/face.py --lines`) | 22,291 | 19,140 | 92,533 | 92,204 |
-| rustdoc, default features | 14,083 | 11,589 | 38,480 | 38,311 |
+| lines (`scripts/face.py --lines`) | 22,291 | 19,231 | 92,533 | 92,204 |
+| rustdoc, default features | 14,083 | 11,669 | 38,480 | 38,311 |
 | rustdoc, with `laws` | | | 42,302 | 42,133 |
 
 The core's figures do not count the data crate. The line measure counts
 the items that are `#[doc(hidden)]` and the module roots: it counts
 `lib.rs` as the module `lib`, and every `//!` line of every file. So the
 script needs no flag for them. The hidden items that are not methods,
-with the impls of the hidden types, are 955 of the 19,140 tokens, and 948
+with the impls of the hidden types, are 955 of the 19,231 tokens, and 948
 of the 22,291 before. The rustdoc measure leaves the hidden items out.
 
 The application's own tool gave about 26,000 tokens where
 `scripts/face.py --lines` gave 22,291, which is 17 percent more. This
 note could not run that tool. If the ratio holds, the data crate is
-about 22,400 tokens by that tool, which is under the budget of 25,000.
+about 22,500 tokens by that tool, which is under the budget of 25,000.
 
 **The timings.** The benchmark of section 8, in the release profile with
 no link-time optimisation: a store of 15,000 objects over 100 todos,
