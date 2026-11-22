@@ -284,9 +284,14 @@ serve any bytes, and only the listing can change.
 - **Caching.** An object's name is the hash of its bytes, so an object
   never changes. From this site, the service worker keeps each object in a
   cache for good. From another host, it keeps nothing itself: the page
-  puts an object in a cache only after the core has kept it, and at most
-  20,000 such objects, and the worker serves an object of another host
-  from that cache or from the network. So a host that serves wrong bytes
+  puts an object in a cache only after the core has kept it, and the
+  worker serves an object of another host from that cache or from the
+  network. The cache holds at most 20,000 objects and 32 MiB of their text,
+  counted at two bytes a character, the most that the browser stores for
+  it; so its worst case is 32 MiB of objects and the browser's overhead
+  for each of 20,000 entries. When an object would take the cache past a
+  bound, the page drops the whole cache and starts it again, so the cache
+  never stays full. So a host that serves wrong bytes
   once is not remembered, and a link cannot fill the browser's quota with
   unchecked bytes. The worker does not cache a listing of another host. A
   host's own cache can keep an old listing for some minutes (300 s for
@@ -294,9 +299,11 @@ serve any bytes, and only the listing can change.
   never a wrong object.
 - **Bounds.** For one address, the page reads at most 20,000 objects, an
   object of at most 1 MiB, at most 64 MiB of objects, and a listing of at
-  most 16 MiB. It sends at most 16 requests at once, and stops after 60 s.
-  At each bound, the page says which bound the store met, and shows what
-  it read.
+  most 16 MiB. It counts a body as it arrives and stops reading at the
+  bound, so a host that sends no length, a false one, or a body with no
+  end costs at most the bound. It sends at most 16 requests at once, and
+  stops after 60 s. At each bound, the page says which bound the store
+  met, and shows what it read.
 - **Load.** A load of a store costs one listing and one request for each
   object that the browser does not hold. A second load costs the listing
   only.
@@ -306,16 +313,20 @@ serve any bytes, and only the listing can change.
 Anyone can write a link that makes this page load a store that they host.
 The page keeps these promises to the person who opens such a link:
 
-1. **No text of a store that a link names is run.** An item's text can be
-   Typst markup, and markup is code: it can spell any HTML element, loop
-   for ever, and read the data of every loaded store. So the page typesets
-   the text of a store that this site does not serve as written, and says
-   so. Only this site's own store, on a page that shows nothing else, has
-   its text read as Typst. (In the viewer, an item's markup runs inside the
-   package's `eval`, where `/data.json` names a file of the package, so it
-   cannot read the data today; the rule does not rest on that.)
-2. **The typeset part holds no script, style or form.** For every store,
-   this site's own included, the page drops scripts, frames, plugins,
+1. **No item's text is run.** An item's text can be Typst markup, and
+   markup is code: it can spell any HTML element, loop for ever, and read
+   the data of every loaded store. A store's text comes from whoever can
+   write to the store. Even this site's own store holds text that anyone
+   can write: the issue mirror copies each issue's title into it. Whether
+   text may be markup depends on who wrote it, and no store can say yet
+   which writers may write markup. So the page typesets every item's text
+   as written, on every page. The package keeps its `markup` option for a
+   host that can say. (In the viewer, an item's markup would run inside
+   the package's `eval`, where `/data.json` names a file of the package, so
+   it could not read the data today; the rule does not rest on that.)
+2. **The typeset part holds no script, style or form.** The page's own
+   documents and the editor's preview of the visitor's own text still make
+   HTML, so for every page the sanitiser drops scripts, frames, plugins,
    forms and their controls, `<style>`, media, SVG animations and foreign
    objects; every handler `on…`; every `style` and `id` but Typst's own on
    its drawings; and every `name`, `ping`, `formaction`, `srcset`, `srcdoc`
@@ -335,7 +346,10 @@ The page keeps these promises to the person who opens such a link:
 `viewer/test/stores.mjs` checks each of these with a store, `gamma`, whose
 items are crafted to attack the page: a style element that hides the
 notices, a fixed layer with one link, a read of the data file, an endless
-loop, and an element named `createElement`.
+loop, an element named `createElement`, and an issue's title in markup as
+the issue mirror writes it. It loads `gamma` from a link and as this
+site's own store, serves two bodies with no end, and runs the sanitiser's
+cases (`viewer/test/sanitise.test.ts`) in the browser.
 
 ## 7. Writing, later
 
@@ -375,5 +389,5 @@ the person's own action.
   before.
 
 The size of the viewer's script, built with the same tools before and
-after: `app.js` grew from 138,105 to 159,812 bytes (39,921 to 47,802
+after: `app.js` grew from 138,105 to 159,898 bytes (39,921 to 47,789
 bytes compressed with gzip -9), and `sw.js` from 1,561 to 1,743 bytes.

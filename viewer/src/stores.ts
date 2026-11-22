@@ -25,7 +25,6 @@
 
 import { baseOf, labels, printAddress, type Address, type Pin, type Route } from "./address";
 import type { Fetched, Lister, Listing } from "./fetch";
-import type { Texts } from "./typst";
 import { read, type Core, type Entry, type ObjectIn, type Replica, type Target, type View } from "./view";
 import { iso, type Naive } from "./time";
 
@@ -265,8 +264,7 @@ export function hrefOf(key: string, query: string): string {
  * store, in the core's one list order. `route` says which item the page is
  * about, if any. With one store a row's key is its todo id, as on a page
  * of one store; with several it is `<label>/<todo>`, so two stores' items
- * never share a key, whatever their ids. `texts` says how the page reads
- * the items' text: as Typst only when every store is this site's own.
+ * never share a key, whatever their ids.
  */
 export function readStores(
   core: Core,
@@ -274,7 +272,7 @@ export function readStores(
   now: Naive,
   route: Route,
   query: string,
-): { page: Page; notices: Notice[]; shelves: Shelf[]; texts: Texts } {
+): { page: Page; notices: Notice[]; shelves: Shelf[] } {
   const at = iso(now);
   const notices = checked.map((c) => c.notice).filter((n) => n.lines.length > 0);
   const grouped = group(checked.flatMap((c) => (c.kind === "kept" ? [c] : [])));
@@ -420,8 +418,7 @@ export function readStores(
     addresses: part.store.sources.map((s) => s.source.shown),
     from: part.store.sources.every((s) => s.source.lister.kind === "site") ? ("site" as const) : ("where" as const),
   }));
-  const texts: Texts = site ? { kind: "markup" } : { kind: "verbatim" };
-  return { page, notices, shelves, texts };
+  return { page, notices, shelves };
 }
 
 /** The sources a fragment's addresses name, each with its label, in order. */

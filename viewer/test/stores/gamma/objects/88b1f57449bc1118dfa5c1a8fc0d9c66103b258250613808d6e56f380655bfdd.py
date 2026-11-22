@@ -1,0 +1,1 @@
+Change(genesis='4a8ea7d269ed88a18dee82dd659a6387423ed0c6d3633a1ff2b1e97354a65ab3', deps=('b842829c63fc5838f864bbb5cec822f788900d6d759589b780449ef3f5110317',), event=SpecRevised(todo='gh-1', at=datetime(2026, 11, 3, 11, 0, 0), actor='github-mirror', spec=Flat(value=0.5), note=''))

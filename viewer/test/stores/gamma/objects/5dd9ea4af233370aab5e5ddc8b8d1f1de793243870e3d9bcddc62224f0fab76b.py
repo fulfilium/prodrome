@@ -1,1 +1,0 @@
-Change(genesis='055bc502f034292618d5867486560cb7f380226a07b2caa3cdc33eb4d2a02fc2', deps=(), event=Created(todo='g-style', at=datetime(2026, 11, 3, 10, 1, 0), actor='ada', text='#html.elem("style", "#notices, #stores { display: none }")', note=''))

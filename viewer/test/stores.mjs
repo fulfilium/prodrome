@@ -11,9 +11,9 @@
 // altered copies of `alpha`: a copy with the objects of `a2` left out, a copy
 // whose `Created` of `a2` has one byte changed, a copy whose listing names an
 // object it does not serve, the same store under a second address, and one
-// address that holds both `alpha` and `gamma`. The app's host also serves,
-// under `/site/`, a site whose own store is most of `gamma`, whose text the
-// page runs as Typst.
+// address that holds both `alpha` and `gamma`, and two hosts that send a
+// body with no end. The app's host also serves, under `/site/`, a site whose
+// own store is `gamma`.
 // SHOTS, if given, is a directory for pictures of the list and of an item.
 // Needs Playwright, as smoke.mjs does; not part of `nix flake check`.
 import { createServer } from "node:http";
@@ -46,11 +46,11 @@ const alpha = await objectsOf("alpha");
 const beta = await objectsOf("beta");
 const gamma = await objectsOf("gamma");
 const geneses = JSON.parse(await readFile(join(stores, "geneses.json"), "utf8"));
-// This site's own store, for case 11: gamma less the two items that Typst
-// itself refuses (an endless loop, and a read of `/data.json`, which from the
-// package's `eval` names a file in the package), so the page typesets the
-// rest as Typst and the sanitiser meets what that text spells.
-const siteStore = gamma.filter((o) => !/todo='g-(loop|read)'/.test(o.text));
+// This site's own store, for case 11: all of gamma, the issue's title in
+// markup included. A copy less the two items that Typst itself refuses (an
+// endless loop, and a read of `/data.json`) is `gamma-typst`, for case 8.
+const siteStore = gamma;
+const runnable = gamma.filter((o) => !/todo='g-(loop|read)'/.test(o.text));
 const ofA2 = alpha.filter((o) => o.text.includes("todo='a2'"));
 const createdA2 = ofA2.find((o) => o.text.includes("Created("));
 const absent = "0".repeat(64);
@@ -67,7 +67,9 @@ const served = {
   },
   "alpha-gap": { objects: alpha, listed: [...alpha.map((o) => o.hash), absent] },
   gamma: { objects: gamma, listed: gamma.map((o) => o.hash) },
-  "gamma-typst": { objects: siteStore, listed: siteStore.map((o) => o.hash) },
+  "gamma-typst": { objects: runnable, listed: runnable.map((o) => o.hash) },
+  "endless-object": { objects: alpha, listed: alpha.map((o) => o.hash), endless: "object" },
+  "endless-index": { objects: alpha, listed: alpha.map((o) => o.hash), endless: "index" },
   "alpha-gamma": { objects: [...alpha, ...gamma], listed: [...alpha, ...gamma].map((o) => o.hash) },
 };
 
@@ -79,10 +81,22 @@ const storeServer = createServer((req, res) => {
   const at = served[store];
   if (at === undefined) return res.writeHead(404, headers).end();
   const path = rest.join("/");
+  const object = /^objects\/([0-9a-f]{64})\.py$/.exec(path);
+  // A body with no end and no stated length: for the listing, or for the
+  // first object of the listing.
+  if ((at.endless === "index" && path === "index.json") || (at.endless === "object" && object?.[1] === at.listed[0])) {
+    res.writeHead(200, { ...headers, "content-type": TYPES[".py"] });
+    const chunk = Buffer.alloc(1 << 16, 0x20);
+    const more = () => {
+      if (res.destroyed) return;
+      res.write(chunk, () => setImmediate(more));
+    };
+    res.on("close", () => res.destroy());
+    return more();
+  }
   if (path === "index.json") {
     return res.writeHead(200, { ...headers, "content-type": TYPES[".json"] }).end(JSON.stringify(at.listed));
   }
-  const object = /^objects\/([0-9a-f]{64})\.py$/.exec(path);
   const found = object && at.objects.find((o) => o.hash === object[1]);
   if (!found) return res.writeHead(404, headers).end();
   res.writeHead(200, { ...headers, "content-type": TYPES[".py"] }).end(found.text);
@@ -247,7 +261,6 @@ await open(`#/?gamma=${at("gamma-typst")}&alpha=${at("alpha")}`);
 let seen = await attacks();
 check(seen.styles === 0 && seen.styled === 0 && seen.named === 0 && seen.dom === "function", `a foreign store's crafted text adds no style, layer or name (${JSON.stringify({ ...seen, text: undefined })})`);
 check(seen.text.includes('#html.elem("style"'), "a foreign store's text is shown as written");
-check(seen.text.includes("never run as Typst"), "the page says that a foreign store's text is not run");
 check(await page.locator("#stores").isVisible(), "the page names where each store comes from");
 await open(`#/?gamma=${at("gamma")}`);
 check((await attacks()).text.includes("#while true {}"), "an endless loop in a foreign store's text is shown, and the page is typeset");
@@ -265,13 +278,38 @@ said = await notices();
 check(said.includes("3 addresses hold the same prodrome"), `the page joins all three addresses, and says so: ${said}`);
 check(JSON.stringify((await rows()).map((r) => r.key).filter((k) => k.endsWith("/a1")).sort()) === JSON.stringify(parts.map((p) => p.replace(/^x-/, "alpha-"))), "and shows both a1 rows under the first address's label");
 
-// 11. This site's own store is typeset as Typst, and the sanitiser drops what its text spells.
+// 11. This site's own store is shown as written too: an issue's title, which
+// anyone may write, is in it, and no store says yet who may write markup.
 await page.goto("about:blank");
 await page.goto(`${base}site/#/`);
 await page.waitForSelector('body[data-state="typeset"]', { timeout: 120_000 });
 seen = await attacks();
-check(seen.styles === 0 && seen.styled === 0 && seen.named === 0 && seen.dom === "function", `the sanitiser drops styles, layers and names from this site's own store (${JSON.stringify({ ...seen, text: undefined })})`);
-check(!seen.text.includes("shown as written") && !seen.text.includes('#html.elem("style"'), "this site's own store is typeset as Typst");
+check(seen.styles === 0 && seen.styled === 0 && seen.named === 0 && seen.dom === "function", `this site's own crafted text adds no style, layer or name (${JSON.stringify({ ...seen, text: undefined })})`);
+check(seen.text.includes('*Mirrored* #html.elem("style"') && seen.text.includes("#while true {}"), "this site's own text, an issue's title included, is shown as written");
+
+// 12. A host that sends a body with no end: the page stops at its bound and says so.
+await open(`#/?${at("endless-object")}&${at("endless-index")}`);
+said = await notices();
+check(said.includes("larger than 1048576 bytes, the page's bound"), `an endless object is cut at its bound: ${said}`);
+check(said.includes("index.json is larger than 16777216 bytes"), `an endless listing is cut at its bound: ${said}`);
+
+// 13. The cache of checked objects counts what it holds.
+await open(`#/?${at("beta")}`);
+await page.waitForFunction(
+  async () => {
+    const hit = await (await caches.open("prodrome-checked")).match(new URL("prodrome-checked-tally", location.href).href);
+    return hit !== undefined && (await hit.json()).objects > 0;
+  },
+  null,
+  { timeout: 30_000, polling: 200 },
+);
+check(true, "the cache of checked objects keeps its tally");
+
+// 14. The sanitiser, case by case (test/sanitise.test.ts, in a build for tests).
+await page.goto("about:blank");
+await page.addScriptTag({ content: await readFile(join(app, "sanitise-test.js"), "utf8") });
+const sanitised = await page.evaluate(() => window.sanitised);
+check(sanitised.failed.length === 0, `the sanitiser holds in ${sanitised.cases} cases${sanitised.failed.length ? ": " + sanitised.failed.join(" | ") : ""}`);
 check(await page.locator("#stores").isHidden(), "a page of this site's own store needs no list of stores");
 
 // THE ADDRESSES REACH NO HOST BUT THE STORES': the app's host is asked

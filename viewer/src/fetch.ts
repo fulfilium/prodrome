@@ -47,12 +47,37 @@ export const BOUNDS = {
  */
 const ASK: RequestInit = { credentials: "omit", referrerPolicy: "no-referrer", redirect: "follow", mode: "cors" };
 
-/** A body read whole, or why not: larger than `most` bytes, or not sent. */
+/**
+ * A body read whole, or `large`: more than `most` bytes. The body is read
+ * through its reader and counted as it arrives, so a host that sends no
+ * length, or a false one, or a body with no end, costs the page at most
+ * `most` bytes; at the bound the page cancels the body.
+ */
 async function bounded(response: Response, most: number): Promise<{ kind: "read"; bytes: Uint8Array } | { kind: "large" }> {
   const said = Number(response.headers.get("content-length"));
-  if (Number.isFinite(said) && said > most) return { kind: "large" };
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  return bytes.length > most ? { kind: "large" } : { kind: "read", bytes };
+  if (Number.isFinite(said) && said > most) {
+    await response.body?.cancel();
+    return { kind: "large" };
+  }
+  if (response.body === null) return { kind: "read", bytes: new Uint8Array(0) };
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (let chunk = await reader.read(); !chunk.done; chunk = await reader.read()) {
+    total += chunk.value.length;
+    if (total > most) {
+      await reader.cancel();
+      return { kind: "large" };
+    }
+    chunks.push(chunk.value);
+  }
+  const bytes = new Uint8Array(total);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  return { kind: "read", bytes };
 }
 
 /** UTF-8 text, byte for byte: a leading byte-order mark is kept, so the core sees what the host sent. */

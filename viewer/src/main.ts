@@ -24,7 +24,8 @@ import { editor } from "./editor";
 import { BOUNDS, fetchObjects, list } from "./fetch";
 import { check, hrefOf, readStores, SITE, sources, type Checked, type Notice, type Page, type Shelf, type Source } from "./stores";
 import { wall, type Naive } from "./time";
-import { body, compilePage, itemDocument, listDocument, scratchDocument, type Typst } from "./typst";
+import { body } from "./sanitise";
+import { compile, itemDocument, listDocument, scratchDocument, type Typst } from "./typst";
 import type { Entry } from "./view";
 
 declare const __BUILD__: string;
@@ -92,30 +93,53 @@ async function load(stores: Source[]): Promise<Checked[]> {
 
 /** The cache of objects from other hosts that the core has checked; the service worker reads it. */
 const CHECKED = "prodrome-checked";
-/** The most objects from other hosts that the page keeps in the browser. */
-const MOST_CACHED = 20_000;
+/**
+ * The bounds on that cache: at most 20,000 objects and 32 MiB of their
+ * bytes, counted as UTF-16 text is stored at most (two bytes a character).
+ * An object is at most 1 MiB (`BOUNDS.objectBytes`), and the page checks the
+ * bound before it adds one, so the cache holds at most 32 MiB of objects,
+ * and the browser's own overhead for each of at most 20,000 entries.
+ */
+const CACHE_BOUNDS = { objects: 20_000, bytes: 32 << 20 };
+/** The cache's count of what it holds: an entry under a URL that the page never fetches. */
+const TALLY = new URL("prodrome-checked-tally", location.href).href;
+
+interface Tally {
+  objects: number;
+  bytes: number;
+}
 
 /**
  * Keep the objects from other hosts that the core kept, so that a second
  * visit fetches only the listing. Nothing is kept before the core checked
- * it, and nothing once the cache holds `MOST_CACHED` objects. A failure of
- * the cache costs a fetch, never the page.
+ * it. When an object would take the cache past a bound, the page drops the
+ * whole cache and starts it again, so the cache never stays full. Two tabs
+ * that write at once can make the tally low by what one of them added,
+ * which a later drop clears. A failure of the cache costs a fetch, never
+ * the page.
  */
 async function remember(checked: Checked[]) {
   if (!("caches" in self)) return;
   try {
-    const cache = await caches.open(CHECKED);
-    let room = MOST_CACHED - (await cache.keys()).length;
+    let cache = await caches.open(CHECKED);
+    const stored = await cache.match(TALLY);
+    let tally: Tally = stored ? ((await stored.json()) as Tally) : { objects: 0, bytes: 0 };
     for (const c of checked) {
       if (c.kind !== "kept" || c.source.lister.kind === "site") continue;
       for (const object of c.objects) {
-        if (room <= 0) return;
         const url = new URL(`${c.source.base}objects/${object.hash}.py`, location.href).href;
         if (await cache.match(url)) continue;
+        const bytes = 2 * object.text.length;
+        if (tally.objects + 1 > CACHE_BOUNDS.objects || tally.bytes + bytes > CACHE_BOUNDS.bytes) {
+          await caches.delete(CHECKED);
+          cache = await caches.open(CHECKED);
+          tally = { objects: 0, bytes: 0 };
+        }
         await cache.put(url, new Response(object.text, { headers: { "content-type": "text/plain; charset=utf-8" } }));
-        room--;
+        tally = { objects: tally.objects + 1, bytes: tally.bytes + bytes };
       }
     }
+    await cache.put(TALLY, new Response(JSON.stringify(tally), { headers: { "content-type": "application/json" } }));
   } catch {
     return;
   }
@@ -276,7 +300,7 @@ async function main() {
       now = wall(new Date());
     }
     const at = read.route;
-    const { page: view, notices: found, shelves, texts } = readStores(prodrome, checked, now, at, query);
+    const { page: view, notices: found, shelves } = readStores(prodrome, checked, now, at, query);
     home.href = `#/${query}`;
     showStores(view, shelves, at);
     showNotices([...refusals(read), ...found]);
@@ -289,7 +313,7 @@ async function main() {
 
     const engine = await typst;
     if (ticket !== current) return;
-    const compiled = compilePage(engine, at.page === "list" ? listDocument : itemDocument, shown, texts);
+    const compiled = compile(engine, at.page === "list" ? listDocument() : itemDocument(), shown);
     if (compiled.html === null) {
       const errors = compiled.diagnostics.map((d) => d.message).join("; ");
       say(`Typst could not typeset this page: ${errors}`);
@@ -299,15 +323,6 @@ async function main() {
     }
     const content = document.createDocumentFragment();
     content.append(body(compiled.html));
-    if (compiled.read !== "markup") {
-      const note = document.createElement("p");
-      note.className = "note";
-      note.textContent =
-        compiled.read === "foreign"
-          ? "The text of a store that this site does not serve is shown as written, and never run as Typst."
-          : "This text is not valid Typst, so it is shown as written.";
-      content.append(note);
-    }
     if (at.page === "item" && shown.entries.some((e) => e.key === shown.focus)) {
       content.append(editor(engine, shown, scratchDocument()));
     }

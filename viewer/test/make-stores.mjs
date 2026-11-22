@@ -8,8 +8,9 @@
 // the item `a1` of the store `alpha`: its spec is `RefIn(store=<alpha's
 // genesis>, entity='a1')`, which the command line cannot spell, so the core
 // in the glue seals that one event into `beta`. The store `gamma` holds an
-// item `a1`, as `alpha` does, and items whose text is crafted to attack the
-// page if it ran that text as Typst. A genesis holds a random
+// item `a1`, as `alpha` does, items whose text is crafted to attack the page
+// if it ran that text as Typst, and an issue's title in Typst markup, as the
+// issue mirror writes it. A genesis holds a random
 // nonce, so each run makes stores with new names; the committed copy in
 // `viewer/test/stores/` is one run.
 import { execFileSync } from "node:child_process";
@@ -23,8 +24,9 @@ if (!cli || !glue || !out) {
   process.exit(2);
 }
 const core = createRequire(import.meta.url)(join(glue, "prodrome.js"));
-const env = { ...process.env, PRODROME_ACTOR: "ada" };
-const run = (...args) => execFileSync(cli, args, { env, stdio: ["ignore", "pipe", "inherit"] });
+const runAs = (actor, ...args) =>
+  execFileSync(cli, args, { env: { ...process.env, PRODROME_ACTOR: actor }, stdio: ["ignore", "pipe", "inherit"] });
+const run = (...args) => runAs("ada", ...args);
 
 const objects = (store) =>
   readdirSync(join(store, "objects"))
@@ -71,6 +73,9 @@ for (const [todo, body] of Object.entries(crafted)) {
   const at = `2026-11-03T10:${String(minute++).padStart(2, "0")}:00`;
   run("add", "--store", gamma, "--at", at, "--priority", "50", "--body", body, todo);
 }
+// An issue's title, as the issue mirror writes it: anyone may write one.
+runAs("github-mirror", "add", "--store", gamma, "--at", "2026-11-03T11:00:00", "--priority", "50",
+  "--body", `*Mirrored* #html.elem("style", "#stores { display: none }")`, "gh-1");
 for (const store of [alpha, beta, gamma]) {
   rmSync(join(store, ".heads"), { force: true });
   run("verify", "--store", store);

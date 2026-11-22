@@ -5,7 +5,8 @@
 // Every offset typst-wasm answers is in UTF-16 code units, the unit a
 // textarea's selection counts in, so nothing here converts.
 
-import { body, compile, type Typst } from "./typst";
+import { body } from "./sanitise";
+import { compile, type Typst } from "./typst";
 import type { Page } from "./stores";
 
 interface Highlight {

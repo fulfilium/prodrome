@@ -110,6 +110,13 @@ esbuild "$here/src/sw.ts" --bundle --format=iife --target=es2022 --minify \
   --define:__BUILD__="\"$build\"" --define:__SHELL__="[$shell]" \
   --outfile="$out/sw.js" --log-level=warning
 
+# A BUILD FOR TESTS also holds the sanitiser's cases (test/sanitise.test.ts),
+# which test/stores.mjs runs in a browser. The hosted build holds none.
+if [ "$loopback" = true ]; then
+  esbuild "$here/test/sanitise.test.ts" --bundle --format=iife --target=es2022 \
+    --outfile="$out/sanitise-test.js" --log-level=warning
+fi
+
 sed -i "s/__BUILD__/$build/g" "$out/index.html"
 echo "$build" > "$out/BUILD"
 rm -rf "$here/vendor"

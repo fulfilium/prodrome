@@ -1,1 +1,0 @@
-Change(genesis='a1a88f73a509ef8ba76fa89f5e5c83eb3fc9f350fbac6c8bce5104f28ab9a679', deps=('473fe25323d56a67d8b96582cae94cede47d1e548123eafad824bcfdbf4a7da1',), event=SpecRevised(todo='b2', at=datetime(2026, 11, 2, 10, 5, 0), actor='ada', spec=Flat(value=0.6), note=''))

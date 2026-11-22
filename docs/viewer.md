@@ -51,9 +51,10 @@ does not hold that genesis. A pin does not check that the address holds
 nothing else, or every object of the store: anyone can write objects that
 rest on a genesis, and a listing can leave objects out.
 
-The page shows the text of a store that this site does not serve as
-written. It runs no text of such a store as Typst. Above the list, the
-page names every store and the whole address it was loaded from.
+The page shows every item's text as written, and runs no item's text as
+Typst: a store's text comes from whoever can write to it, and no store can
+say yet who may write markup. Above the list, the page names every store
+and the whole address it was loaded from.
 
 The page needs the names of the store's objects. It reads them from
 `index.json` beside `objects/`, a JSON array of the names. For a store on
