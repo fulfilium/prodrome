@@ -72,7 +72,10 @@ pub struct Hash {
     text: String,
 }
 
+// The comparisons of `Hash` are `#[inline]`, because the core calls them
+// in its hottest loops from another crate, with no link-time optimisation.
 impl Hash {
+    #[inline]
     pub fn as_str(&self) -> &str {
         &self.text
     }
@@ -83,6 +86,7 @@ impl Hash {
 }
 
 impl PartialEq for Hash {
+    #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.words == other.words
     }
@@ -91,18 +95,21 @@ impl PartialEq for Hash {
 impl Eq for Hash {}
 
 impl PartialOrd for Hash {
+    #[inline]
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
 
 impl Ord for Hash {
+    #[inline]
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         self.words.cmp(&other.words)
     }
 }
 
 impl std::hash::Hash for Hash {
+    #[inline]
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.words.hash(state);
     }

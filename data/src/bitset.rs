@@ -6,13 +6,17 @@
 #[doc(hidden)]
 pub struct BitSet(Vec<u64>);
 
+// The methods are `#[inline]`, because the core calls them in its hottest
+// loops from another crate, with no link-time optimisation.
 impl BitSet {
+    #[inline]
     pub fn contains(&self, bit: usize) -> bool {
         self.0
             .get(bit / 64)
             .is_some_and(|word| word >> (bit % 64) & 1 == 1)
     }
 
+    #[inline]
     pub fn insert(&mut self, bit: usize) {
         let word = bit / 64;
         if self.0.len() <= word {
@@ -31,6 +35,7 @@ impl BitSet {
     }
 
     /// How many positions this set and `mask` both hold.
+    #[inline]
     pub fn count_within(&self, mask: &BitSet) -> usize {
         self.0
             .iter()
@@ -39,6 +44,7 @@ impl BitSet {
             .sum()
     }
 
+    #[inline]
     pub fn union_with(&mut self, other: &BitSet) {
         if self.0.len() < other.0.len() {
             self.0.resize(other.0.len(), 0);
