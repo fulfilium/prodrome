@@ -1,17 +1,12 @@
-//! A generic event type for an application schema: a key, `at`, `actor` and
-//! a body.
+//! A generic event type `Event<B>` that prints as `Constructor(<key fields>,
+//! at, actor, <body fields>)`; a schema implements [`Body`].
 //!
-//! An event of such a schema prints as `Constructor(<key fields>, at,
-//! actor, <body fields>)`. A schema implements [`Body`], and a program
-//! opens a store at `Event<B>`. Every event passed [`Body::admits`]:
-//! [`Event::new`] asks it, and [`Event::of`] serves only a body whose
-//! `admits` refuses nothing. A schema whose events write one register can
-//! use [`crate::fold::sole::One`] as its product.
+//! Every event passed [`Body::admits`]: [`Event::new`] asks it, and
+//! [`Event::of`] serves only a body whose `admits` refuses nothing.
 //!
 //! # Example
 //!
-//! A complete schema of notes with one register, as the crate's tests use
-//! it:
+//! A complete schema of notes with one register:
 //!
 #![doc = concat!("```\n", include_str!("headed/example.rs"), "```")]
 #![warn(clippy::pedantic)]
@@ -26,7 +21,7 @@ use crate::literal::codec::{record, Constructor, Fields, Literal};
 use crate::literal::{Datetime, ProdromeError, Signature, Table, Value, Vocabulary};
 use crate::schema::Schema;
 
-/// One event: the key of its entity, its instant, its writer and its body.
+/// One event: a key, an instant, a writer and a body.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Event<B: Body> {
     key: B::Key,
@@ -35,51 +30,45 @@ pub struct Event<B: Body> {
     body: B,
 }
 
-/// The part of an event that a schema defines, and the parts of the schema
-/// that it decides.
+/// The part of an event that a schema defines.
 pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
-    /// The key of the entity that an event is about.
     type Key: KeyFields;
 
-    /// The name of a register that a write supersedes in.
     type Register: Copy + Ord + Debug + Send + Sync + 'static;
 
-    /// The registers of one entity.
     type Registers<'a>: Product<'a, Schema = Event<Self>>;
 
-    /// Why [`Body::admits`] refuses a key and a body.
-    /// [`std::convert::Infallible`] for a schema that refuses nothing.
+    /// Why [`Body::admits`] refuses; `Infallible` for a schema that refuses
+    /// nothing.
     type Refusal: Display;
 
     /// The name of the body's type, which a refusal of an unknown event
-    /// constructor names, as [`no_arm`](crate::literal::codec::no_arm)
-    /// words it: `Other is not one of Entry's constructors`.
+    /// constructor names ([`no_arm`](crate::literal::codec::no_arm)).
     const NAME: &'static str;
 
-    /// Each event constructor. Its fields are the key's fields, then `at`
-    /// and `actor`, then the body's fields. No constructor may have an
-    /// envelope's name ([`crate::event::ENVELOPE_SIGNATURES`]), because a
-    /// parse looks up the envelopes first.
+    /// Each event constructor, with the key's fields, `at`, `actor`, then the
+    /// body's fields; no constructor may have an envelope's name
+    /// ([`crate::event::ENVELOPE_SIGNATURES`]), because a parse looks up the
+    /// envelopes first.
     const EVENTS: &'static [Constructor];
 
     /// The constructors that occur inside the fields of an event.
     const NESTED: &'static [Constructor] = &[];
 
-    /// The registers that an event with this body writes, each once.
+    /// The registers that the event writes, each once.
     fn writes(&self) -> impl Iterator<Item = Self::Register>;
 
-    /// Whether an event with this body is about standing (SPEC §5).
+    /// Whether the event is about standing (SPEC §5).
     #[must_use]
     fn asks(&self) -> bool {
         true
     }
 
-    /// Checks that `key` and `body` can make an event. By default every pair
-    /// can.
+    /// Checks that `key` and `body` can make an event.
     ///
     /// # Errors
     ///
-    /// A key and a body that the schema refuses together.
+    /// The schema refuses the key and the body together.
     fn admits(_key: &Self::Key, _body: &Self) -> Result<(), Self::Refusal> {
         Ok(())
     }
@@ -87,22 +76,18 @@ pub trait Body: Clone + PartialEq + Debug + Send + Sync + 'static {
     /// The body's constructor, and the values of its fields after `actor`.
     fn fields(&self) -> (Constructor, Vec<Value>);
 
-    /// The event that `fields` print. An implementation builds it with
-    /// [`Event::new`], so the parse refuses what [`Body::admits`] refuses.
+    /// The event that `fields` print, built with [`Event::new`] so that the
+    /// parse refuses what [`Body::admits`] refuses.
     ///
     /// # Errors
     ///
-    /// A field that is missing or does not read, or a refusal of
-    /// [`Body::admits`].
+    /// A field is missing or does not read, or [`Body::admits`] refuses.
     fn parse(fields: &Fields<'_>) -> Result<Event<Self>, ProdromeError>;
 }
 
-/// The fields of a key, at the start of an event's print.
-///
-/// A key whose literal is one field gets this trait from [`Literal`]. A key
-/// of several fields implements it directly.
+/// The fields of a key, at the start of an event's print; a key of several
+/// fields implements it, and a [`Literal`] key gets it as one field.
 pub trait KeyFields: Clone + Ord + Debug + Send + Sync {
-    /// The values of the key's fields, in printed order.
     fn key_fields(&self) -> Vec<Value>;
 }
 
@@ -113,8 +98,6 @@ impl<T: Literal + Clone + Ord + Debug + Send + Sync> KeyFields for T {
 }
 
 impl<B: Body> Event<B> {
-    /// The event about `key`, stamped `at` by `actor`, with the body `body`.
-    ///
     /// # Errors
     ///
     /// The refusal of [`Body::admits`].
@@ -147,8 +130,7 @@ impl<B: Body<Refusal = Infallible>> Event<B> {
     }
 }
 
-/// The vocabulary of `Event<B>`: the event constructors of `B`, then the
-/// nested ones.
+/// The vocabulary of `Event<B>`: `B::EVENTS`, then `B::NESTED`.
 pub struct Constructors<B>(PhantomData<fn() -> B>);
 
 impl<B> Default for Constructors<B> {

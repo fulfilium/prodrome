@@ -18,12 +18,7 @@ crate::newtype_str! {
 }
 
 impl PublicKey {
-    /// Accepts only 64 lowercase hex that encode a point on the Ed25519
-    /// curve.
-    ///
-    /// # Errors
-    ///
-    /// Any other text.
+    /// Accepts only 64 lowercase hex that encode a point on the Ed25519 curve.
     pub fn new(text: impl Into<String>) -> Result<PublicKey, ProdromeError> {
         let text = text.into();
         bytes::<32>(&text)
@@ -43,12 +38,8 @@ impl PublicKey {
 }
 
 impl Signature {
-    /// Accepts 128 lowercase hex. This does not check that the signature
-    /// verifies; [`Signed::verifies`] checks that.
-    ///
-    /// # Errors
-    ///
-    /// Any other text.
+    /// Accepts 128 lowercase hex, and does not check that the signature
+    /// verifies ([`Signed::verifies`] does).
     pub fn new(text: impl Into<String>) -> Result<Signature, ProdromeError> {
         let text = text.into();
         if lower_hex(&text, 128) {
@@ -61,7 +52,7 @@ impl Signature {
     }
 }
 
-/// `text` as `N` bytes, where it is `2N` lowercase hex.
+/// For the core; no promise. `text` as `N` bytes, where it is `2N` lowercase hex.
 #[doc(hidden)]
 pub fn bytes<const N: usize>(text: &str) -> Option<[u8; N]> {
     if !lower_hex(text, 2 * N) {
@@ -82,9 +73,8 @@ fn hex(bytes: &[u8]) -> String {
     })
 }
 
-/// What a signature of `object` signs: the bytes `prodrome object `, then
-/// the object's name. The prefix keeps a key that signs objects from
-/// signing anything else by accident.
+/// The signed bytes: `prodrome object ` and the object's name. The prefix keeps
+/// a key that signs objects from signing anything else by accident.
 fn message(object: &Hash) -> Vec<u8> {
     let mut message = b"prodrome object ".to_vec();
     message.extend_from_slice(object.as_str().as_bytes());
@@ -100,12 +90,9 @@ pub struct Signed {
 }
 
 impl Signed {
-    /// Whether the signature verifies under its key over the name of its
-    /// object.
-    ///
-    /// The check is strict: it refuses a small-order key and a non-canonical
-    /// scalar, so that a forger cannot compute a second valid encoding for
-    /// one key and one message from the first.
+    /// Whether the signature verifies under its key over its object's name. The
+    /// check is strict (SPEC §3), so that a forger cannot compute a second valid
+    /// encoding for one key and one message from the first.
     #[must_use]
     pub fn verifies(&self) -> bool {
         let signature = bytes::<64>(self.signature.as_str())
@@ -130,9 +117,6 @@ impl Signed {
         )
     }
 
-    /// # Errors
-    ///
-    /// A field missing, or refused by its type.
     pub fn from_call(call: &Call) -> Result<Signed, ProdromeError> {
         Ok(Signed {
             object: Hash::new(string_field(call, "object")?)?,
@@ -164,9 +148,6 @@ impl KeyAdded {
         )
     }
 
-    /// # Errors
-    ///
-    /// A field missing, or refused by its type.
     pub fn from_call(call: &Call) -> Result<KeyAdded, ProdromeError> {
         Ok(KeyAdded {
             genesis: Hash::new(string_field(call, "genesis")?)?,
@@ -178,7 +159,7 @@ impl KeyAdded {
 
 /// `KeyRevoked(genesis, deps, actor, key)`: `key` no longer speaks for
 /// `actor`, except in the signatures that this object rests on (SPEC §5,
-/// "Proof: who wrote an object, read from the history").
+/// "Proof").
 ///
 /// `deps` are sorted and distinct.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -189,11 +170,7 @@ pub struct KeyRevoked {
     pub key: PublicKey,
 }
 
-/// A revocation, with its deps sorted and distinct.
-///
-/// # Errors
-///
-/// A dep named twice.
+/// A revocation with its deps sorted; refuses a dep named twice.
 pub fn mk_key_revoked(
     genesis: Hash,
     deps: Vec<Hash>,
@@ -222,9 +199,6 @@ impl KeyRevoked {
         )
     }
 
-    /// # Errors
-    ///
-    /// A field missing, or refused by its type.
     pub fn from_call(call: &Call) -> Result<KeyRevoked, ProdromeError> {
         mk_key_revoked(
             Hash::new(string_field(call, "genesis")?)?,
@@ -235,13 +209,13 @@ impl KeyRevoked {
     }
 }
 
-/// The public key of the signing key `secret`.
+/// For the core; no promise. The public key of the signing key `secret`.
 #[doc(hidden)]
 pub fn public_of(secret: &SigningKey) -> PublicKey {
     PublicKey(hex(secret.verifying_key().as_bytes()))
 }
 
-/// The signature by the signing key `secret` of the object named `object`.
+/// For the core; no promise. The signature by `secret` of the object `object`.
 #[doc(hidden)]
 pub fn signed_by(secret: &SigningKey, object: &Hash) -> Signed {
     Signed {

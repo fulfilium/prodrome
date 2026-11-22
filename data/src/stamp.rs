@@ -1,5 +1,4 @@
-//! One object that carries an event, at its place in its entity's linear
-//! order, where the entity's registers can see it.
+//! A write at its place in its entity's linear order.
 
 use std::sync::Arc;
 
@@ -16,41 +15,38 @@ pub struct Stamp<E: Schema> {
 }
 
 impl<E: Schema> Stamp<E> {
-    /// Whether this write descends from `earlier`.
-    ///
-    /// The caller must pass a write to the same entity, because positions are
-    /// compared within one scope.
+    /// Whether this write descends from `earlier`, which must be a write to the
+    /// same entity, because positions are compared within one scope.
     pub fn descends(&self, earlier: &Stamp<E>) -> bool {
         self.place.ancestry.contains(earlier.place.position)
     }
 
-    /// The write's position in its scope's linear order.
+    /// For the core; no promise. The position in the scope's linear order.
     #[doc(hidden)]
     pub fn position(&self) -> usize {
         self.place.position
     }
 
-    /// The positions of every object of its scope that the write rests on.
+    /// For the core; no promise. The positions in its scope that the write rests on.
     #[doc(hidden)]
     pub fn ancestry(&self) -> &BitSet {
         &self.place.ancestry
     }
 
-    /// The write `event`, named `name`, at `place`. Only the fold of the
-    /// DAG places a write.
+    /// For the core; no promise. Only the fold of the DAG places a write.
     #[doc(hidden)]
     pub fn placed(name: Hash, event: Arc<E>, place: Place<E::Key>) -> Stamp<E> {
         Stamp { name, event, place }
     }
 
-    /// Make room at `slot` of the write's scope.
+    /// For the core; no promise. Makes room at `slot` of the write's scope.
     #[doc(hidden)]
     pub fn open(&mut self, slot: usize) {
         self.place.open(slot);
     }
 }
 
-/// A position in an index, and the positions of every ancestor in it.
+/// For the core; no promise. A position in an index, and its ancestors' positions.
 #[derive(Debug, Clone, PartialEq)]
 #[doc(hidden)]
 pub struct Place<K> {
@@ -60,7 +56,7 @@ pub struct Place<K> {
 }
 
 impl<K> Place<K> {
-    /// Make room at `slot`: this place, if at or after it, moves up one.
+    /// Makes room at `slot`: this place, if at or after it, moves up one.
     pub fn open(&mut self, slot: usize) {
         if self.position >= slot {
             self.position += 1;
@@ -69,7 +65,6 @@ impl<K> Place<K> {
     }
 }
 
-/// Where an object is placed: the legacy scope (`None`), or one entity of
-/// one prodrome.
+/// For the core; no promise. The legacy scope (`None`), or one prodrome's entity.
 #[doc(hidden)]
 pub type Scope<K> = Option<(Hash, K)>;

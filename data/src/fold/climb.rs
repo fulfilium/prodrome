@@ -10,20 +10,13 @@ use crate::literal::ProdromeError;
 use crate::schema::Schema;
 use crate::stamp::Stamp;
 
-/// One inflationary register: its [`Frontier`] and its peak (SPEC §6, "A
-/// schema's registers").
+/// One inflationary register: its [`Frontier`] and its peak, the writes that
+/// no other write outranks (`docs/design-inflationary-reading.md`).
 ///
-/// The peak is the set of writes that no other write outranks. A write `u`
-/// outranks a write `w` when the value of `u` is strictly greater than the
-/// value of `w`, or when the two values are equal and `u` descends from `w`.
-/// This relation is a strict partial order, so the peak does not depend on
-/// the order in which the writes arrive. The reading is the values of the
-/// peak, each named by the least write that carries it ([`maximal`]).
-///
-/// The register keeps the frontier beside the peak, because a conflict
-/// ([`crate::fold::Product::conflicts`]) and the deps of an append are causal
-/// and not ordered by value. A write below what it rests on cannot lower the
-/// reading, because a write above it is already in the peak.
+/// A write `u` outranks a write `w` when the value of `u` is strictly greater,
+/// or when the values are equal and `u` descends from `w`. The reading is the
+/// values of the peak ([`maximal`]). A write below what it rests on cannot
+/// lower the reading, because a write above it is already in the peak.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Climb<'a, E: Schema> {
     frontier: Frontier<'a, E>,
@@ -39,8 +32,7 @@ impl<E: Schema> Default for Climb<'_, E> {
     }
 }
 
-/// Does `upper` outrank `lower`, with `upper_value` and `lower_value` their
-/// values? See [`Climb`].
+/// Whether `upper` outranks `lower` (see [`Climb`]).
 fn outranks<E: Schema, V: Order>(
     upper: &Stamp<E>,
     upper_value: &V,
@@ -51,17 +43,12 @@ fn outranks<E: Schema, V: Order>(
 }
 
 impl<'a, E: Schema> Climb<'a, E> {
-    /// The register's frontier.
     #[must_use]
     pub fn frontier(&self) -> &Frontier<'a, E> {
         &self.frontier
     }
 
     /// Joins `stamp`, whose value under the register's order is `value(stamp)`.
-    ///
-    /// A join compares `stamp` once with each write of the peak, so its cost
-    /// grows with the number of incomparable maximal values and not with the
-    /// number of writes.
     pub fn join_by<V: Inflationary>(
         &mut self,
         stamp: &'a Stamp<E>,
@@ -85,7 +72,6 @@ impl<'a, E: Schema> Climb<'a, E> {
         self.peak.insert(at, stamp);
     }
 
-    /// Joins `stamp`, a write to a register of the inflationary type `R`.
     pub fn join<R>(&mut self, stamp: &'a Stamp<E>)
     where
         R: RegisterType<E>,
@@ -94,24 +80,21 @@ impl<'a, E: Schema> Climb<'a, E> {
         self.join_by(stamp, |stamp| value::<E, R>(stamp));
     }
 
-    /// The register's reading under `value`.
     pub fn read<V: Order>(&self, value: impl Fn(&'a Stamp<E>) -> V) -> Vec<&'a Stamp<E>> {
         maximal(&self.peak, value)
     }
 
-    /// The register's reading under its type `R`.
     #[must_use]
     pub fn reading<R: RegisterType<E>>(&self) -> Vec<&'a Stamp<E>> {
         self.read(|stamp| value::<E, R>(stamp))
     }
 
-    /// The refusal of an append: the value of `event` in this register must
-    /// stand at or above every value of its reading.
+    /// The refusal of an append: the value of `event` must stand at or above
+    /// every value of the reading.
     ///
     /// # Errors
     ///
-    /// Returns an error where the value is below a value of the reading or
-    /// incomparable with it.
+    /// Returns an error where the value is below or incomparable with one.
     pub fn grows<'s, R>(&'s self, event: &'s E) -> Result<(), ProdromeError>
     where
         R: RegisterType<E>,
@@ -129,13 +112,11 @@ impl<'a, E: Schema> Climb<'a, E> {
     }
 
     /// Law 32 between two readings of one register: every value that
-    /// `earlier` reads under `value` stands at or below a value that this
-    /// register reads.
+    /// `earlier` reads stands at or below a value that this register reads.
     ///
     /// # Errors
     ///
-    /// Returns an error that names a value that `earlier` reads and that no
-    /// value of this reading stands at or above.
+    /// Returns an error that names a write of `earlier` whose value fell.
     pub fn climbed_by<V: Inflationary>(
         &self,
         earlier: &Self,

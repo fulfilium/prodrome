@@ -1,7 +1,7 @@
 //! A set of small non-negative integers, which holds the positions of an
 //! object's ancestors.
 
-/// A set of small non-negative integers as a bitmap.
+/// For the core; no promise. A set of small non-negative integers as a bitmap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[doc(hidden)]
 pub struct BitSet(Vec<u64>);

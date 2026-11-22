@@ -1,15 +1,9 @@
 //! Values and the literal grammar (SPEC §2): the value model, the canonical
 //! printer, and the strict parser.
 //!
-//! A parser that accepts more than the grammar is incorrect. This module
-//! knows only the names, field order and arity of constructors, through a
-//! [`Vocabulary`]. It gives the fields to the layer that owns the kind
-//! (`event` for §4, `fpl` for §7).
-//!
-//! The printer reproduces CPython's `repr` for every value that a store
-//! holds. Floats (`print_float`) and strings ([`print_str`], with the
-//! printable set of Unicode 16.0.0 in [`printable`]) are the two difficult
-//! cases.
+//! The module knows a constructor only through a [`Vocabulary`] (name, field
+//! order, arity); the layer that owns the kind reads the fields (`event` for
+//! §4, `fpl` for §7). The printer copies CPython's `repr`.
 
 pub mod codec;
 pub mod printable;
@@ -21,15 +15,13 @@ use thiserror::Error;
 /// Every refusal in the core; no boundary panics on input (SPEC §2).
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum ProdromeError {
-    /// The literal grammar refused the text, as the `ValueError` of Python's
-    /// `parse_literal` does. The store's `verify` quotes the message verbatim.
+    /// The literal grammar refused the text; `verify` quotes the message verbatim.
     #[error("parse_literal: {0}")]
     Parse(String),
     /// A smart constructor refused its parameters.
     #[error("{0}")]
     Invalid(String),
-    /// The object store refused (SPEC §3), for example for bytes that do not
-    /// hash to their name.
+    /// The object store refused (SPEC §3).
     #[error("{0}")]
     Store(String),
     /// An input or output failed under a store root.
@@ -46,8 +38,7 @@ impl ProdromeError {
         ProdromeError::Invalid(message.into())
     }
 
-    /// The same refusal, of the same kind, with `context` and `: ` before its
-    /// message, as in `Review.lines: a review covers at least one line`.
+    /// The same refusal, with `context` and `: ` before its message.
     #[must_use]
     pub fn within(self, context: &dyn std::fmt::Display) -> Self {
         match self {
@@ -63,7 +54,7 @@ impl ProdromeError {
         }
     }
 
-    /// The failure of an input or output on the file at `path`.
+    /// For the core; no promise. The failure of an input or output on `path`.
     #[doc(hidden)]
     pub fn io(path: &std::path::Path, error: &std::io::Error) -> Self {
         ProdromeError::Io {
@@ -73,10 +64,9 @@ impl ProdromeError {
     }
 }
 
-/// An integer of the grammar, held as a sign and a nonempty decimal digit
-/// string with no leading zero. The digits are unbounded because one
-/// conformance vector holds `12345678901234567890`, and the print must be the
-/// identity on it.
+/// An integer: a sign and nonempty decimal digits with no leading zero. The
+/// digits are unbounded because a conformance vector holds
+/// `12345678901234567890`, and the print must be the identity on it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Int {
     negative: bool,
@@ -84,8 +74,7 @@ pub struct Int {
 }
 
 impl Int {
-    /// The canonical integer of `digits`, which must be nonempty ASCII decimal
-    /// digits.
+    /// Refuses `digits` unless they are nonempty ASCII decimal digits.
     pub fn new(negative: bool, digits: &str) -> Result<Int, ProdromeError> {
         if digits.is_empty() || !digits.bytes().all(|b| b.is_ascii_digit()) {
             return Err(ProdromeError::parse(format!(
@@ -107,7 +96,7 @@ impl Int {
         }
     }
 
-    /// The value, or `None` where it does not fit an `i64`.
+    /// `None` where the value does not fit an `i64`.
     pub fn as_i64(&self) -> Option<i64> {
         let magnitude: i128 = self.digits.parse().ok()?;
         let signed = if self.negative { -magnitude } else { magnitude };
@@ -123,7 +112,7 @@ impl Int {
     }
 }
 
-/// A finite float. `inf` and `nan` are not storable (SPEC §2).
+/// A finite float (SPEC §2).
 #[derive(Debug, Clone, Copy)]
 pub struct Finite(f64);
 
@@ -143,9 +132,8 @@ impl Finite {
     }
 }
 
-/// Bitwise, so `-0.0` and `0.0` are different values — they print differently
-/// (`'-0.0'` and `'0.0'`), and in a store whose identity IS the print, two
-/// values that print differently are two values.
+/// Bitwise, so `-0.0` and `0.0` differ: they print differently, and a store
+/// names a value by its print.
 impl PartialEq for Finite {
     fn eq(&self, other: &Self) -> bool {
         self.0.to_bits() == other.0.to_bits()
@@ -154,8 +142,7 @@ impl PartialEq for Finite {
 
 impl Eq for Finite {}
 
-/// A naive local datetime (SPEC §2). The type has no time zone field, so a
-/// value with a time zone cannot be stored.
+/// A naive local datetime, with no time zone (SPEC §2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Datetime {
     year: i32,
@@ -262,8 +249,7 @@ impl Datetime {
         self.microsecond
     }
 
-    /// CPython's `datetime.isoformat()`: seconds always, microseconds only when
-    /// nonzero. The dating finding of `verify` quotes this text.
+    /// CPython's `datetime.isoformat()`; the dating finding of `verify` quotes it.
     pub fn isoformat(self) -> String {
         let head = format!(
             "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
@@ -277,10 +263,9 @@ impl Datetime {
     }
 }
 
-/// A duration, normalised as CPython normalises one: `0 <= seconds < 86400`,
-/// `0 <= microseconds < 1000000`, and `days` carries the sign. The
-/// normalisation gives `timedelta(hours=3)` and `timedelta(seconds=10800)` one
-/// value and one print.
+/// A duration, normalised as CPython does: `0 <= seconds < 86400`,
+/// `0 <= microseconds < 1000000`, and `days` carries the sign, so that equal
+/// durations have one value and one print.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Timedelta {
     days: i64,
@@ -351,9 +336,8 @@ impl Timedelta {
     }
 }
 
-/// A constructor call: a name and its fields in declared order, in keyword
-/// form. The parser binds positional arguments through the [`Vocabulary`], so
-/// the print of a call is canonical whatever the text was.
+/// A constructor call, with its fields in declared order, so that its print is
+/// canonical whatever the parsed text was.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Call {
     pub name: String,
@@ -368,7 +352,6 @@ impl Call {
         }
     }
 
-    /// The field named `name`, or `None`.
     pub fn field(&self, name: &str) -> Option<&Value> {
         self.fields
             .iter()
@@ -435,22 +418,20 @@ impl Value {
 /// What a constructor name admits.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Signature<'a> {
-    /// The declared field order. Positional arguments bind to it in turn, a
-    /// keyword must name one of these fields, and no field may be given twice.
-    /// The slice is borrowed from the vocabulary, because the field order of
-    /// the record kind (SPEC §4) is not a static table.
+    /// The declared field order: positional arguments fill it in turn, and a
+    /// keyword names a field that no other argument gave. The slice is
+    /// borrowed because the record kind's field order (SPEC §4) is not static.
     Fields(&'a [&'a str]),
-    /// The declared field order as owned names, lent by a vocabulary that is
-    /// data at run time, such as a schema of `prodrome::declared`.
+    /// The declared field order as owned names, from a vocabulary built at run
+    /// time.
     Owned(&'a [String]),
     /// Any keyword field and no positional argument, to read a canonical print
-    /// without knowing the kind. The read path of a store never uses it,
-    /// because a store's vocabulary is closed (SPEC §2).
+    /// of an unknown kind. A store never reads with it, because a store's
+    /// vocabulary is closed (SPEC §2).
     AnyKeywords,
 }
 
 /// The closed set of constructor names that a parse admits (SPEC §2).
-/// `event` supplies the names of §4 and §7.
 pub trait Vocabulary {
     fn signature(&self, name: &str) -> Option<Signature<'_>>;
 }
@@ -460,8 +441,8 @@ pub trait Vocabulary {
 pub struct Table(pub &'static [codec::Constructor]);
 
 impl Table {
-    /// The result is `'static`, so a vocabulary composed of several tables
-    /// ([`crate::event::EventVocabulary`]) can return it.
+    /// `'static`, so that a vocabulary of several tables
+    /// ([`crate::event::EventVocabulary`]) can return the result.
     pub fn find(&self, name: &str) -> Option<Signature<'static>> {
         self.0
             .iter()
@@ -476,9 +457,8 @@ impl Vocabulary for Table {
     }
 }
 
-/// Admits any constructor name in keyword form, and refuses positional
-/// arguments because it knows no field order. It is not a read path:
-/// conformance and outside tools use it to round-trip a canonical print.
+/// Admits any constructor name in keyword form, and no positional argument.
+/// Conformance and outside tools use it to round-trip a print; a store does not.
 #[derive(Debug, Clone, Copy)]
 pub struct Open;
 
@@ -490,8 +470,8 @@ impl Vocabulary for Open {
 
 // --- printing ---------------------------------------------------------------
 
-/// The canonical print (SPEC §2). It is total, because the constructors
-/// refuse every value that does not print.
+/// The canonical print (SPEC §2); total, because the constructors refuse every
+/// value that does not print.
 pub fn print_literal(value: &Value) -> String {
     let mut out = String::new();
     push_literal(&mut out, value);
@@ -573,14 +553,10 @@ fn push_literal(out: &mut String, value: &Value) {
 
 /// CPython's `repr(float)` of a finite `value`.
 ///
-/// The digits come from Rust's `{:e}`, which gives the shortest round-tripping
-/// digits, the same digits that CPython gets from David Gay's `dtoa` in mode
-/// 0. Rust lays them out differently, so the layout is CPython's
-/// `format_float_short`: with `decpt` the position of the decimal point
-/// relative to the first significant digit, the form is scientific if
-/// `decpt <= -4 || decpt > 16`. A fixed form with no point gets `.0`
-/// (CPython's `Py_DTSF_ADD_DOT_0`). So `1e+16` prints in scientific form and
-/// `1000000000000000.0` in fixed form.
+/// Rust's `{:e}` gives the shortest round-tripping digits, the digits of
+/// CPython's `dtoa` in mode 0. The layout copies CPython's
+/// `format_float_short`: scientific if `decpt <= -4 || decpt > 16`, and `.0`
+/// after a fixed form with no point (`Py_DTSF_ADD_DOT_0`).
 pub(crate) fn print_float(value: f64) -> String {
     debug_assert!(value.is_finite(), "Finite refuses non-finite floats");
     let scientific = format!("{value:e}");
@@ -594,8 +570,8 @@ pub(crate) fn print_float(value: f64) -> String {
     let digits: String = mantissa.chars().filter(|c| c.is_ascii_digit()).collect();
     let digits = digits.trim_end_matches('0');
     let digits = if digits.is_empty() { "0" } else { digits };
-    // `decpt`: the number of digits before the point. Gay's convention, and the
-    // one `format_float_short` branches on.
+    // `decpt`: the number of digits before the point, as in `dtoa` and
+    // `format_float_short`.
     let decpt = exponent + 1;
     let mut out = String::new();
     if negative {
@@ -640,7 +616,7 @@ pub fn print_str(text: &str) -> String {
     out
 }
 
-/// CPython's `repr(str)`: single quotes unless the text holds a `'` and no `"`.
+/// Appends CPython's `repr(text)` to `out` (SPEC §2).
 fn push_str_repr(out: &mut String, text: &str) {
     let quote = if text.contains('\'') && !text.contains('"') {
         '"'
@@ -680,11 +656,9 @@ fn push_str_repr(out: &mut String, text: &str) {
 
 // --- parsing ----------------------------------------------------------------
 
-/// How deep a literal may nest before the parser refuses. CPython answers a
-/// deeper one with `RecursionError`, which `parse_literal` turns into a
-/// `ValueError`; a recursive-descent parser in Rust would answer with a stack
-/// overflow, which is an abort and not a refusal — so the limit is the type of
-/// the guarantee, not a tuning knob.
+/// How deep a literal may nest before the parser refuses. CPython refuses a
+/// deeper one with a `ValueError`; without the limit, a recursive parser in
+/// Rust would overflow its stack, which aborts instead of refusing.
 const MAX_DEPTH: usize = 128;
 
 /// Parses exactly the grammar of SPEC §2 against `vocabulary`.
@@ -717,12 +691,10 @@ struct Parser<'a> {
     vocabulary: &'a dyn Vocabulary,
 }
 
-/// THE PARSER READS BYTES. Every character the grammar gives a meaning to
-/// is ASCII, and in UTF-8 no byte of a character outside ASCII is below
-/// 0x80, so a byte that equals an ASCII character IS that character, and a
-/// cut before such a byte is a character boundary. The parser decodes a
-/// character only where one outside ASCII can matter: whitespace, an escape,
-/// and the text of a refusal.
+/// The parser reads bytes. Each character with a meaning in the grammar is
+/// ASCII, and in UTF-8 each byte of a non-ASCII character is 0x80 or above, so
+/// an ASCII byte is that character and a cut before it is a boundary. The
+/// parser decodes only for whitespace, an escape, and the text of a refusal.
 impl<'a> Parser<'a> {
     fn rest(&self) -> &'a str {
         &self.input[self.pos..]
@@ -746,7 +718,7 @@ impl<'a> Parser<'a> {
         Some(c)
     }
 
-    /// Past the bytes from the cursor on that `take` accepts.
+    /// Advances past the bytes that `take` accepts.
     fn skip_while(&mut self, take: impl Fn(u8) -> bool) {
         self.pos += self.input.as_bytes()[self.pos..]
             .iter()
@@ -754,10 +726,8 @@ impl<'a> Parser<'a> {
             .count();
     }
 
-    /// Whitespace and `#` comments, which CPython's tokenizer drops before the
-    /// AST ever sees them — so a stored object may carry a comment line above
-    /// its expression and still parse. Whitespace is [`char::is_whitespace`],
-    /// which outside ASCII is Unicode's `White_Space`.
+    /// Skips whitespace ([`char::is_whitespace`]) and `#` comments, as CPython's
+    /// tokenizer does, so a stored object may carry a comment line.
     fn skip_trivia(&mut self) {
         loop {
             match self.peek_byte() {
@@ -777,7 +747,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Past the ASCII character `c` if it is at the cursor.
+    /// Advances past the ASCII byte `c` if it is at the cursor.
     fn eat(&mut self, c: u8) -> bool {
         if self.peek_byte() == Some(c) {
             self.pos += 1;
@@ -835,8 +805,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `(a, b)` is a tuple, `(a,)` a one-tuple, `()` the empty one — and `(a)`
-    /// is just `a`, exactly as CPython parses it.
+    /// `(a)` is `a`, as in CPython; `(a,)` and `()` are tuples.
     fn parenthesised(&mut self, depth: usize) -> Result<Value, ProdromeError> {
         self.expect(b'(')?;
         self.skip_trivia();
@@ -864,8 +833,7 @@ impl<'a> Parser<'a> {
         Ok(Value::Tuple(items))
     }
 
-    /// CPython's walker maps a list display onto a tuple, so the grammar admits
-    /// one and the print never produces one.
+    /// A list display reads as a tuple, as in CPython's walker; no print makes one.
     fn bracketed(&mut self, depth: usize) -> Result<Value, ProdromeError> {
         self.expect(b'[')?;
         let mut items = Vec::new();
@@ -929,10 +897,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A string between two `quote`s, the cursor on the first. The text
-    /// between one escape and the next is copied in one piece: of the bytes
-    /// that end a piece (the quote, a backslash, a newline), none is part of
-    /// a character outside ASCII.
+    /// A string between two `quote`s, the cursor on the first. The parser copies
+    /// each run between escapes in one piece, because no byte that ends a run
+    /// (quote, backslash, newline) is part of a non-ASCII character.
     fn string(&mut self, quote: u8) -> Result<Value, ProdromeError> {
         self.pos += 1;
         let mut out = String::new();
@@ -1066,8 +1033,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `name=` at the cursor, consumed; nothing consumed otherwise. `==` is not
-    /// a keyword and not in the grammar either way.
+    /// Consumes `name=` at the cursor, or nothing. `==` is not a keyword.
     fn keyword_name(&mut self) -> Option<String> {
         let start = self.pos;
         let bytes = self.rest().as_bytes();
@@ -1122,9 +1088,8 @@ impl<'a> Parser<'a> {
     }
 }
 
-/// Positional arguments onto declared field names, keywords checked against
-/// them, the result in DECLARED order — which is what makes the print
-/// canonical however the text was written.
+/// Binds the arguments to the declared fields and returns them in declared
+/// order, which makes the print canonical however the text was written.
 fn bind(
     name: &str,
     order: &[impl AsRef<str>],
@@ -1264,8 +1229,7 @@ mod tests {
         print_literal(&parse_literal(text, &Open).expect("parses"))
     }
 
-    /// A field order held as owned names binds exactly as the same order in
-    /// a static table: positional, keyword and refused alike.
+    /// An owned field order binds as the same static order does.
     #[test]
     fn an_owned_field_order_binds_as_a_static_one() {
         struct Owned(Vec<String>);
@@ -1406,15 +1370,9 @@ mod tests {
             "None None",
             "b'bytes'",
             "1j",
-            // The vectors `tests/test_literals.py`'s adversarial suite drew,
-            // kept when that suite was deleted with the Python (stage 6). They
-            // are refused here BY CONSTRUCTION rather than by a rule — this is
-            // a closed-vocabulary grammar and not a walker over somebody
-            // else's AST, so there is no `__import__` to reach and no
-            // attribute to walk. That is a stronger property than the Python
-            // had; it is pinned anyway, because a reader deciding whether the
-            // parser is a security boundary should be able to see the attacks
-            // it was written against rather than infer them from a design.
+            // Attacks on a literal parser. The closed grammar refuses them by
+            // construction: it has no `__import__` and no attribute access.
+            // The test lists them so that a reader can see the attacks.
             "__import__('os').system('id')",
             "Pair(1, 2).__class__",
             "Pair(1, 2).__class__.__bases__",

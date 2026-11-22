@@ -4,12 +4,9 @@ use std::collections::{BTreeMap, BinaryHeap};
 /// The crate's one causal order: each key comes after the keys of `rests_on`
 /// that it rests on, and unrelated keys come in key order.
 ///
-/// The order depends only on the relation, not on the order of the input.
-/// The walk ignores an edge to a key that `rests_on` does not hold. `Err`
-/// holds the least key that a cycle leaves unplaced.
-///
-/// The heap holds each key's index among the keys of the map, which are in
-/// key order, so an index orders as its key does.
+/// The order does not depend on the order of the input. The walk ignores an
+/// edge to a key that `rests_on` does not hold. `Err` holds the least key that
+/// a cycle leaves unplaced.
 pub fn linear<'k, K: Ord + ?Sized>(
     rests_on: &BTreeMap<&'k K, Vec<&'k K>>,
 ) -> Result<Vec<&'k K>, &'k K> {
@@ -24,6 +21,7 @@ pub fn linear<'k, K: Ord + ?Sized>(
             }
         }
     }
+    // The heap holds indices into the sorted keys, so an index orders as its key.
     let mut ready: BinaryHeap<Reverse<usize>> = (0..keys.len())
         .filter(|&at| waiting[at] == 0)
         .map(Reverse)
@@ -44,7 +42,7 @@ pub fn linear<'k, K: Ord + ?Sized>(
     }
 }
 
-/// A depth-first walk that settles each key after the keys it expands into.
+/// For the core; no promise. A depth-first walk; each key settles after its expansion.
 #[doc(hidden)]
 pub struct Topo<K, V> {
     path: Vec<K>,
@@ -63,11 +61,7 @@ impl<K, V> Default for Topo<K, V> {
 }
 
 impl<K: Ord + Clone, V: Clone> Topo<K, V> {
-    /// The value of `key`; the walk keeps each value that `expand` returns,
-    /// and calls `expand` only for a key without a kept value.
-    ///
-    /// If the walk meets `key` again on its own path, `cycle` receives the
-    /// path from `key`, with `key` repeated at the end.
+    /// The value of `key`, from `expand` once per key; `cycle` gets a path from `key` to `key`.
     pub fn settle<E>(
         &mut self,
         key: &K,

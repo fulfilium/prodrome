@@ -1,26 +1,9 @@
 //! A codec between Rust values and the literals of SPEC §2.
 //!
-//! The stored forms compose:
-//!
-//! - A record prints as a call of one [`Constructor`], with every field in
-//!   the constructor's order, so its print is canonical by construction.
-//!   [`record()`] builds the call, and [`Fields`] reads it back by field name.
-//! - A sum prints one constructor for each variant. [`Fields::among`] and
-//!   [`arm`] tell a reader which variant a value is.
-//! - A list prints as a tuple, and a set prints as a sorted tuple with each
-//!   member once.
-//! - An absent value prints as `None`.
-//! - A leaf with a text form prints as a string, and its own constructor reads
-//!   the string back. The macro [`text_literal!`](crate::text_literal)
-//!   implements this for a type.
-//! - A type with a finite set of values, each printed as a word, prints as
-//!   that word. The macro [`word_literal!`](crate::word_literal) implements
-//!   this for a type.
-//!
-//! - `#[derive(Literal)]` writes the impl for a record, a sum or a newtype
-//!   from the type's declaration. [`Record`], [`read`] and [`read_or_default`]
-//!   are the reads that a derived impl makes, and [`text_field`] and
-//!   [`blank_field`] are two field codecs for `#[literal(with = ...)]`.
+//! A record prints as a call of one [`Constructor`] with every field in its
+//! order, so its print is canonical. A sum prints one constructor for each
+//! variant, a set prints as a sorted tuple with each member once, and an
+//! absent value prints as `None`. `#[derive(Literal)]` writes the impl.
 
 #![warn(clippy::pedantic)]
 
@@ -48,55 +31,40 @@ pub type Constructor = (&'static str, &'static [&'static str]);
 /// A type with one stored literal form, which reads back exactly:
 /// `from_value(&x.to_value()) == Ok(x)`.
 ///
-/// The two reads, [`Literal::from_value`] and [`Literal::from_field`], must
-/// accept the same values and read each one as the same value. Only the words
-/// of a refusal differ.
+/// [`Literal::from_value`] and [`Literal::from_field`] must accept the same
+/// values and read each as the same value; only the words of a refusal differ.
 pub trait Literal: Sized {
-    /// The constructors that the type declares, each with its fields in
-    /// print order: one for a record, one for each variant of a sum, and none
-    /// for a leaf, a container or a newtype. Pin them in a test with
-    /// [`assert_pinned`], so that a renamed constructor or field fails the
-    /// test.
+    /// The constructors that the type declares, each with its fields in print
+    /// order (none for a leaf, a container or a newtype); pin them in a test
+    /// with [`assert_pinned`].
     const CONSTRUCTORS: &'static [Constructor] = &[];
 
-    /// The literal of `self`.
     fn to_value(&self) -> Value;
 
-    /// Reads a value back from its literal.
-    ///
     /// # Errors
-    /// A [`ProdromeError`] that names the part of `value` that does not read.
+    /// A refusal names the part of `value` that does not read.
     fn from_value(value: &Value) -> Result<Self, ProdromeError>;
 
     /// Reads the value of the field `context`, and names the context in every
-    /// refusal. The default reads with [`Literal::from_value`] and puts the
-    /// context before the refusal ([`ProdromeError::within`]), so a refusal
-    /// inside a nested record reads as a path, as
+    /// refusal, so that a refusal in a nested record reads as a path, such as
     /// `Thread.first: Review.remark must be a string, got …`.
     ///
     /// # Errors
-    /// A [`ProdromeError`] that names the field and the part of `value`
-    /// that does not read.
+    /// A refusal names the field and the part of `value` that does not read.
     fn from_field(value: &Value, context: &dyn Display) -> Result<Self, ProdromeError> {
         Self::from_value(value).map_err(|refused| refused.within(context))
     }
 }
 
-/// The call of `constructor` with `values`, one value for each field, in the
-/// constructor's order.
-///
-/// A caller passes exactly one value for each field. Debug builds check the
-/// count.
+/// The call of `constructor` with exactly one value for each field, in the
+/// constructor's order; debug builds check the count.
 #[must_use]
 pub fn record(constructor: Constructor, values: Vec<Value>) -> Value {
     headed(Vec::new(), constructor, values)
 }
 
-/// The call of `body`'s constructor with the fields of `head` first, and then
-/// `values`, one value for each field of `body`, in its order.
-///
-/// A caller passes exactly one value for each field of `body`. Debug builds
-/// check the count.
+/// The call of `body`'s constructor with the fields of `head` first, then
+/// exactly one value for each field of `body`; debug builds check the count.
 #[must_use]
 pub fn headed(head: Vec<(&'static str, Value)>, body: Constructor, values: Vec<Value>) -> Value {
     let (name, fields) = body;
@@ -110,21 +78,19 @@ pub fn headed(head: Vec<(&'static str, Value)>, body: Constructor, values: Vec<V
     )
 }
 
-/// The fields of a call of one constructor, read by name, for a
-/// hand-written impl. Its reads are those of a derived impl, so the two
-/// refuse a value in the same words.
+/// The fields of a call of one constructor, read by name, for a hand-written
+/// impl; it refuses a value in the same words as a derived impl.
 #[derive(Debug, Clone, Copy)]
 pub struct Fields<'v> {
     call: &'v Call,
 }
 
 impl<'v> Fields<'v> {
-    /// Reads `value` as a call of one of `constructors`, the constructors
-    /// of the sum `sum`.
+    /// Reads `value` as a call of one of `constructors`, the constructors of
+    /// the sum `sum`.
     ///
     /// # Errors
-    /// The value is not a call, or it calls a constructor that is not in
-    /// `constructors`.
+    /// The value is not a call of a constructor in `constructors`.
     pub fn among(
         value: &'v Value,
         sum: &str,
@@ -138,37 +104,33 @@ impl<'v> Fields<'v> {
         }
     }
 
-    /// Reads `value` as a call of `constructor`.
-    ///
     /// # Errors
-    /// The value is not a call of that constructor's name.
+    /// The value is not a call of `constructor`.
     pub fn of(value: &'v Value, constructor: Constructor) -> Result<Self, ProdromeError> {
         call_of(value, constructor.0).map(|call| Self { call })
     }
 
-    /// The call, for a reader of a field that is not a [`Literal`].
+    /// For a reader of a field that is not a [`Literal`].
     #[must_use]
     pub fn call(&self) -> &'v Call {
         self.call
     }
 
-    /// The constructor's name.
     #[must_use]
     pub fn name(&self) -> &'v str {
         &self.call.name
     }
 
-    /// Reads the field `name` as a `T`. Every field is required.
+    /// Reads the required field `name`.
     ///
     /// # Errors
-    /// The field is absent, or it does not read as a `T`. The error names the
-    /// field.
+    /// The field is absent or does not read; the error names the field.
     pub fn get<T: Literal>(&self, name: &str) -> Result<T, ProdromeError> {
         read(self.call, name, T::from_field)
     }
 }
 
-/// The constructor name of a call. A reader of a sum matches on it.
+/// The constructor name of a call, which a reader of a sum matches on.
 ///
 /// # Errors
 /// The value is not a call.
@@ -176,19 +138,17 @@ pub fn arm(value: &Value) -> Result<&str, ProdromeError> {
     call(value).map(|call| call.name.as_str())
 }
 
-/// The error for a constructor `name` that is not a variant of the sum
-/// `sum`: `Reject is not one of Verdict's constructors`. A derived sum and
-/// a hand-written one refuse with it.
+/// The refusal of a constructor `name` that is not a variant of `sum`, which
+/// derived and hand-written sums share.
 #[must_use]
 pub fn no_arm(sum: &str, name: &str) -> ProdromeError {
     ProdromeError::invalid(format!("{name} is not one of {sum}'s constructors"))
 }
 
-/// Reads a leaf whose literal is its text: `value` must be a string, and
-/// `T`'s `TryFrom<String>` reads it.
+/// Reads a leaf whose literal is its text, through `T`'s `TryFrom<String>`.
 ///
 /// # Errors
-/// The value is not a string, or `T` refuses the string.
+/// The value is not a string, or `T` refuses it.
 pub fn text<T>(value: &Value) -> Result<T, ProdromeError>
 where
     T: TryFrom<String>,
@@ -198,9 +158,8 @@ where
         .map_err(|refused| ProdromeError::invalid(refused.to_string()))
 }
 
-/// Implements [`Literal`] for each type whose literal is its text. The type
-/// prints with the given function and reads back with
-/// [`text()`], through its `TryFrom<String>`:
+/// Implements [`Literal`] for each type whose literal is its text, printed
+/// by the given function and read by [`text()`]:
 ///
 /// ```
 /// struct Tag(String);
@@ -232,9 +191,8 @@ macro_rules! text_literal {
     )+};
 }
 
-/// Reads a value of a type with a finite set of values, each of which
-/// prints as a word: `value` must be a string, and the read returns the
-/// first of `all` whose word `print` gives is that string.
+/// Reads the first value of `all` whose word under `print` is the string
+/// `value`.
 ///
 /// # Errors
 /// The value is not a string, or no value of `all` prints as it.
@@ -258,9 +216,8 @@ pub fn word<T>(
     )))
 }
 
-/// Implements [`Literal`] for each type with a finite set of values, each
-/// of which prints as a word. The type prints with the given function, and
-/// [`word`] reads it back from the list of all its values:
+/// Implements [`Literal`] for each type whose values each print as a word,
+/// read back by [`word`] from the list of all the values:
 ///
 /// ```
 /// #[derive(Clone, Copy)]
@@ -277,8 +234,7 @@ pub fn word<T>(
 /// prodrome_data::word_literal!(Size: Size::ALL => |size| size.as_str());
 /// ```
 ///
-/// A value that is not in the list prints a word that does not read back,
-/// so the list must hold every value of the type.
+/// The list must hold every value, or a value outside it does not read back.
 #[macro_export]
 macro_rules! word_literal {
     ($($ty:ty: $all:expr => $print:expr),+ $(,)?) => {$(
@@ -340,9 +296,8 @@ impl Literal for bool {
     }
 }
 
-/// Implements [`Literal`] for unsigned integer types. A literal integer has
-/// any number of digits, so each value prints as itself. A read refuses a
-/// negative integer and one that does not fit the type.
+/// Implements [`Literal`] for unsigned integers; a read refuses a negative
+/// integer and one that does not fit the type.
 macro_rules! natural {
     ($($ty:ty),+) => {$(
         impl Literal for $ty {
@@ -459,8 +414,8 @@ pub fn tuple<'v>(value: &'v Value, context: &dyn Display) -> Result<&'v [Value],
         .ok_or_else(|| ProdromeError::invalid(format!("{context} must be a tuple")))
 }
 
-/// A set prints as a tuple, sorted, with each member once. A read refuses
-/// any other order and a repeated member, so a set has one print.
+/// A set prints as a sorted tuple with each member once; a read refuses any
+/// other order, so a set has one print.
 impl<T: Literal + Ord> Literal for BTreeSet<T> {
     fn to_value(&self) -> Value {
         Value::Tuple(self.iter().map(Literal::to_value).collect())
