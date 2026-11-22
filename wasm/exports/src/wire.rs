@@ -651,6 +651,7 @@ pub fn json_entry<P: Payload>(entry: &Entry<TodoEvent<P>>) -> Value {
         },
         "spec": fpl::print_term(entry.spec()),
         "stream": strings(entry.stream.iter().map(|name| name.as_str().to_owned())),
+        "begun": fpl::iso(fpl::instant_of(entry.begun)),
     })
 }
 
@@ -703,10 +704,11 @@ mod tests {
     /// the struct: `conformance/view/*.py` freezes ten of these fields' VALUES
     /// in the core, and this freezes the JSON keys and forms the browser reads
     /// them under — the lowercased state, `isoformat(" ")`, `""` for an absent
-    /// claim, `"absent"` for an absent value, and a term as its §2 PRINT and
-    /// never as `to_json`'s shape.
+    /// claim, `"absent"` for an absent value, a term as its §2 PRINT and
+    /// never as `to_json`'s shape, and `begun` as an ISO instant, which the
+    /// page compares with the answer's `at` (law 87).
     #[test]
-    fn an_entry_crosses_as_the_eleven_keys_the_page_reads() {
+    fn an_entry_crosses_as_the_twelve_keys_the_page_reads() {
         let entry: Row = Entry {
             genesis: None,
             key: TodoId::new("alpha").expect("valid"),
@@ -725,6 +727,7 @@ mod tests {
                 .into_iter()
                 .collect(),
             stream: vec![name('a'), name('b')],
+            begun: at(1),
         };
         assert_eq!(
             json_entry(&entry),
@@ -740,6 +743,7 @@ mod tests {
                 "content": "a".repeat(64),
                 "spec": "Flat(value=0.25)",
                 "stream": ["a".repeat(64), "b".repeat(64)],
+                "begun": "2026-09-01T12:00:00",
             })
         );
     }
@@ -768,6 +772,7 @@ mod tests {
             },
             conflicts: BTreeMap::new(),
             stream: vec![],
+            begun: at(1),
         };
         assert_eq!(
             json_entry(&entry),
@@ -783,6 +788,7 @@ mod tests {
                 "content": Value::Null,
                 "spec": "Absent()",
                 "stream": [],
+                "begun": "2026-09-01T12:00:00",
             })
         );
     }
@@ -925,6 +931,7 @@ mod tests {
             },
             conflicts: BTreeMap::new(),
             stream: vec![],
+            begun: at(1),
         };
         let json = json_entry(&entry);
         assert_eq!(json["state"], "open|completed");
@@ -961,6 +968,7 @@ mod tests {
             },
             conflicts: BTreeMap::new(),
             stream: vec![],
+            begun: at(1),
         };
         let json = json_entry(&entry);
         assert_eq!(json["value"], Value::Null);

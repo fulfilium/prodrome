@@ -1,4 +1,4 @@
-// Make the three small stores that `stores.mjs` serves, into OUT.
+// Make the four small stores that `stores.mjs` serves, into OUT.
 //
 //   node viewer/test/make-stores.mjs PRODROME PRODROME_NODE OUT
 //
@@ -10,9 +10,14 @@
 // in the glue seals that one event into `beta`. The store `gamma` holds an
 // item `a1`, as `alpha` does, items whose text is crafted to attack the page
 // if it ran that text as Typst, and an issue's title in Typst markup, as the
-// issue mirror writes it. A genesis holds a random
-// nonce, so each run makes stores with new names; the committed copy in
-// `viewer/test/stores/` is one run.
+// issue mirror writes it. The store `delta` has the shape of a store that an
+// application writes as content records alone: each item is an `Authored`
+// record with its spec, and no `Created`, and the core in the glue seals
+// each one, because the command line writes a `Created` for each item. One
+// item is revised twice, one waits on another by its `waiting_on` field, one
+// is completed, one is cancelled, and one is cancelled and reopened. A
+// genesis holds a random nonce, so each run makes stores with new names; each
+// store in `viewer/test/stores/` is the output of one run.
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -76,11 +81,40 @@ for (const [todo, body] of Object.entries(crafted)) {
 // An issue's title, as the issue mirror writes it: anyone may write one.
 runAs("github-mirror", "add", "--store", gamma, "--at", "2026-11-03T11:00:00", "--priority", "50",
   "--body", `*Mirrored* #html.elem("style", "#stores { display: none }")`, "gh-1");
-for (const store of [alpha, beta, gamma]) {
+const delta = join(out, "delta");
+run("init", delta);
+const stamp = (day, hour) => `datetime(2026, 11, ${day}, ${hour}, 0, 0)`;
+const authored = (todo, day, hour, body, value, waitingOn) =>
+  `Authored(todo='${todo}', at=${stamp(day, hour)}, actor='ada', kind='todo', created=${stamp(4, 9)}, ` +
+  `body="${body}", spec=Flat(value=${value}), rationale=('the first reason', 'the second reason'), ` +
+  `category='', waiting_on='${waitingOn}', detail='The detail of ${todo}.', source=None, subtodos=(), notes=(), note='')`;
+const lifecycle = (kind, todo, day, hour) => `${kind}(todo='${todo}', at=${stamp(day, hour)}, actor='ada', note='')`;
+const records = [
+  authored("d-parser", 4, 9, "Write the parser", 0.55, ""),
+  authored("d-errors", 4, 10, "Tidy the errors", 0.3, ""),
+  authored("d-figures", 4, 11, "Draw the figures", 0.7, "d-parser"),
+  authored("d-release", 4, 12, "Ship the release", 0.4, ""),
+  authored("d-port", 4, 13, "Port the old tests", 0.6, ""),
+  authored("d-format", 4, 14, "Keep the old format", 0.8, ""),
+  authored("d-errors", 5, 9, "Tidy the errors and the warnings", 0.3, ""),
+  authored("d-errors", 6, 9, "Tidy every message", 0.25, ""),
+  lifecycle("Completed", "d-release", 6, 10),
+  lifecycle("Cancelled", "d-format", 6, 11),
+  lifecycle("Cancelled", "d-port", 6, 12),
+  lifecycle("Reopened", "d-port", 6, 13),
+];
+const writer = new core.Todos(JSON.stringify(objects(delta)));
+for (const record of records) {
+  for (const { hash, text } of JSON.parse(writer.append(record, genesis(delta))).objects) {
+    writeFileSync(join(delta, "objects", `${hash}.py`), text);
+  }
+}
+writer.free();
+for (const store of [alpha, beta, gamma, delta]) {
   rmSync(join(store, ".heads"), { force: true });
   run("verify", "--store", store);
 }
 // The test reads the geneses to know how the core breaks a tie.
-const geneses = { alpha: genesis(alpha), beta: genesis(beta), gamma: genesis(gamma) };
+const geneses = { alpha: genesis(alpha), beta: genesis(beta), gamma: genesis(gamma), delta: genesis(delta) };
 writeFileSync(join(out, "geneses.json"), `${JSON.stringify(geneses, null, 2)}\n`);
 console.log(JSON.stringify(geneses));

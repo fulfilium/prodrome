@@ -984,7 +984,15 @@ FPL, below. A content record joins whoever wrote it.
    before it wrote streams before its write. The name breaks a tie only
    between writes that truly were concurrent; no instant ever does, so a
    host never stamps instants apart to order its own writes. A todo whose
-   events are all dated after `t` is still a row, open and `absent`: `t` asks what is believed, not what exists. A
+   events are all dated after `t` is still a row, open and `absent`: `t`
+   asks what is believed. `begun` is the least instant that an event of the
+   row's `stream` carries, of any kind. A todo EXISTS at `t` when `begun ≤
+   t`: its first event of any kind makes it, and no particular kind does. A
+   todo that content records alone make, with no `Created`, exists from its
+   first record. A list of what exists at `t` (an open list, a closed list)
+   keeps exactly the rows that exist at `t`, so a list and a todo's own row
+   name one set of todos (law 87). A row whose outcome binds at `t` exists
+   at `t`. A
    LIST of entries is in one order, defined here and by no host: ascending
    in value, ties by `(genesis, id)`, then every row with no number, `absent`
    or not linking, by `(genesis, id)`.
@@ -2608,6 +2616,21 @@ opened as shared and as its program's alone.
     other way. The mark of the last hold differs, since it is random in
     both; `.gitignore` and `.gitattributes` are the store's constants.
     `store.rs::tests::the_doors_change_no_stored_byte`.
+
+Law 87 is §6.7's existence of a todo, read by every list.
+
+87. **A todo exists from its first event, whatever its kind.** On any log
+    and at any moment `t`, under each policy: a row's `begun` is the least
+    instant of the events that name its todo; the rows that exist at `t`
+    are exactly the todos that an event dated at or before `t` names, a
+    `Created`, a content record or any other kind; and every row whose
+    outcome binds at `t` exists at `t`. The command line's `list` and the
+    viewer's list keep exactly these rows, open and closed.
+    `fold_laws.rs::an_item_exists_from_its_first_event_whatever_its_kind`;
+    at the command line,
+    `cli/tests/verbs.rs::an_item_made_by_content_records_alone_is_listed`;
+    in the viewer, the store `delta` of `viewer/test/stores.mjs`, and the
+    hosted build's `viewer/test/smoke.mjs`.
 
 ## 10. Non-goals
 

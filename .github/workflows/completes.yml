@@ -20,7 +20,8 @@
 # `pull_request_target` trigger, and the text of a description reaches the
 # binary only as a JSON file, never as a shell command line. The only
 # credential is the run's own token: `check` can read, and `record` can push
-# to `roadmap-data` and read the list of pull requests.
+# to `roadmap-data`, read the list of pull requests, and comment on the
+# pushed commit's pull request when the run fails.
 name: completes
 
 on:
@@ -66,7 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write # push to roadmap-data
-      pull-requests: read # read the merged pull requests' descriptions
+      pull-requests: write # read the merged pull requests, and say that a run failed
     # One run at a time. roadmap-push.sh merges a race with the issue mirror.
     concurrency:
       group: completes-record
@@ -124,6 +125,7 @@ jobs:
           echo "refused=$refused" >> "$GITHUB_OUTPUT"
 
       - name: Verify the store
+        id: verify
         run: ./result-cli/bin/prodrome verify --store data/roadmap
 
       - name: Push to roadmap-data
@@ -132,8 +134,23 @@ jobs:
           ../code/.github/scripts/roadmap-push.sh "completes: merges into main up to ${GITHUB_SHA::7}"
 
       - name: Fail on a refused pull request
+        id: refused
         if: steps.record.outputs.refused == '1'
         run: |
           echo "A Completes line named an item that the roadmap does not hold." >&2
           echo "Correct the pull request's description; the next push to main records it." >&2
           exit 1
+
+      # A FAILED RUN IS SAID ON THE PUSHED COMMIT'S PULL REQUEST, where its
+      # author and the maintainer who merged it see it. A push with no pull
+      # request has only the red run on `main`. A refused Completes line is
+      # not reported here: the step above says which line to correct.
+      - name: Report a failed run
+        if: failure() && steps.refused.outcome != 'failure'
+        env:
+          VERIFY: ${{ steps.verify.outcome }}
+        run: |
+          number=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/pulls" --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            code/.github/scripts/report-failure.sh "$number" "$VERIFY"
+          fi

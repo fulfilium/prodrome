@@ -20,7 +20,7 @@ on:
 
 permissions:
   contents: write # push to roadmap-data
-  issues: write # the one welcome comment, and answers to a malformed /price
+  issues: write # the one welcome comment, answers to a malformed /price, and a failed run
 
 jobs:
   mirror:
@@ -95,6 +95,7 @@ jobs:
           gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file answer.md
 
       - name: Verify the store
+        id: verify
         run: ./result-cli/bin/prodrome verify --store data/roadmap
 
       - name: Push to roadmap-data
@@ -125,3 +126,12 @@ jobs:
                  "[PRICING.md](https://github.com/$GITHUB_REPOSITORY/blob/roadmap-data/PRICING.md)."
           } > welcome.md
           gh issue comment "$ISSUE" --repo "$GITHUB_REPOSITORY" --body-file welcome.md
+
+      # A FAILED RUN IS SAID ON ITS ISSUE, where a maintainer sees it: a red
+      # run alone reaches only the person who opened the issue. The comment
+      # holds no text of the issue (report-failure.sh).
+      - name: Report a failed run
+        if: failure()
+        env:
+          VERIFY: ${{ steps.verify.outcome }}
+        run: code/.github/scripts/report-failure.sh "$ISSUE" "$VERIFY"

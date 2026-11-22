@@ -1,4 +1,4 @@
-//! SPEC §9.2, §9.3, §9.6, §9.9, §9.17 b and laws 24, 25 and 27, as
+//! SPEC §9.2, §9.3, §9.6, §9.9, §9.17 b and laws 24, 25, 27 and 87, as
 //! properties over random logs and random two-replica DAGs.
 //!
 //! The vectors say this side agrees with the reference on the cases the
@@ -401,6 +401,43 @@ proptest! {
                 log.iter().filter(|e| matches!(e, TodoEvent::Authored(_))).count()
             );
             prop_assert_eq!(folds(&kept, t, &Everything), folds(log, t, &policy));
+        }
+    }
+}
+
+proptest! {
+    #![proptest_config(crate::common::cases::cases(256))]
+
+    /// Law 87 — AN ITEM EXISTS FROM ITS FIRST EVENT, WHATEVER ITS KIND. At
+    /// every moment `t` and under each policy, a row's `begun` is the least
+    /// instant of the events that name its todo; the rows that exist at `t`
+    /// are exactly the todos that an event dated at or before `t` names, be
+    /// it a `Created`, a content record or any other kind; and every row
+    /// whose outcome binds at `t` exists at `t`. So a list of the rows that
+    /// exist, open and closed, holds exactly the items whose own row reads.
+    #[test]
+    fn an_item_exists_from_its_first_event_whatever_its_kind(
+        log in a_log(),
+        when in 0i64..WINDOW,
+    ) {
+        let nodes = chain_of(&log);
+        let t = moment(when);
+        let named: BTreeSet<&TodoId> =
+            log.iter().filter(|event| event.at() <= t).map(Event::todo).collect();
+        for policy in [roster(), Untrusted::none()] {
+            let rows = view::entries(&nodes, t, &policy).expect("the log folds");
+            for row in &rows {
+                let first = log
+                    .iter()
+                    .filter(|event| event.todo() == &row.key)
+                    .map(Event::at)
+                    .min();
+                prop_assert_eq!(Some(row.begun), first, "begun");
+                prop_assert!(row.is_open() || row.exists_at(t), "a closed row exists");
+            }
+            let existing: BTreeSet<&TodoId> =
+                rows.iter().filter(|row| row.exists_at(t)).map(|row| &row.key).collect();
+            prop_assert_eq!(&existing, &named);
         }
     }
 }

@@ -163,15 +163,11 @@
   }
 }
 
-/// Whether the todo had been created by the instant the data was read at. A
-/// row exists for every todo the store mentions, the future's included.
-#let _existed(data, entry) = {
-  let created = data.at("created", default: none)
-  if created == none { true } else {
-    let first = created.at(_key(entry), default: none)
-    first != none and first.at <= data.at
-  }
-}
+/// Whether the todo exists at the instant the data was read at: the core's
+/// `begun`, the instant of the todo's first event of any kind, is at or
+/// before it (SPEC §6.7). A row exists for every todo the store mentions,
+/// the future's included, so the list keeps only the rows that pass.
+#let _existed(data, entry) = entry.begun <= data.at
 
 /// The rows in the core's list order (SPEC §6.7), which `prodrome list`
 /// prints too: most urgent first, then every row with no number, by id. The
@@ -211,7 +207,7 @@
   markup: false,
 ) = _look({
   let open = listed(data).filter(e => e.state == "open" and _existed(data, e))
-  let closed = data.entries.filter(e => e.state != "open").sorted(key: _key)
+  let closed = data.entries.filter(e => e.state != "open" and _existed(data, e)).sorted(key: _key)
 
   heading(level: 1, title)
   _rule

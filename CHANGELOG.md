@@ -460,6 +460,26 @@ constructor's fields never change, in any release.
 
 ### Fixed
 
+- **A list shows a todo that content records alone make (SPEC §6.7, law
+  87).** A todo whose first event is an `Authored` record, with no
+  `Created`, was missing from the open list of `prodrome list` and of the
+  viewer, although its own page read it as open. Both lists asked for the
+  todo's first `Created`. A §6.7 row now carries `begun`, the least instant
+  of the events that name its todo, of any kind, and `Entry::exists_at(t)`
+  is the one test of existence. The new field is a breaking change for code
+  that builds a `view::Entry`. The command line's `list` and `show`, and
+  the viewer's list, read it. The viewer's closed list keeps the same rows
+  that exist. prodrome-wasm's row (`entries`, and `Todos.entries`) gains
+  the key `begun`; the `created` map keeps its meaning and serves only as
+  the body of a todo with no record. No stored byte changes.
+- **The pull request checks verify the roadmap store after a write.** The
+  `.gitignore` finding of `verify` (law 81) needs a `.writes` file, which a
+  fresh checkout lacks, so the check of each pull request passed while the
+  issue mirror, which writes first, failed. The check now verifies the
+  `roadmap-data` store as it is checked out, and again after a copy of it
+  takes a write. A run of the issue mirror, the pricing step or the
+  completions that fails says so in a comment on its issue or pull request.
+
 - **The append asks the schema's refusal of an entity's first write (SPEC
   §3, law 70).** `registers::deps_for` returned no deps for an entity that
   the writer held no write of, before it asked `Product::grows`. So an
