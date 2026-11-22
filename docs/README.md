@@ -46,6 +46,9 @@ finally implemented, see `SPEC.md` and `CHANGELOG.md`.
 - [`design-inflationary-reading.md`](design-inflationary-reading.md): why
   an inflationary register reads the greatest of all its writes, how other
   CRDT libraries define such a register, and what the change costs.
+- [`design-core-face.md`](design-core-face.md): a measure of what a
+  program reads to use the core, and a plan in stages to make it smaller:
+  shorter doc comments, a narrower public API, and smaller crates.
 - [`SIMPLIFY-PLAN.md`](SIMPLIFY-PLAN.md): a plan to remove duplicated code,
   so that the crate has one term functor, one schema, one evaluator, and one
   fold.

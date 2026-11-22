@@ -220,6 +220,15 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The doc comments of the core's public items are shorter (issue
+  #92).** Each doc comment now states the item's contract in one
+  sentence, keeps the invariants, hazards, outside facts and law numbers
+  that the code does not show, and cites the section of `SPEC.md` for the
+  rest. The public face of `prodrome-core` is the signatures and doc
+  comments of its public items. Measured with `scripts/face.py`, it falls
+  from 67,722 to 57,181 tokens. No code, name, signature or stored byte
+  changes. `docs/design-core-face.md` proposes the next stages: narrowing
+  what is public, and dividing the core into crates.
 - **Every door that takes prints from another party takes a `Sender`
   (SPEC §3).** A host whose schema has no husks passes
   `Sender::Stranger`, and reads as before:
