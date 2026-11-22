@@ -1,0 +1,1 @@
+Change(genesis='3b500829eb3d39fac3f0cf3857551a3dd16480089336ad23330600eb4f284b2f', deps=('3ec50e849849428d9526dfdbe8e11d4450a1ff1a8978c406298c9df639fd750d',), event=SpecRevised(todo='b1', at=datetime(2026, 11, 2, 10, 10, 0), actor='ada', spec=RefIn(store='d3ca7c8f30938564ad7fdeaddf30a05d287e885c174bb2ca7906db68a48709ea', entity='a1'), note='waits on the parser'))

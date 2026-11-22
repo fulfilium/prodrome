@@ -69,8 +69,14 @@ const listMs = Date.now() - start;
 const rows = await page.locator(".roadmap tbody tr").count();
 check(rows > 0, `the list has ${rows} rows (first render ${listMs} ms)`);
 check((await page.locator(".roadmap svg").count()) > 0, "the list draws its marks as SVG");
-const hrefs = await page.locator(".roadmap a").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
+// Each row's own link, and apart from it the links of what a row waits on.
+const links = await page.locator(".roadmap a").evaluateAll((as) =>
+  as.map((a) => ({ href: a.getAttribute("href"), wait: a.closest(".waits") !== null })),
+);
+const hrefs = links.filter((l) => !l.wait).map((l) => l.href);
+const waits = links.filter((l) => l.wait).map((l) => l.href);
 check(hrefs.every((h) => /^#\/todo\/.+/.test(h)), "every item links to #/todo/<id>");
+check(waits.every((h) => /^#\/todo\/.+/.test(h)), `every wait links to #/todo/<id> (${waits.length} waits)`);
 if (listed) {
   const cli = (await readFile(listed, "utf8")).split("\n").slice(1).filter(Boolean).map((line) => line.split(/\s+/)[1]);
   const shown = hrefs.map((h) => decodeURIComponent(h.slice("#/todo/".length))).slice(0, rows);

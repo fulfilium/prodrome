@@ -11,11 +11,21 @@
 
 import { DAY, iso, naive, plus, type Naive } from "./time";
 
+/** The part of prodrome-wasm's `Todos` class this reads: one set of objects, read once. */
+export interface Replica {
+  tips(): string;
+  since(tips: string): string;
+  entries(at: string | null | undefined, untrusted: string): string;
+  prices(at: string | null | undefined, untrusted: string): string;
+  free(): void;
+}
+
 /** The part of prodrome-wasm this reads — the glue module satisfies it. */
 export interface Core {
+  Todos: new (objects: string) => Replica;
   entries(objects: string, at: string | null | undefined, untrusted: string): string;
   fold(objects: string, at: string | null | undefined, untrusted: string): string;
-  link(term: string, specs: string): string;
+  link_in(term: string, specs: string, stores: string): string;
   fulfillment(term: string, now: string, env: string): number | undefined;
   explain(term: string, now: string, env: string): string;
   series_knots(term: string, from: string, to: string, history: string): string;
@@ -41,6 +51,18 @@ export interface Entry {
   content: string | null;
   spec: string;
   stream: string[];
+}
+
+/**
+ * What a todo's function refers to: a todo of its own store (`Ref`), or an
+ * entity of the store whose genesis is `store` (`RefIn`, SPEC §7.2).
+ */
+export type Target = { kind: "home"; todo: string } | { kind: "other"; store: string; entity: string };
+
+/** One store's reading: what a page typesets of it, and what each todo's function refers to. */
+export interface Folded {
+  view: View;
+  targets: Record<string, Target[]>;
 }
 
 /** A reading at one instant: a number, or `null` for ∅. */
@@ -139,13 +161,45 @@ function marksOf(core: Core, closed: string, now: Naive, env: string, history: s
 }
 
 /**
+ * Every reference in a term in the JSON shape of prodrome-wasm, in the
+ * order they occur, each once. The walk reads the shape's two reference
+ * kinds and nothing else of it.
+ */
+export function targets(term: unknown): Target[] {
+  const found = new Map<string, Target>();
+  const walk = (node: unknown) => {
+    if (Array.isArray(node)) {
+      node.forEach(walk);
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    const record = node as Record<string, unknown>;
+    if (record.kind === "ref" && typeof record.todo === "string") {
+      found.set(`home/${record.todo}`, { kind: "home", todo: record.todo });
+    } else if (record.kind === "refIn" && typeof record.store === "string" && typeof record.entity === "string") {
+      found.set(`other/${record.store}/${record.entity}`, { kind: "other", store: record.store, entity: record.entity });
+    }
+    Object.values(record).forEach(walk);
+  };
+  walk(term);
+  return [...found.values()];
+}
+
+/**
  * Everything a page needs, read at `now`. `focus` names the one todo whose
  * explanation is wanted (the item page); the list asks for none.
  *
+ * `stores` is the set of prodromes a qualified reference reads (SPEC §7.2):
+ * the `prices` answer of every loaded store's objects, `[{genesis, env,
+ * functions}]`. A todo that waits on an entity of another loaded store
+ * reads that entity's price, as the core's `entries` over all the stores
+ * prices it (law 41); `"[]"` reads every such reference as `∅`.
+ *
  * Throws what the core throws: objects that do not hash to their names, or do
- * not form a DAG, have no honest reading (see prodrome-wasm's `Read`).
+ * not form a DAG, have no honest reading (see prodrome-wasm's `Read`). The
+ * page hands it only the objects the core kept (stores.ts).
  */
-export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string | null): View {
+export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string | null, stores: string): Folded {
   const sent = JSON.stringify(objects);
   const at = iso(now);
   const rows = JSON.parse(core.entries(sent, at, "[]")) as {
@@ -162,12 +216,14 @@ export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string 
 
   const marks: View["marks"] = {};
   const explain: View["explain"] = {};
+  const refers: Folded["targets"] = {};
   for (const [todo, term] of Object.entries(fold.functions)) {
-    // `link` refuses an unknown todo or a loop; that todo then has no marks,
-    // and its row already says why it has no value (`unlinked`).
+    refers[todo] = targets(term);
+    // `link_in` refuses an unknown todo or a loop; that todo then has no
+    // marks, and its row already says why it has no value (`unlinked`).
     let closed: string;
     try {
-      closed = core.link(JSON.stringify(term), specs);
+      closed = core.link_in(JSON.stringify(term), specs, stores);
     } catch {
       continue;
     }
@@ -175,7 +231,7 @@ export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string 
     if (todo === focus) explain[todo] = JSON.parse(core.explain(closed, at, env));
   }
 
-  return {
+  const view = {
     at: rows.at,
     entries: rows.entries,
     order: rows.order,
@@ -186,4 +242,5 @@ export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string 
     history: fold.stream,
     focus,
   };
+  return { view, targets: refers };
 }

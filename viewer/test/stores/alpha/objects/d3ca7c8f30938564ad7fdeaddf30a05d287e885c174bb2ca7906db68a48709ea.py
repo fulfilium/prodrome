@@ -1,0 +1,1 @@
+Genesis(label='alpha', nonce='ffa895febf46f5cdf44f62f9bb9c53b3')
