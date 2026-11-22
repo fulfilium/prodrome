@@ -7,7 +7,7 @@
 // `typst compile` reads from `typst/examples/`.
 
 import { PACKAGES } from "typst-packages";
-import type { View } from "./view";
+import type { Page } from "./stores";
 
 /** The part of typst-wasm this reads — the glue module satisfies it. */
 export interface Typst {
@@ -37,17 +37,31 @@ const PACKAGE = "@local/prodrome-typst:0.1.0";
 export const IMPORT = `#import "${PACKAGE}": *`;
 
 /** The packages' files and the data, keyed the way typst-wasm finds them. */
-export function files(view: View): Record<string, string> {
+export function files(view: Page): Record<string, string> {
   return { ...PACKAGES, "/data.json": JSON.stringify(view) };
 }
 
+/**
+ * The list. Its title, and the stores' part of every link (`query`), come
+ * from the data, so no text of a link is spliced into code.
+ */
 export function listDocument(markup: boolean): string {
-  return `${IMPORT}\n#roadmap(json("/data.json"), markup: ${markup})\n`;
+  return [
+    IMPORT,
+    `#let data = json("/data.json")`,
+    `#roadmap(data, title: data.title, href: key => "#/todo/" + key + data.query, markup: ${markup})`,
+    ``,
+  ].join("\n");
 }
 
 /** The item named by the data's `focus`, so an id is never spliced into code. */
 export function itemDocument(markup: boolean): string {
-  return `${IMPORT}\n#let data = json("/data.json")\n#item(data, data.focus, markup: ${markup})\n`;
+  return [
+    IMPORT,
+    `#let data = json("/data.json")`,
+    `#item(data, data.focus, markup: ${markup}, objects: data.objects, back: "#/" + data.query)`,
+    ``,
+  ].join("\n");
 }
 
 /** The editor's starting text: a small document over the same data. */
@@ -55,19 +69,19 @@ export function scratchDocument(): string {
   return [
     IMPORT,
     `#let data = json("/data.json")`,
-    `#let e = data.entries.find(e => e.todo == data.focus)`,
+    `#let e = data.entries.find(e => e.key == data.focus)`,
     `// A scratch pad over this item's data. Nothing here is saved.`,
     ``,
     `= Notes on #raw(e.todo)`,
     ``,
     `Worth #price(e.value) now, which is *#state-of(e.value)*.`,
     ``,
-    `#trace-of(data, e.todo)`,
+    `#trace-of(data, e.key)`,
     ``,
   ].join("\n");
 }
 
-export function compile(typst: Typst, source: string, view: View): Compiled {
+export function compile(typst: Typst, source: string, view: Page): Compiled {
   return JSON.parse(typst.compile_html(source, JSON.stringify(files(view)))) as Compiled;
 }
 
@@ -79,7 +93,7 @@ export function compile(typst: Typst, source: string, view: View): Compiled {
 export function compilePage(
   typst: Typst,
   document: (markup: boolean) => string,
-  view: View,
+  view: Page,
 ): Compiled & { markup: boolean } {
   const typeset = compile(typst, document(true), view);
   if (typeset.html !== null) return { ...typeset, markup: true };

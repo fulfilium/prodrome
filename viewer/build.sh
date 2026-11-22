@@ -8,7 +8,7 @@
 # Typst package path, `local/<name>/<version>/…`, holding `prodrome-typst`
 # and every package it imports, each of whose Typst files is bundled; each
 # FONT_DIR is searched for the fonts main.ts lists. Needs `esbuild`, `tsc`,
-# `typst` and `jq` on PATH and nothing from npm: the TypeScript is
+# `node`, `typst` and `jq` on PATH and nothing from npm: the TypeScript is
 # typechecked against the glues' own `.d.ts` and bundled by esbuild, and the
 # stylesheet's tokens are read from the design system by typst.
 # `nix build .#prodrome-viewer` runs this.
@@ -49,6 +49,11 @@ find -L "$packages/local" -type f \( -name '*.typ' -o -name typst.toml \) | LC_A
 
 tsc -p "$here/tsconfig.json"
 tsc -p "$here/tsconfig.sw.json"
+# THE ADDRESS GRAMMAR'S LAWS, over generated addresses (test/address.test.ts):
+# a build whose parser and printer do not round-trip fails here.
+esbuild "$here/test/address.test.ts" --bundle --platform=node --format=esm \
+  --outfile="$here/vendor/address.test.mjs" --log-level=warning
+node "$here/vendor/address.test.mjs"
 
 mkdir -p "$out/wasm" "$out/fonts"
 cp "$prodrome/prodrome_bg.wasm" "$typst/typst_bg.wasm" "$out/wasm/"

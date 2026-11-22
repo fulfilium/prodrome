@@ -10,6 +10,23 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The viewer shows any public store named in its address, and several
+  stores as one list (docs/design-viewer-stores.md).** A link names each
+  store after `#/?`: a base URL under which `objects/` lies, or
+  `gh:owner/repository[@ref][/dir]`, each with an optional label and an
+  optional pinned genesis. The page reads a store's `index.json`, or
+  GitHub's tree listing where there is none, and keeps only the objects
+  that the core keeps. It names each object that it leaves out, and why.
+  The list of several stores is the core's list over the union of their
+  objects: each row names its store, items of two stores never merge, and
+  an item that waits on an item of another loaded store reads that item's
+  price and links to it. With no store in its address, the page shows the
+  site's own store as before. The page sends no address to its own host.
+- **prodrome-wasm exports `link_in(term, specs, stores)`** (SPEC §7.2, law
+  41). It links a term as `link` does, and binds each qualified reference
+  in `stores`, the `prices` answer of a set of stores. No stored byte
+  changes.
+
 - **A store says when it is opened whether other programs may change it
   (SPEC §3, "The doors a store has"; laws 84 to 86).** `Doors::Shared`, the
   default, keeps the rule that a decision lists `objects/`. A store opened

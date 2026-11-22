@@ -15,5 +15,5 @@
       "typst-packages": ["./vendor/packages"]
     }
   },
-  "files": ["src/main.ts", "src/modules.d.ts"]
+  "files": ["src/main.ts", "src/modules.d.ts", "test/address.test.ts"]
 }

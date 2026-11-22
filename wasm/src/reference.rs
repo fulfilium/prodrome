@@ -16,8 +16,8 @@ use wasm_bindgen::prelude::*;
 use prodrome_wasm_exports::wire::{
     json_candidates, json_entry, json_env, json_marker, json_next_change, json_reading,
     json_record, json_tended, json_terms, object, parse_closed, parse_env, parse_instant,
-    parse_moment, parse_names, parse_observation, parse_specs, parse_term, parse_untrusted,
-    strings, History, Refusal,
+    parse_moment, parse_names, parse_observation, parse_specs, parse_stores, parse_term,
+    parse_untrusted, strings, History, Refusal,
 };
 
 /// THE RECORD SHAPE THIS MODULE WAS BUILT WITH: `prodrome::reference::Todo`,
@@ -546,9 +546,23 @@ pub fn compile(term: &str, env: &str) -> Result<String, JsError> {
 /// loop named.
 #[wasm_bindgen]
 pub fn link(term: &str, specs: &str) -> Result<String, JsError> {
+    link_in(term, specs, "[]")
+}
+
+/// §7.2's `link_in`: [`link`], with `stores` the set of prodromes a
+/// qualified reference (`refIn`) reads, as the `prices` answer of the
+/// stores' objects puts them (`[{genesis, env, functions}]`, see
+/// [`parse_stores`]). A `refIn` to a member binds to that entity's function
+/// there, linked and compiled in that member, so the term reads what the
+/// entity reads in its own prodrome (law 41); one to a store or an entity
+/// the set does not hold reads `∅`. `link` is this with no stores.
+#[wasm_bindgen]
+pub fn link_in(term: &str, specs: &str, stores: &str) -> Result<String, JsError> {
     let term = parse_term("term", term).map_err(refused)?;
     let specs = parse_specs(specs).map_err(refused)?;
-    let linked = prodrome::fpl::link(&term, &specs).map_err(|e| refused(format!("link: {e}")))?;
+    let stores = parse_stores(stores).map_err(refused)?;
+    let linked = prodrome::fpl::link_in(&term, &specs, &stores)
+        .map_err(|e| refused(format!("link: {e}")))?;
     printed(&json::to_json(linked.term()))
 }
 
@@ -619,6 +633,43 @@ mod tests {
             // The refusal itself: a `JsError` is built only on a wasm target.
             assert!(super::parse_observation(malformed).is_err(), "{malformed}");
         }
+    }
+
+    /// Law 41 through the export: a qualified reference linked against a
+    /// set of prodromes in `prices`'s shape reads the entity's function in
+    /// its member, and a store or an entity the set lacks reads `∅`. A
+    /// legacy member is no member, and a genesis named twice is refused.
+    #[test]
+    fn a_qualified_ref_links_through_the_stores_it_is_given() {
+        let genesis = "ab".repeat(32);
+        let other = "cd".repeat(32);
+        let stores = json!([
+            {"genesis": genesis, "env": {}, "functions": {"a": {"kind": "flat", "value": 0.4}}},
+            {"genesis": null, "env": {}, "functions": {"a": {"kind": "flat", "value": 0.9}}},
+        ])
+        .to_string();
+        let read = |store: &str, entity: &str| {
+            let term = json!({"kind": "refIn", "store": store, "entity": entity}).to_string();
+            let closed = super::link_in(&term, "{}", &stores).unwrap_or_else(|_| panic!("links"));
+            super::fulfillment(&closed, "2026-11-01T00:00:00", "{}")
+                .unwrap_or_else(|_| panic!("reads"))
+        };
+        assert_eq!(read(&genesis, "a"), Some(0.4), "the member's own function");
+        assert_eq!(
+            read(&genesis, "b"),
+            None,
+            "an entity the member lacks is absent"
+        );
+        assert_eq!(read(&other, "a"), None, "a store the set lacks is absent");
+        let twice = json!([
+            {"genesis": genesis, "env": {}, "functions": {}},
+            {"genesis": genesis, "env": {}, "functions": {}},
+        ]);
+        assert!(
+            super::parse_stores(&twice.to_string()).is_err(),
+            "a genesis named twice"
+        );
+        assert!(super::parse_stores(r#"[{"genesis": "x", "env": {}, "functions": {}}]"#).is_err());
     }
 
     /// A store of changes begins at its `Genesis`: a change with no deps

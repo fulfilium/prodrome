@@ -6,7 +6,7 @@
 // textarea's selection counts in, so nothing here converts.
 
 import { body, compile, type Typst } from "./typst";
-import type { View } from "./view";
+import type { Page } from "./stores";
 
 interface Highlight {
   from: number;
@@ -60,7 +60,7 @@ function position(source: string, offset: number): string {
 
 const IDENT = /[\p{L}\p{N}_.#-]$/u;
 
-export function editor(typst: Typst, view: View, initial: string): HTMLElement {
+export function editor(typst: Typst, view: Page, initial: string): HTMLElement {
   const input = element("textarea", {
     spellcheck: false,
     value: initial,

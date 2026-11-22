@@ -139,6 +139,12 @@
 
 // --- reading the data --------------------------------------------------------
 
+/// A row's key: what `order`, `created`, `marks`, `explain` and `history`
+/// name it by. A page of several stores keys a row `<store>/<todo>`, so two
+/// stores' items never share a key; a page of one store keys it by its todo
+/// id, and leaves `key` out.
+#let _key(entry) = entry.at("key", default: entry.todo)
+
 #let _record(data, entry) = if entry.content == none { none } else {
   data.at("records", default: (:)).at(entry.content, default: none)
 }
@@ -153,7 +159,7 @@
 #let _body(data, entry) = {
   let body = _field(_record(data, entry), "body")
   if body != "" { body } else {
-    data.at("created", default: (:)).at(entry.todo, default: (text: "")).text
+    data.at("created", default: (:)).at(_key(entry), default: (text: "")).text
   }
 }
 
@@ -162,7 +168,7 @@
 #let _existed(data, entry) = {
   let created = data.at("created", default: none)
   if created == none { true } else {
-    let first = created.at(entry.todo, default: none)
+    let first = created.at(_key(entry), default: none)
     first != none and first.at <= data.at
   }
 }
@@ -170,7 +176,18 @@
 /// The rows in the core's list order (SPEC §6.7), which `prodrome list`
 /// prints too: most urgent first, then every row with no number, by id. The
 /// order is the core's, so this package never sorts by value itself.
-#let listed(data) = data.order.map(todo => data.entries.find(e => e.todo == todo))
+#let listed(data) = data.order.map(key => data.entries.find(e => _key(e) == key))
+
+/// The items a row waits on (`waits`), or that wait on it (`waitedBy`):
+/// each a link where the page shows it (`kind` `loaded`), else its name and
+/// why the page does not: its store is not loaded (`elsewhere`), or its
+/// store does not hold it (`unheld`). Nothing for a row with none.
+#let _waits(entry, field, words) = {
+  let waits = entry.at(field, default: ())
+  if waits.len() > 0 {
+    _span("waits", [#words #waits.map(w => if w.kind == "loaded" { link(w.href, raw(w.label)) } else if w.kind == "elsewhere" [#raw(w.label), in a store not loaded] else [#raw(w.label), which its store does not hold]).join([, ])])
+  }
+}
 
 /// THE THIRTY DAYS: a todo's marks (`data.marks`), drawn as the design's
 /// `trace` around the instant the data was read at. Nothing for a todo with
@@ -185,8 +202,8 @@
 // --- the list ----------------------------------------------------------------
 
 /// The roadmap: every open todo, most urgent first, each with its price and
-/// a link to its page. `href` turns a todo id into that link. The closed
-/// follow, in a shorter list.
+/// a link to its page. `href` turns a row's key into that link. The closed
+/// follow, in a shorter list. A row that waits on another says so, linked.
 #let roadmap(
   data,
   title: [Roadmap],
@@ -194,7 +211,7 @@
   markup: false,
 ) = _look({
   let open = listed(data).filter(e => e.state == "open" and _existed(data, e))
-  let closed = data.entries.filter(e => e.state != "open").sorted(key: e => e.todo)
+  let closed = data.entries.filter(e => e.state != "open").sorted(key: _key)
 
   heading(level: 1, title)
   _rule
@@ -206,7 +223,7 @@
     ..open
       .map(e => (
         price(e.value),
-        [#link(href(e.todo), raw(e.todo)) \ #_text(_body(data, e), markup)],
+        [#link(href(_key(e)), raw(_key(e))) \ #_text(_body(data, e), markup)#_waits(e, "waits", [\ waits on])],
       ))
       .flatten(),
   ))
@@ -214,7 +231,7 @@
   if closed.len() > 0 {
     heading(level: 2)[Closed]
     list(..closed.map(e => _sep(
-      link(href(e.todo), raw(e.todo)),
+      link(href(_key(e)), raw(_key(e))),
       [#e.state],
       if e.at != "" [since #when(e.at)],
     )))
@@ -335,9 +352,10 @@
   }
 }
 
-/// One todo's page: its body, its price and its thirty days, its detail, why
-/// it is worth what it is, and its history. `objects` is where an object's
-/// file is linked (`objects/<hash>.py` on the site).
+/// One todo's page: its body, its price and its thirty days, what it waits
+/// on and what waits on it, its detail, why it is worth what it is, and its
+/// history. `todo` is the row's key. `objects` is where an object's file is
+/// linked (`objects/<hash>.py` on the site).
 #let item(
   data,
   todo,
@@ -345,7 +363,7 @@
   objects: "objects/",
   back: "#/",
 ) = _look({
-  let entry = data.entries.find(e => e.todo == todo)
+  let entry = data.entries.find(e => _key(e) == todo)
   if entry == none {
     heading(level: 1)[No item #raw(todo)]
     _rule
@@ -367,6 +385,8 @@
       if entry.at not in (none, "") [since #when(entry.at)],
     ))
     _div("marks", trace-of(data, todo))
+    _waits(entry, "waits", [Waits on])
+    _waits(entry, "waitedBy", [Waited on by])
 
     let detail = _field(record, "detail")
     if detail != "" { _div("detail", _text(detail, markup)) }

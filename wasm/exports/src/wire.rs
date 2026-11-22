@@ -178,8 +178,10 @@ pub fn parse_term(field: &str, json_text: &str) -> Result<Term, Refusal> {
 /// `{"<todo>": <term>}` — what `link` binds each `ref` to, every
 /// term in the JSON shape above.
 pub fn parse_specs(json_text: &str) -> Result<BTreeMap<String, Term>, Refusal> {
-    let raw: BTreeMap<String, Value> =
-        serde_json::from_str(json_text).map_err(|e| format!("specs: {e}"))?;
+    specs_of(serde_json::from_str(json_text).map_err(|e| format!("specs: {e}"))?)
+}
+
+fn specs_of(raw: BTreeMap<String, Value>) -> Result<BTreeMap<String, Term>, Refusal> {
     raw.into_iter()
         .map(|(todo, term)| {
             crate::json::from_json(&term)
@@ -187,6 +189,48 @@ pub fn parse_specs(json_text: &str) -> Result<BTreeMap<String, Term>, Refusal> {
                 .map_err(|e| format!("specs.{todo}: {e}"))
         })
         .collect()
+}
+
+/// `[{"genesis": "<name>" | null, "env": <env>, "functions": <specs>}]`,
+/// the `prices` answer's `prices`: the set of prodromes a qualified
+/// reference reads (SPEC §7.2), each member by its genesis, its entities'
+/// functions and the environment its terms read. A legacy prodrome
+/// (`genesis` `null`) has no genesis for a qualifier to name, so no
+/// reference reaches it and it is not a member. A member named twice is
+/// refused, never merged.
+///
+/// # Errors
+///
+/// Text that is not that shape, a name that is not a genesis's, or one
+/// genesis named twice.
+pub fn parse_stores(json_text: &str) -> Result<fpl::Stores, Refusal> {
+    let raw: Vec<MemberIn> = serde_json::from_str(json_text).map_err(|e| format!("stores: {e}"))?;
+    let mut members = BTreeMap::new();
+    for MemberIn {
+        genesis,
+        env,
+        functions,
+    } in raw
+    {
+        let Some(genesis) = genesis else { continue };
+        let name = Hash::new(genesis.clone()).map_err(|e| format!("stores: {e}"))?;
+        let member = fpl::Member {
+            specs: specs_of(functions).map_err(|e| format!("stores.{genesis}.{e}"))?,
+            env: env_of(env).map_err(|e| format!("stores.{genesis}.{e}"))?,
+        };
+        if members.insert(name, member).is_some() {
+            return Err(format!("stores: the genesis {genesis} is named twice"));
+        }
+    }
+    Ok(members.into_iter().collect())
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemberIn {
+    genesis: Option<String>,
+    env: EnvIn,
+    functions: BTreeMap<String, Value>,
 }
 
 /// A term the evaluator can read: one with no `ref` in it (SPEC §7).
@@ -247,7 +291,10 @@ pub fn json_next_change(next: NextChange) -> Value {
 /// out is empty, so `{}` is the environment that binds nothing; any other key
 /// is refused, never ignored.
 pub fn parse_env(json_text: &str) -> Result<fpl::Env, Refusal> {
-    let raw: EnvIn = serde_json::from_str(json_text).map_err(|e| format!("env: {e}"))?;
+    env_of(serde_json::from_str(json_text).map_err(|e| format!("env: {e}"))?)
+}
+
+fn env_of(raw: EnvIn) -> Result<fpl::Env, Refusal> {
     let mut env = fpl::Env::new();
     for (name, bound) in raw.outcomes {
         env.outcomes.insert(name, bound.candidates()?);

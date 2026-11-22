@@ -63,6 +63,13 @@ hr.capsule {
 .history td:first-child { white-space: nowrap; }
 .typst pre { overflow-x: auto; white-space: pre-wrap; }
 .note { color: var(--muted); font-size: .85rem; }
+/* The stores of a page of several, and what the page left out of each. */
+#stores, #notices { font-size: .85rem; margin: .6rem 0 0; color: var(--muted); }
+#stores a[aria-current] { color: var(--ink); font-weight: 700; text-decoration: none; }
+#notices details { border-left: 3px solid var(--notice); padding: .2rem .6rem; margin: .3rem 0; }
+#notices summary { color: var(--notice); cursor: pointer; overflow-wrap: anywhere; }
+#notices li { overflow-wrap: anywhere; }
+.waits { color: var(--muted); font-size: .85em; }
 
 @media (max-width: 36rem) {
   body { font-size: 17px; }

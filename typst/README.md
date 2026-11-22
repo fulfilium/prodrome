@@ -77,7 +77,20 @@ store by the viewer's own `viewer/src/view.ts`.
 | `marks`   | per todo, `back` and `ahead` (days) and `values`, evenly spaced from `back` days before `at` to `ahead` days after it, both ends included, one of them at `at`; `null` where it reads `∅` | `fulfillment`, `series_knots` |
 | `explain` | per todo, the explanation tree (optional)                         | `explain`                       |
 | `history` | per todo, its events: `at`, `kind`, `actor`, `hash` (optional)    | `fold(..).stream`               |
-| `focus`   | the todo a page is about, or `null`                               | the host                        |
+| `focus`   | the key of the todo a page is about, or `null`                    | the host                        |
+
+A page of several stores keys each row by `<store>/<todo>`, so two stores'
+items never share a key. Then `order`, `created`, `marks`, `explain`,
+`history` and `focus` use that key, and each entry has these optional
+fields. A page of one store may leave them out, and a row's key is then
+its todo id:
+
+| Field      | What                                                                  |
+| ---------- | --------------------------------------------------------------------- |
+| `key`      | the row's key                                                         |
+| `store`    | the label of the row's store                                          |
+| `waits`    | the items its function refers to: `{kind, label, href}`, `kind` `loaded` (with `href`), `elsewhere` (a store not loaded) or `unheld` (its store does not hold it) |
+| `waitedBy` | the items whose functions refer to it, in the same shape              |
 
 ## What it exports
 
@@ -85,7 +98,7 @@ store by the viewer's own `viewer/src/view.ts`.
   in the core's list order (ascending value, then every item with no number,
   ties by id: the order `prodrome list` prints), then the closed.
 - `item(data, todo, markup:, objects:, back:)`: body, price and state, the
-  thirty days, detail, the price in words ("42% now, falling from 55% to 5%
+  thirty days, what it waits on and what waits on it, detail, the price in words ("42% now, falling from 55% to 5%
   by Sep 29, 17:00, over 3 days") with the explanation's parts beneath it,
   and the history, each event dated and linked to its object file.
 - `price(value)`: the design's pie and the percentage, or "unpriced".
