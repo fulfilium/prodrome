@@ -1,8 +1,10 @@
 //! A digest: a summary tree over an append-only log of lines, read through
-//! a view that fits a budget (design §6.5, law 46).
+//! a view that fits two waters (design §6.5, laws 46 and 88 to 91).
 //!
 //! The caller writes and records each summary; this module reads only which
-//! nodes have a summary and its length in bytes (`summarized(name)`).
+//! nodes have a summary and its length in bytes (`summarized(name)`). The
+//! caller also says what each line costs in a view (`line(node)`), for
+//! example [`Node::bytes`].
 //!
 //! The crate depends only on `prodrome-data` and `prodrome-memo`.
 //! `prodrome-core` re-exports it as `prodrome::digest`.
@@ -18,8 +20,10 @@ use prodrome_memo::{self as memo, Algebra};
 
 mod cut;
 mod prefixes;
+mod waters;
 
 use cut::{Arena, Cut};
+pub use waters::Waters;
 
 /// The monoid that every node carries up the tree. `join` must be
 /// associative, with `empty` as its unit.
@@ -56,7 +60,8 @@ pub struct Leaf<M> {
     /// The lines that its writer had seen. A line that names only lines
     /// that the log does not hold rests on nothing.
     pub parents: Vec<Hash>,
-    /// What the line costs in a view, in bytes.
+    /// The line's length in bytes: what it costs in a view when the caller
+    /// charges [`Node::bytes`].
     pub bytes: u32,
     /// What the line carries up the tree.
     pub measure: M,
@@ -96,8 +101,7 @@ impl<M> Node<M> {
         self.level
     }
 
-    /// The bytes of the lines that it spans, which it costs when it is
-    /// opened all the way.
+    /// The sum of [`Leaf::bytes`] over the lines that it spans.
     #[must_use]
     pub fn bytes(&self) -> u64 {
         self.bytes
@@ -280,20 +284,24 @@ impl<M: Measure> Algebra<Node<M>> for Measured {
     }
 }
 
-/// The name of the tree as read under its summaries, over its root's name
-/// and, in order, every line's cost and every inner node's summary length
-/// or its absence.
+/// The name of the tree as read under its costs, over its root's name
+/// and, in order, every line's cost (`line(node)`) and every inner node's
+/// summary length or its absence.
 ///
-/// A cache of [`view`] or [`pending`] keyed by this name is never stale
-/// (law 46). A line's measure is not covered, because it is a function of
-/// the line's name ([`Leaf`]).
+/// A cache of [`view`] or [`pending`] keyed by this name and the waters is
+/// never stale (law 46). A line's measure is not covered, because it is a
+/// function of the line's name ([`Leaf`]).
 #[must_use]
-pub fn read<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>) -> Hash {
+pub fn read<M>(
+    tree: &Tree<M>,
+    line: impl Fn(&Node<M>) -> u64,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+) -> Hash {
     let mut own = Vec::new();
     let mut stack = vec![&tree.root];
     while let Some(node) = stack.pop() {
         if node.is_leaf() {
-            own.extend(node.bytes.to_be_bytes());
+            own.extend(line(node).to_be_bytes());
         } else {
             match summarized(&node.name) {
                 Some(bytes) => {
@@ -327,12 +335,12 @@ impl Part {
     }
 }
 
-/// A cut through the tree under a budget.
+/// A cut through the tree under two waters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct View {
     /// The parts, in the log's order, tiling it.
     pub parts: Vec<Part>,
-    /// What the parts cost in bytes: each line's bytes and each summary's.
+    /// What the parts cost in bytes: each line's cost and each summary's.
     pub bytes: u64,
     /// The nodes to summarise next for this view, in the log's order
     /// (design §6.5, "What waits is what to summarise").
@@ -373,13 +381,24 @@ pub fn zoom<M>(tree: &Tree<M>, name: &Hash) -> Option<Vec<Part>> {
     Some(node.children.iter().map(Node::part).collect())
 }
 
-/// The view of the log under `budget` bytes (design §6.5, law 46).
+/// The view of the log under the two `waters` (design §6.5, law 46). A
+/// line costs `line(node)`, and an inner node with a summary costs
+/// `summarized(name)`. Each of the two must be a function of the node's
+/// name. To charge each line its [`Leaf::bytes`], pass [`Node::bytes`].
 ///
-/// Of the admissible closings, the one started at the most due node closes.
-/// The due of a node is its age over its size, both in lines, and of two
-/// nodes that are as due, the older closes. The view is greedy, so it can
-/// stop over its budget although a fit with a coarser node to the left
-/// exists.
+/// The view is built as the log was, line by line. When a line's arrival
+/// puts the view over the high water, closings are made until the view
+/// costs at most the low water or no closing is admissible: a MERGE.
+/// Of the admissible closings, the one started at the most due node closes
+/// first. The due of a node is its age over its size, both in lines, and
+/// of two nodes that are as due, the older closes. The view is greedy, so
+/// it can stop over its waters although a fit with a coarser node to the
+/// left exists.
+///
+/// An arrival that makes no merge adds the line as one more part at the
+/// end and changes no other part (law 89). With [`Waters::at`], the view
+/// closes at every arrival that puts it over the budget, and only until it
+/// fits again (law 88).
 ///
 /// # Cost
 ///
@@ -387,16 +406,23 @@ pub fn zoom<M>(tree: &Tree<M>, name: &Hash) -> Option<Vec<Part>> {
 /// update `d` ancestors in time `O(d log n)`, and each node closes, or comes
 /// to lie within a part, at most once. Trying a closing takes time
 /// `O(log n)`, and a search for a closing keeps at most `d` candidate nodes
-/// for each part of the view.
+/// for each part of the view. Each arrival ends at most one search that
+/// finds no closing. So the waters do not change the bound: a low water
+/// under the high water makes the same closings at fewer arrivals.
 #[must_use]
-pub fn view<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>, budget: u64) -> View {
+pub fn view<M>(
+    tree: &Tree<M>,
+    line: impl Fn(&Node<M>) -> u64,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+    waters: Waters,
+) -> View {
     let arena = Arena::of(tree);
     let cost: Vec<Option<u64>> = arena
         .nodes
         .iter()
         .map(|node| {
             if node.is_leaf() {
-                Some(node.bytes)
+                Some(line(node))
             } else {
                 summarized(&node.name).map(u64::from)
             }
@@ -413,9 +439,11 @@ pub fn view<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>, budget
         })
         .collect();
     let mut cut = Cut::new(&arena, &cost, &ready);
-    for (at, &line) in arena.leaves.iter().enumerate() {
-        cut.arrive(at, line, arena.nodes[line].bytes);
-        while cut.bytes() > budget && cut.close_most_due() {}
+    for (at, &id) in arena.leaves.iter().enumerate() {
+        cut.arrive(at, id, line(arena.nodes[id]));
+        if cut.bytes() > waters.high() {
+            while cut.bytes() > waters.low() && cut.close_most_due() {}
+        }
     }
     View {
         parts: cut

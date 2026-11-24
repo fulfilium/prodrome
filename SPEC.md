@@ -1975,10 +1975,31 @@ files damaged in place, removed, or joined by prints that are no object.
 
 Law 46 is a digest (design §6.5), over generated sets of lines, each
 resting on up to two before it and given in any order and any number of
-times, and generated summaries of any cost on any share of the nodes,
-under budgets from none to unbounded. It reads no object: a digest is a
-reading of lines a host holds, with summaries the host records. A line's
-cost, parents and measure are functions of its name.
+times, generated summaries of any cost on any share of the nodes, and
+generated costs of the lines, under waters from none to unbounded. It
+reads no object: a digest is a reading of lines a host holds, with
+summaries the host records. A line's parents and measure are functions of
+its name. The caller gives two costs, each a function of a node's name:
+what a line costs in a view (`line(node)`, for example `Node::bytes`, the
+line's `Leaf::bytes`), and what a summarised inner node costs
+(`summarized(name)`, the summary's length). A node without a summary
+cannot close.
+
+`digest::view` takes two WATERS, a high water and a low water at or under
+it (`Waters::new(high, low)`; `Waters::at(budget)` makes both the budget).
+The view is a REPLAY of the log: the lines arrive in the tree's order, and
+each line, on its arrival, becomes a part of its own at the end. After
+each arrival, if the parts cost more than the high water, the replay
+makes a MERGE: it makes one admissible closing at a time, the one started
+at the most due node first, while the parts cost more than the low water
+and an admissible closing exists. The due of a node at an arrival is its
+age (the lines that have arrived since its first line, its first line
+included) over its size (the lines it spans), compared exactly; of two as
+due, the one that starts first closes. Only a settled node can close: a
+node all of whose lines arrived before the line that just arrived. A
+closing, and when it is admissible, are as law 46 states. The view is the
+parts after the last arrival. Under equal waters, a merge is the loop of
+law 46: it closes while the view is over the budget (law 88).
 
 46. **A digest's view is a decaying cut of a tree that only grows.** The
     tree over a set of lines is a function of the set, its leaves the
@@ -1990,13 +2011,13 @@ cost, parents and measure are functions of its name.
     part before it that decay forces beside it, admissible when all are
     summarised and every leftward prefix of it costs less than the parts
     it replaces, so a forced node that would not lower the cost closes
-    only on the start's account. A view never costs more than its budget
-    or its lines, whichever is more, and fits its budget unless no closing
-    is admissible; it is greedy, and does not seek a fit that needs a
-    coarser node to the left; what it says is waiting is pending, and
-    writing what it names, round after round, ends with the view in its
-    budget or with every node it could close summarised and no closing
-    admissible. Its parts' levels never rise toward the present. Zooming
+    only on the start's account. A view never costs more than its high
+    water or its lines, whichever is more, and fits its high water unless
+    no closing is admissible; it is greedy, and does not seek a fit that
+    needs a coarser node to the left; what it says is waiting is pending,
+    and writing what it names, round after round, ends with the view under
+    its high water or with every node it could close summarised and no
+    closing admissible. Its parts' levels never rise toward the present. Zooming
     every part down to the lines reads the log back. An appended line only
     coarsens the past, every part before it lying within a part after it
     and none renamed, and, with lines of one cost `b` and summaries of one
@@ -2006,10 +2027,13 @@ cost, parents and measure are functions of its name.
     nodes with no summary whose children are lines or summarised. The
     measure folded through `memo::fold` is the plain one, and
     `digest::read` is a sound key: reads of one name answer alike, and a
-    summary recorded or a line's cost changed moves it. `digest::view`
-    answers what a reference view answers that makes each closing as this
-    law states it, line by line, under summaries drawn at random and under
-    summaries that a compactor wrote first.
+    summary recorded or a line's cost changed moves it. The tree,
+    `pending` and the view are functions of the set of lines, and the view
+    of the tree, the two costs and the two waters, whatever order the
+    lines were given in. `digest::view` answers what a reference view
+    answers that makes each closing as this law states it, line by line,
+    under summaries drawn at random and under summaries that a compactor
+    wrote first, under any two waters and any costs of the lines.
     `memo_balance.rs::an_append_renames_only_the_spine`,
     `digest.rs::a_view_tiles_the_log`,
     `digest.rs::a_view_fits_its_budget_unless_no_closing_lowers_it`,
@@ -2631,6 +2655,63 @@ Law 87 is §6.7's existence of a todo, read by every list.
     `cli/tests/verbs.rs::an_item_made_by_content_records_alone_is_listed`;
     in the viewer, the store `delta` of `viewer/test/stores.mjs`, and the
     hosted build's `viewer/test/smoke.mjs`.
+
+Laws 88 to 91 are a digest's view under two waters (design §6.5, the
+replay above law 46), over the generated logs, summaries and costs of law
+46. They say what a reader that keeps the view's text as a cached prefix
+may rely on. An appended line is one that has seen every line, so it
+comes last in the tree's order. A MERGE, seen from outside, is an arrival
+after which a part other than the new line differs.
+
+88. **Equal waters are one budget.** Under `Waters::at(b)`, the view is
+    the view that, after each arrival, closes while it costs more than
+    `b`. So a caller that passes one budget as both waters gets the view
+    of law 46 under that budget.
+    `digest_waters.rs::equal_waters_are_the_view_under_one_budget`.
+89. **Between merges, a view changes only at its end.** When an appended
+    line that costs `c` arrives at a view that costs `v`, and
+    `v + c ≤ high`, the new view is the old view's parts, each the same
+    node, and one more part at the end: the line itself, alone. It costs
+    `v + c`. No part grows: a part is a node, and only a merge makes a
+    node a part. So a reader that prints one line for each part keeps the
+    whole old text as a prefix of the new one.
+    `digest_waters.rs::between_merges_an_arrival_adds_one_part_at_the_end`.
+90. **Merges are rare.** Over a run of appended lines whose costs sum to
+    `R`, with `high > low`, the merges are at most
+    `⌊R / (high − low)⌋ + 1 + S`, where `S` counts the merges after which
+    the view costs more than the low water (no closing was admissible,
+    for example because a summary is missing). Proof: after a merge that
+    ends at or under the low water, no closing is made until the view
+    costs more than the high water again. Only arrivals raise the cost,
+    so the arrivals up to the next merge, that merge's arrival included,
+    add more than `high − low`. These stretches of arrivals do not
+    overlap. When every summary that a merge needs is present, `S` is
+    zero. A merge makes at most one closing for each node of the tree, so
+    the closings of all merges together cost what the closings of one
+    budget cost, and each merge pays for at least `high − low` bytes of
+    arrivals.
+    `digest_waters.rs::merges_are_rare`.
+91. **A late summary can change the view on both sides of its node.** A
+    summary recorded for a settled node `x` changes no view of a prefix
+    of the log that ends at or before `x`'s last line, because the replay
+    reads it only after the line after `x` arrives. From that arrival on,
+    it can change any part. It can close parts before `x`: the closing at
+    `x` forces the nodes of `x`'s level over the lower parts before it.
+    The smallest case is a log whose tree has two settled chunks `a` and
+    then `x`, and the last line, with `a` summarised dearer than its
+    lines and `x` without a summary: nothing closes; once `x` is
+    summarised, `x` and `a` close together. It can also open parts before
+    `x`: a merge that closed an older, coarser node is no longer needed
+    once `x` has closed. No rule that keeps the parts before `x` is
+    consistent with law 46: when the parts before `x` are below its level
+    and only the closing at `x` lowers the cost, keeping them refuses the
+    closing that law 46 requires, or breaks decay. So a reader whose
+    summaries arrive late loses its cached prefix from the first part
+    that the replay changes. A reader that reads the view under the
+    summaries it held at its last merge keeps law 89 between merges.
+    `digest_waters.rs::a_late_summary_changes_no_view_before_its_node_settles`,
+    `digest_waters.rs::a_late_summary_closes_a_part_before_its_node`,
+    `digest_waters.rs::a_late_summary_can_open_a_part_before_its_node`.
 
 ## 10. Non-goals
 

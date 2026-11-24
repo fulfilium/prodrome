@@ -242,6 +242,21 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **`digest::view` takes two waters and the cost of a line (issue #104,
+  SPEC laws 88 to 91).** The signature is
+  `view(tree, line, summarized, waters)`. `line(node)` gives what a line
+  costs in the view, and `Waters::new(high, low)` gives a high water and a
+  low water at or under it. When a line's arrival puts the view over the
+  high water, the view closes nodes until it costs at most the low water
+  or no closing is admissible. Between two such merges, an arrival adds
+  one part at the end of the view and changes no other part, so a reader
+  that caches the view's text as a prefix keeps it. `digest::read` takes
+  the same `line` argument, so that it stays a sound key. To keep the
+  earlier behaviour, pass `Node::bytes` as `line` and `Waters::at(budget)`
+  as the waters: `view(tree, Node::bytes, summarized, Waters::at(budget))`
+  answers what `view(tree, summarized, budget)` answered, and
+  `read(tree, Node::bytes, summarized)` the same name as
+  `read(tree, summarized)`. No stored byte changes.
 - **The store, the tag sets, the nests and the digest are crates of their
   own: `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
   `prodrome-digest` (issue #92, section 11 of
