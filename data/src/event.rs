@@ -1,5 +1,6 @@
-//! The envelopes of SPEC §3, the names of objects, actors and todos, and
-//! the hashing of objects.
+//! The envelopes of SPEC §3, the names of objects, actors and todos, the
+//! hashing of objects, and the fields of a lifecycle event of the todo
+//! schema.
 //!
 //! Never change the field set of a shipped kind: a new field changes the
 //! canonical print, so no stored object would match its hash. The `mk_*`
@@ -19,6 +20,10 @@ use crate::payload::{as_string, required, string_field, tuple_field};
 use crate::schema::Schema;
 use crate::sign::{KeyAdded, KeyRevoked, Signed};
 use crate::snapshot::Snapshot;
+
+mod lifecycle;
+
+pub use lifecycle::Lifecycle;
 
 // --- the names, as types ----------------------------------------------------
 
