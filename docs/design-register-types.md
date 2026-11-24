@@ -888,11 +888,17 @@ something this document already has.
   a function of which exist, so summaries of different nodes commute. A
   node on the path to the last line is never offered: the next line renames
   it.
-- **The view is a cache.** A view is a cut that tiles the log under a
-  budget, a pure function of the tree as read under its lines' costs and its
-  summaries (`digest::read`, a sound key) and the budget, so it is a
-  tabulation by §6.2. It is built as the log was, line by line: while over
-  budget, a CLOSING is made, settled nodes replacing the parts they span. A
+- **The view is a cache.** A view is a cut that tiles the log under two
+  waters, a pure function of the tree as read under its lines' costs and
+  its summaries (`digest::read`, a sound key) and the waters, so it is a
+  tabulation by §6.2. The caller gives both costs: what a line costs
+  (`Node::bytes` charges its length, and a reader that shows a line as a
+  short placeholder charges the placeholder) and what a summary costs. The
+  view is built as the log was, line by line. When an arrival puts the view
+  over the HIGH water, a MERGE makes CLOSINGS, settled nodes replacing the
+  parts they span, until the view is at or under the LOW water or no
+  closing is admissible. One budget as both waters closes at every arrival
+  over it, and only until the view fits. A
   closing starts at one node and holds what DECAY forces beside it (the node
   at its level over each lower part before it, leftward), and it is
   admissible when all its nodes are summarised and every leftward prefix of
@@ -903,20 +909,44 @@ something this document already has.
   difference; a start that would not lower the cost itself never closes on a
   forced node's account. Of the admissible closings, the one started at the
   most due node (age over size) is made. So a view never costs more than its
-  lines and fits its budget unless no closing is admissible. It is GREEDY:
+  lines and fits its high water unless no closing is admissible. It is GREEDY:
   decay forces nodes only at the start's level, so it does not seek a fit
-  that needs a coarser node to the left, and may stop over its budget though
+  that needs a coarser node to the left, and may stop over its waters though
   one exists. A closed part is settled, never renamed and never reopened: an
   appended line only coarsens the past, and the printed prefix up to the
-  first part it closes stays as a model's prompt cache saw it. Over ten
-  thousand lines in a chain, an append keeps 95 to 98 percent of the printed
-  view's bytes on average, and all of it in four appends of five or more
-  (`core/examples/digest_prefix.rs`).
+  first part it closes stays as a model's prompt cache saw it.
+- **Between merges, the view changes only at its end.** A prompt cache
+  keeps a prefix: one changed byte loses every byte after it. Under one
+  budget, a view at its budget goes over it by about one line at nearly
+  every arrival, and one closing, rarely at the last part, brings it back:
+  so nearly every line changes the view in its middle. Under two waters,
+  an arrival that does not put the view over the high water adds the line
+  as one more part at the end and changes nothing else (SPEC law 89), and
+  a merge comes at most once for each `high − low` bytes of arrivals,
+  together with each merge that stops over the low water for lack of a
+  summary (law 90). This is how a log-structured merge tree keeps its
+  compactions amortised: the closings of all merges are the closings one
+  budget makes, at most one for each node, done in fewer batches. A
+  summary is not part of this promise: a summary written late can change
+  parts on both sides of its node, because decay forces the older nodes at
+  its level to close with it, and because a later merge may no longer be
+  needed (law 91). A reader that wants the prefix kept between merges reads
+  the view under the summaries it held at its last merge, and adds the new
+  ones at the next merge.
+  `core/examples/digest_prefix.rs` measures this on generated logs of four
+  writers who write in turn, with every settled node summarised in 200 to
+  800 bytes, under a high water of 131,072 bytes. Over the last 500
+  arrivals of logs of 2,000 and 13,000 lines, a part before the last
+  changes at 15 to 37 arrivals under one budget, and at 2 to 7 under a low
+  water of half. On average, the previous view loses 1,600 to 6,800 bytes
+  of its prefix at each arrival under one budget, and 450 to 1,500 under
+  the two waters. One view takes the same time under both: about 0.7 ms
+  for 2,000 lines and 5 to 7 ms for 13,000, in the release profile.
 - **What waits is what to summarise.** A closing more due than the one
   made, or any when none can be, that lacks summaries puts in `waiting` the
   pending nodes at or under each node it lacks one for. A summariser that
-  writes what `waiting` names, round after round, ends with the view in its
-  budget or with nothing left that a summary could make lower. `zoom`
+  writes what `waiting` names, round after round, ends with the view under
+  its high water or with nothing left that a summary could make lower. `zoom`
   opens a part, and the tree is lossless.
 - **Decay is in levels, not lines.** A part is never at a lower level than
   a part after it, so a reader may infer that the past is shown at least as
@@ -1018,8 +1048,12 @@ Each is a property test over generated histories, in the core's `tests/`:
     and following it ends in the budget or with nothing left to lower;
     zooming reads the log back; an appended line only coarsens the past and
     changes a bounded number of parts; the memoised measure is the plain one
-    and `read` is a sound key.
-    BUILT: SPEC law 46, `core/tests/all/digest.rs`.
+    and `read` is a sound key. Under two waters, an arrival between merges
+    adds one part at the end, merges are bounded by the bytes of the
+    arrivals over the difference of the waters, and a late summary can
+    change parts on both sides of its node.
+    BUILT: SPEC laws 46 and 88 to 91, `core/tests/all/digest.rs` and
+    `core/tests/all/digest_waters.rs`.
 
 ## 8. Stages
 
