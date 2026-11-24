@@ -17,15 +17,15 @@ use history::History;
 use index::Index;
 pub use reach::Reach;
 
-use crate::change::Change;
-use crate::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
-use crate::literal::{Datetime, ProdromeError};
 use crate::policy::Policy;
 use crate::registers::{fold, Genesis, Node};
-use crate::schema::Schema;
 use crate::sign::{Proof, Proved, Registrar};
 use crate::spread::spread;
-use crate::store::{Hashed, HuskObject, Sender, Stored};
+use prodrome_data::change::Change;
+use prodrome_data::event::{parents_of, parse_envelope, rests_on, Envelope, Hash};
+use prodrome_data::husk::{Hashed, HuskObject, Sender, Stored};
+use prodrome_data::literal::{Datetime, ProdromeError};
+use prodrome_data::schema::Schema;
 
 /// What a [`Dag`] holds, let go of: every object, every print that is not
 /// one, and the names of the objects held as husks.

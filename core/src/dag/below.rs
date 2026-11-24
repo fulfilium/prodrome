@@ -2,10 +2,10 @@
 //! law 32), in one pass over each entity's stream.
 
 use crate::dag::Finding;
-use crate::fold::Product;
 use crate::registers::{Folded, Stamp};
-use crate::schema::Schema;
 use prodrome_data::bitset::BitSet;
+use prodrome_data::fold::Product;
+use prodrome_data::schema::Schema;
 
 /// Every write to an inflationary register that does not stand on the
 /// reading of the writes to its entity that it rests on, the empty reading

@@ -5,8 +5,8 @@ use crate::event::{Actor, Hash};
 use crate::fold::{grows, Climb, Frontier, Product, Register};
 use crate::literal::{Call, Datetime, ProdromeError, Value};
 use crate::payload::required;
-use crate::registers::Stamp;
 use crate::schema::Schema;
+use crate::stamp::Stamp;
 
 use super::language::Type;
 use super::order::{Climbing, Valued};

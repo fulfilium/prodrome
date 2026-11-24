@@ -129,7 +129,6 @@ pub mod breaks;
 /// The chain compiler (SPEC §7.1).
 pub mod chain;
 pub mod dag;
-pub mod declared;
 pub mod digest;
 pub mod event;
 pub mod fold;
@@ -140,6 +139,7 @@ pub mod nest;
 pub mod observe;
 pub mod payload;
 pub mod policy;
+mod reading;
 /// The reference payload, with which `conformance/*.py` was taken. A host
 /// defines its own payload and can turn off this default feature.
 #[cfg(feature = "reference")]
@@ -158,7 +158,7 @@ pub mod view;
 
 // The modules of `prodrome-data` that the core does not extend, at the
 // paths that a program has always named.
-pub use prodrome_data::{change, genesis, literal, text_literal, topo, word_literal};
+pub use prodrome_data::{change, declared, genesis, literal, text_literal, topo, word_literal};
 // The caches, from `prodrome-memo`, at the path that a program has always
 // named.
 pub use prodrome_memo as memo;

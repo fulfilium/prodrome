@@ -4,7 +4,7 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::index::Index;
-use crate::event::Hash;
+use prodrome_data::event::Hash;
 
 /// A set of objects of one DAG, held as one bit for each position of the
 /// order of [`super::Dag::linearise`].

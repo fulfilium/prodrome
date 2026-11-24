@@ -14,10 +14,10 @@ use ed25519_dalek::SigningKey;
 pub use prodrome_data::sign::*;
 
 use crate::dag::Dag;
-use crate::event::{Actor, Envelope, Hash};
-use crate::literal::ProdromeError;
 use crate::registers::Genesis;
-use crate::schema::Schema;
+use prodrome_data::event::{Actor, Envelope, Hash};
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 pub use checks::Checks;
 

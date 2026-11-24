@@ -16,7 +16,7 @@
 //! schema's name.
 //!
 //! ```
-//! use prodrome::declared::{Declaration, Law};
+//! use prodrome_data::declared::{Declaration, Law};
 //!
 //! let text = "Schema(key='door', events=(Event(name='Moved', fields=(\
 //!     Field(name='door', type=Text()), Field(name='at', type=Instant()), \

@@ -5,8 +5,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::facts::{linear, Facts, Graph};
 use super::index::Index;
-use crate::event::{rests_on, Envelope, Hash};
-use crate::literal::ProdromeError;
+use prodrome_data::event::{rests_on, Envelope, Hash};
+use prodrome_data::literal::ProdromeError;
 
 /// The objects of a history, with the facts derived from them ([`Facts`]),
 /// each kept once a reader asks for it.

@@ -1,43 +1,16 @@
-//! Standing (SPEC §5): whether an event binds or only claims.
+//! Standing (SPEC §5): whether an event binds or only claims. `Standing`,
+//! `Everything` and `Untrusted` are data, defined in `prodrome-data` and
+//! re-exported here. The trait [`Policy`] reads a [`Dag`], so it is here,
+//! with the impls for those types.
 
 use std::collections::BTreeSet;
 
+pub use prodrome_data::policy::*;
+
 use crate::dag::Dag;
-use crate::event::{Actor, Hash};
-use crate::schema::Schema;
 use crate::sign::{Proof, Proved, PublicKey, Registrar};
-
-/// The answer of a [`Policy`] for one event.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub enum Standing {
-    /// The folds apply the event to its registers.
-    Binds,
-    /// The store keeps and shows the event as a claim, and the event changes
-    /// no confirmed reading (law 11).
-    Claims,
-}
-
-impl Standing {
-    /// `Binds` only where both bind.
-    #[must_use]
-    pub fn and(self, other: Standing) -> Standing {
-        if self.binds() && other.binds() {
-            Standing::Binds
-        } else {
-            Standing::Claims
-        }
-    }
-
-    #[must_use]
-    pub fn binds(self) -> bool {
-        matches!(self, Standing::Binds)
-    }
-
-    #[must_use]
-    pub fn claims(self) -> bool {
-        matches!(self, Standing::Claims)
-    }
-}
+use prodrome_data::event::Hash;
+use prodrome_data::schema::Schema;
 
 /// A deployment's answer to SPEC §5. A host implements it.
 ///
@@ -67,46 +40,15 @@ pub trait Policy<E: Schema> {
     }
 }
 
-/// The policy under which every event binds. The claimed reading of SPEC
-/// §6.7 uses it (law 10). `Untrusted::none()` is equal to it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Everything;
-
 impl<E: Schema> Policy<E> for Everything {
     fn standing(&self, _object: &Hash, _event: &E) -> Standing {
         Standing::Binds
     }
 }
 
-/// The reference policy (SPEC §5, "The reference policy"): a roster of actor
-/// names.
-///
-/// A named actor reads input that an attacker can control, so the policy
-/// does not let an injected completion, tending or repricing bind. The policy
-/// is not behind the `reference` feature, because it needs no payload and the
-/// conformance suites read the vectors' `untrusted` fields through it.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Untrusted(BTreeSet<Actor>);
-
-impl Untrusted {
-    /// The empty roster, under which every event binds.
-    pub fn none() -> Untrusted {
-        Untrusted(BTreeSet::new())
-    }
-
-    pub fn of(actors: impl IntoIterator<Item = Actor>) -> Untrusted {
-        Untrusted(actors.into_iter().collect())
-    }
-
-    /// The roster, for a reader that shows the policy.
-    pub fn actors(&self) -> &BTreeSet<Actor> {
-        &self.0
-    }
-}
-
 impl<E: Schema> Policy<E> for Untrusted {
     fn standing(&self, _object: &Hash, event: &E) -> Standing {
-        if !event.asks() || !self.0.contains(event.actor()) {
+        if !event.asks() || !self.actors().contains(event.actor()) {
             Standing::Binds
         } else {
             Standing::Claims
@@ -117,7 +59,7 @@ impl<E: Schema> Policy<E> for Untrusted {
     /// [`Policy::confirms`] describes. An untrusted actor's content record
     /// binds and is still that actor's.
     fn confirms(&self, _object: &Hash, event: &E) -> bool {
-        !self.0.contains(event.actor())
+        !self.actors().contains(event.actor())
     }
 }
 
@@ -215,7 +157,7 @@ fn at<'p, E: Schema, P: Policy<E> + Clone>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{mk_completed, mk_created, TodoEvent};
+    use crate::event::{mk_completed, mk_created, Actor, TodoEvent};
     use crate::literal::Datetime;
     use crate::reference::{mk_authored, Todo};
 

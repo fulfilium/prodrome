@@ -3,8 +3,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::event::Hash;
 use prodrome_data::bitset::BitSet;
+use prodrome_data::event::Hash;
 
 /// An index of a DAG's linear order. A reach is a set of positions in the
 /// order ([`super::Reach`]), and this index lets a walk over a reach work

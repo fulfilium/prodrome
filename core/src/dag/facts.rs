@@ -6,9 +6,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use super::index::Index;
-use crate::event::Hash;
-use crate::literal::ProdromeError;
-use crate::topo;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::topo;
 
 /// The names of a DAG's objects, in name order, each with the names it
 /// rests on: what every kept fact is derived from.

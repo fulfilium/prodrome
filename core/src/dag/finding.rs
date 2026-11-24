@@ -2,8 +2,8 @@ use std::collections::BTreeSet;
 use std::fmt;
 
 use super::Heads;
-use crate::event::{Actor, Hash};
-use crate::literal::{Datetime, ProdromeError};
+use prodrome_data::event::{Actor, Hash};
+use prodrome_data::literal::{Datetime, ProdromeError};
 
 /// One result of `verify` about a store (SPEC §3, "`verify`").
 #[derive(Debug, Clone, PartialEq)]

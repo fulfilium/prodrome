@@ -3,10 +3,10 @@
 
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use crate::event::Hash;
-use crate::literal::print_literal;
-use crate::memo::{self, Cache, Key, Lookup, Lru};
 use crate::sign::Signed;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::print_literal;
+use prodrome_memo::{Cache, Key, Lookup, Lru};
 
 /// A bounded table of the results of [`Signed::verifies`], keyed by the
 /// content name of each `Signed` object.
@@ -31,7 +31,7 @@ impl Checks {
     #[must_use]
     pub fn verifies(&self, signed: &Signed) -> bool {
         let key = Key {
-            function: memo::name(b"prodrome sign::Signed::verifies", []),
+            function: prodrome_memo::name(b"prodrome sign::Signed::verifies", []),
             argument: Hash::of_bytes(print_literal(&signed.to_value()).as_bytes()),
         };
         if let Lookup::Hit(verifies) = self.held().get(&key) {

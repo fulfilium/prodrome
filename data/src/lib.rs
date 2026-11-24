@@ -16,6 +16,7 @@
 #[doc(hidden)]
 pub mod bitset;
 pub mod change;
+pub mod declared;
 pub mod event;
 pub mod fold;
 pub mod genesis;
@@ -23,6 +24,7 @@ pub mod husk;
 pub mod instant;
 pub mod literal;
 pub mod payload;
+pub mod policy;
 pub mod schema;
 pub mod sign;
 pub mod snapshot;

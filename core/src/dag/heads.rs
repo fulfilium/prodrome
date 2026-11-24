@@ -2,9 +2,9 @@
 
 use std::collections::BTreeSet;
 
-use crate::event::Hash;
-use crate::literal::codec::{Literal, Record};
-use crate::literal::{parse_literal, print_literal, ProdromeError, Table};
+use prodrome_data::event::Hash;
+use prodrome_data::literal::codec::{Literal, Record};
+use prodrome_data::literal::{parse_literal, print_literal, ProdromeError, Table};
 
 /// The tips of a history and the count of its objects (SPEC §3, "The record
 /// of heads").
