@@ -2,12 +2,12 @@
 //! admits only when its laws hold (SPEC §6, "A schema may be declared";
 //! `docs/design-register-types.md` §5, §6.0).
 //!
-//! [`Declared`], an event of a declared schema, implements
-//! [`prodrome_data::schema::Schema`] by interpreting its [`Declaration`]. A register
-//! is read by [`prodrome_data::fold::maximal`], and by [`prodrome_data::fold::grows`] where
-//! it is declared inflationary. An `EventStore<Declared>` opened at a
-//! declaration (`EventStore::at`) runs the same code as the store of a Rust
-//! schema. A declared schema has no price (design §4).
+//! [`Declared`], an event of a declared schema, implements `Schema` by
+//! interpreting its [`Declaration`]. A register is read by `fold::maximal`,
+//! and by `fold::grows` where it is declared inflationary. A store of
+//! `prodrome-core` opened at a declaration (`EventStore::at`) runs the same
+//! code as the store of a Rust schema. A declared schema has no price
+//! (design §4).
 //!
 //! The text form is the literal grammar of SPEC §2 under the closed
 //! vocabulary [`Form`], not JSON, so that objects and schemas share one
@@ -15,23 +15,7 @@
 //! sorted, so the text depends only on the schema, and its hash is the
 //! schema's name.
 //!
-//! ```
-//! use prodrome_declared::{Declaration, Law};
-//!
-//! let text = "Schema(key='door', events=(Event(name='Moved', fields=(\
-//!     Field(name='door', type=Text()), Field(name='at', type=Instant()), \
-//!     Field(name='actor', type=Text()), \
-//!     Field(name='to', type=Enum(alternatives=('open', 'shut'))))),), \
-//!     registers=(Register(name='state', order=Discrete(), inflationary=False, \
-//!     writes=(Write(event='Moved', field='to'),)),))";
-//! let door = Declaration::admit(text).expect("admitted");
-//! assert_eq!(door.key(), "door");
-//!
-//! // A machine whose covers go round is not a partial order.
-//! let cycle = text
-//!     .replace("Discrete()", "Machine(covers=(('open', 'shut'), ('shut', 'open')))");
-//! assert_eq!(Declaration::admit(&cycle).unwrap_err().law, Law::PartialOrder);
-//! ```
+//! `tests/admit.rs` admits a schema and shows a refusal by its law.
 
 mod admit;
 mod event;
@@ -79,7 +63,6 @@ impl Declaration {
         admit::admit(text).map(|admitted| Declaration(Arc::new(admitted)))
     }
 
-    /// The canonical text of the declaration.
     #[must_use]
     pub fn text(&self) -> &str {
         &self.0.text
@@ -103,7 +86,6 @@ impl Declaration {
         (0..self.0.registers.len()).map(Slot)
     }
 
-    /// The register named `name`.
     #[must_use]
     pub fn register(&self, name: &str) -> Option<Slot> {
         self.0
@@ -113,8 +95,6 @@ impl Declaration {
             .map(Slot)
     }
 
-    /// The name of the register `slot`.
-    ///
     /// # Panics
     ///
     /// Panics if `slot` comes from another declaration and lies past this
@@ -124,8 +104,6 @@ impl Declaration {
         &self.reg(slot).name
     }
 
-    /// Whether the register `slot` is declared inflationary.
-    ///
     /// # Panics
     ///
     /// As [`Declaration::register_name`].

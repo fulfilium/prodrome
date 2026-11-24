@@ -96,13 +96,11 @@ impl PartialEq for Declared {
 }
 
 impl Declared {
-    /// The declaration of this event.
     #[must_use]
     pub fn schema(&self) -> &Declaration {
         &self.schema
     }
 
-    /// The name of the event's constructor.
     #[must_use]
     pub fn constructor(&self) -> &str {
         &self.schema.shape(self.event).name

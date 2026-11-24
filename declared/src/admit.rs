@@ -1,6 +1,5 @@
-//! ADMISSION: the laws a declared schema must pass before a store may be
-//! opened at it, each checked mechanically, in order, the first that fails
-//! named by the refusal.
+//! Admission: the laws that a declared schema must keep before a store is
+//! opened at it, checked in order. A refusal names the first law that fails.
 
 use std::collections::BTreeSet;
 use std::fmt;

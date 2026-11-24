@@ -1,5 +1,5 @@
-//! The schema language: a declared schema's FORM, as the objects' own §2
-//! literal grammar spells it, under a closed vocabulary of its own.
+//! The schema language: the form of a declared schema, in the literal
+//! grammar of SPEC §2, under a closed vocabulary of its own.
 
 use prodrome_data::literal::{parse_literal, print_literal, Call, Table, Value};
 use prodrome_data::payload::{bool_field, required, string_field, tuple_field};
@@ -82,8 +82,8 @@ pub enum Poset {
     Inclusion,
 }
 
-/// A register: its name, its order, whether a write must climb it
-/// (inflationary, design §3.1), and the event fields that write it.
+/// A register. Where it is `inflationary`, a write must climb its order
+/// (design §3.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Register {
     pub name: String,

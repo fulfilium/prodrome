@@ -1,6 +1,6 @@
-//! A declared register's order, interpreted: each of the closed vocabulary
-//! read as the core's own order on values ([`prodrome_data::fold::Order`]), so a
-//! declared register is read by the completion every register is read by.
+//! A declared register's order, interpreted as an order on values
+//! ([`Order`]), so that a declared register is read by the completion that
+//! every register is read by.
 
 use std::collections::BTreeSet;
 
@@ -100,7 +100,7 @@ impl Valued<'_> {
     }
 }
 
-/// Each order of the vocabulary IS the core's: discrete is [`Discrete`],
+/// Each order of the vocabulary is one of the data crate's: discrete is [`Discrete`],
 /// total is [`Total`] on the integers, inclusion is the order on
 /// `BTreeSet`s, and a machine is its closure. Values of different shapes
 /// (which admission's typing law rules out) are incomparable.
@@ -122,10 +122,10 @@ impl Order for Valued<'_> {
     }
 }
 
-/// A value of a register declared INFLATIONARY, and only of one: the
-/// declaration is not trusted, so the type that lets the append path call
-/// [`prodrome_data::fold::grows`] is made only where admission let the register
-/// climb.
+/// A value of a register declared inflationary, and only of one. The
+/// declaration is not trusted, so the type that lets the append call
+/// [`grows`](prodrome_data::fold::grows) is made only where admission let the
+/// register climb.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Climbing<'d>(pub(crate) Valued<'d>);
 
