@@ -1,0 +1,27 @@
+[package]
+name = "prodrome-dag"
+description = "The readings of a prodrome store: its DAG, the fold of its objects, policies and the proof of signatures"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "content-addressed", "crdt", "dag"]
+categories = ["data-structures"]
+
+[lib]
+name = "prodrome_dag"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# `sign::Secret`, an Ed25519 signing key. Pure Rust, so the browser's build
+# needs no C toolchain. No `rand_core`: a key is a seed that the host draws
+# and keeps (design §6.4).
+ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
+# The objects, the events and the register algebra that the DAG holds and
+# folds.
+prodrome-data.workspace = true
+# `sign::Checks` keeps the results of signature checks in a cache.
+prodrome-memo.workspace = true

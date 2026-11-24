@@ -611,3 +611,44 @@ fn an_overlay_answers_the_base_s_husk_without_a_read_between() {
     assert_eq!(fresh.kept(&name), husked.kept(&name));
     assert_eq!(fresh.print(&name), None);
 }
+
+/// `Dag::husk` keeps the DAG's kept facts only for a husk that rests on what
+/// the held object rests on. Given the husk of another change, which rests on
+/// other names, the tips and the order equal those of a DAG read fresh from
+/// the same objects.
+#[test]
+fn a_husk_of_another_change_leaves_no_stale_facts() {
+    let scratch = Scratch::new();
+    let drafts = [
+        Draft::Wrote {
+            letter: 0,
+            parts: vec![None],
+        },
+        Draft::Wrote {
+            letter: 0,
+            parts: vec![Some(0)],
+        },
+        Draft::Wrote {
+            letter: 1,
+            parts: vec![Some(1)],
+        },
+    ];
+    let (store, _) = written(&scratch, &drafts, &[]);
+    let mut dag = store.dag().expect("reads").as_ref().clone();
+    let changes: Vec<(Hash, prodrome::change::Change<Letter>)> = boxed(&store)
+        .into_iter()
+        .map(|name| match dag.get(&name) {
+            Some(Envelope::Change(change)) => (name, change.clone()),
+            _ => panic!("a boxed change"),
+        })
+        .collect();
+    let [(here, mine), (_, other)] = &changes[..] else {
+        panic!("two boxed changes");
+    };
+    assert_ne!(mine.deps, other.deps, "the two rest on different names");
+    let _ = (dag.tips(), dag.linearise().map(<[Hash]>::len));
+    dag.husk(here, HuskObject::of(other).expect("a box"));
+    let fresh: prodrome::dag::Dag<Letter> = dag.objects().clone().into_iter().collect();
+    assert_eq!(dag.tips(), fresh.tips());
+    assert_eq!(dag.linearise(), fresh.linearise());
+}

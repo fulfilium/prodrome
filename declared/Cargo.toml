@@ -1,0 +1,22 @@
+[package]
+name = "prodrome-declared"
+description = "Schemas of a prodrome store declared as text at run time, admitted only when their laws hold"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "schema", "crdt"]
+categories = ["data-structures"]
+
+[lib]
+name = "prodrome_declared"
+path = "src/lib.rs"
+
+[dependencies]
+# The events, literals and register algebra that a declared schema is
+# written in and read with.
+prodrome-data.workspace = true
+# `Refusal`, the error of an admission.
+thiserror = "2"

@@ -23,6 +23,7 @@ pub mod husk;
 pub mod instant;
 pub mod literal;
 pub mod payload;
+pub mod policy;
 pub mod schema;
 pub mod sign;
 pub mod snapshot;

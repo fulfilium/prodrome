@@ -84,11 +84,18 @@
 //!
 //! The crate `prodrome-data` holds the data of a store: `literal`, `topo`,
 //! `genesis` and `change`, and the parts of `event`, `payload`, `schema`,
-//! `snapshot`, `sign` and `fold` that build, print, parse and hash objects.
-//! This crate re-exports each of them at the path below. A program that only
-//! builds and reads events can depend on `prodrome-data` alone. An example
-//! in the documentation of a module of `prodrome-data` works under this
-//! crate with `prodrome` in place of `prodrome_data`.
+//! `snapshot`, `sign`, `policy` and `fold` that build, print, parse and hash
+//! objects. This crate re-exports each of them at the path below. A program
+//! that only builds and reads events can depend on `prodrome-data` alone.
+//! An example in the documentation of a module of `prodrome-data` works
+//! under this crate with `prodrome` in place of `prodrome_data`.
+//!
+//! The crate `prodrome-memo` holds `memo`, and `prodrome-declared` holds
+//! `declared`. The crate `prodrome-dag` holds `dag` and `registers`, the
+//! rest of `policy` and `sign`, and the reading of an entity's registers,
+//! `fold::read`. This crate re-exports each of them at the same path. A program that reads an entity's registers under
+//! a policy can depend on `prodrome-data`, `prodrome-memo` and
+//! `prodrome-dag` alone.
 //!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
@@ -127,29 +134,22 @@ extern crate self as prodrome;
 pub mod breaks;
 /// The chain compiler (SPEC §7.1).
 pub mod chain;
-pub mod dag;
-pub mod declared;
 pub mod digest;
 pub mod event;
 pub mod fold;
 pub mod fpl;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod memo;
 pub mod nest;
 pub mod observe;
 pub mod payload;
-pub mod policy;
 /// The reference payload, with which `conformance/*.py` was taken. A host
 /// defines its own payload and can turn off this default feature.
 #[cfg(feature = "reference")]
 pub mod reference;
-pub mod registers;
 pub mod schedule;
 pub mod schema;
-pub mod sign;
 pub mod snapshot;
-mod spread;
 pub mod store;
 pub mod tags;
 pub mod term;
@@ -159,6 +159,18 @@ pub mod view;
 // The modules of `prodrome-data` that the core does not extend, at the
 // paths that a program has always named.
 pub use prodrome_data::{change, genesis, literal, text_literal, topo, word_literal};
+// Schemas declared as text, from `prodrome-declared`, at the path that a
+// program has always named.
+pub use prodrome_declared as declared;
+// The caches, from `prodrome-memo`, at the path that a program has always
+// named.
+pub use prodrome_memo as memo;
+
+// The readings, from `prodrome-dag`, at the paths that a program has always
+// named. `fold` re-exports the readings of `prodrome-dag` with the readings
+// of a todo.
+use prodrome_dag::spread;
+pub use prodrome_dag::{dag, policy, registers, sign};
 
 // The property tests' case counts, one rule with the integration tests'.
 #[cfg(test)]
