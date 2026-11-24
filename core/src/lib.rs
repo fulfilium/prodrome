@@ -94,8 +94,9 @@
 //! The crate `prodrome-memo` holds `memo`. The crate `prodrome-dag` holds
 //! `dag` and `registers`, the rest of `policy` and `sign`, and the reading
 //! of an entity's registers, `fold::read`. This crate re-exports each of
-//! them at the same path. A program that reads an entity's registers under a policy can
-//! depend on `prodrome-data`, `prodrome-memo` and `prodrome-dag` alone.
+//! them at the same path. A program that reads an entity's registers under
+//! a policy can depend on `prodrome-data`, `prodrome-memo` and
+//! `prodrome-dag` alone.
 //!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
