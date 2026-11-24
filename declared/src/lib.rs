@@ -3,8 +3,8 @@
 //! `docs/design-register-types.md` §5, §6.0).
 //!
 //! [`Declared`], an event of a declared schema, implements
-//! [`crate::schema::Schema`] by interpreting its [`Declaration`]. A register
-//! is read by [`crate::fold::maximal`], and by [`crate::fold::grows`] where
+//! [`prodrome_data::schema::Schema`] by interpreting its [`Declaration`]. A register
+//! is read by [`prodrome_data::fold::maximal`], and by [`prodrome_data::fold::grows`] where
 //! it is declared inflationary. An `EventStore<Declared>` opened at a
 //! declaration (`EventStore::at`) runs the same code as the store of a Rust
 //! schema. A declared schema has no price (design §4).
@@ -16,7 +16,7 @@
 //! schema's name.
 //!
 //! ```
-//! use prodrome_data::declared::{Declaration, Law};
+//! use prodrome_declared::{Declaration, Law};
 //!
 //! let text = "Schema(key='door', events=(Event(name='Moved', fields=(\
 //!     Field(name='door', type=Text()), Field(name='at', type=Instant()), \
@@ -46,9 +46,9 @@ pub use event::{Datum, Declared, Key, Registers};
 pub use language::{Event, Field, Form, Poset, Register, Type, Write};
 pub use order::Valued;
 
-use crate::event::Hash;
-use crate::literal::{Signature, Vocabulary};
 use admit::{Admitted, Reg, Shape};
+use prodrome_data::event::Hash;
+use prodrome_data::literal::{Signature, Vocabulary};
 
 /// An admitted declared schema: only [`Declaration::admit`] makes one, so
 /// every [`Law`] holds for it.

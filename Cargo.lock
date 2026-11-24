@@ -491,6 +491,7 @@ dependencies = [
  "prodrome-core",
  "prodrome-dag",
  "prodrome-data",
+ "prodrome-declared",
  "prodrome-memo",
  "proptest",
  "rustix",
@@ -517,6 +518,14 @@ dependencies = [
  "memchr",
  "prodrome-derive",
  "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "prodrome-declared"
+version = "0.9.0"
+dependencies = [
+ "prodrome-data",
  "thiserror",
 ]
 

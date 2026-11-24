@@ -48,8 +48,15 @@ jobs:
             run: |
               cargo fmt --all --check
               python3 scripts/test_edges.py
+              # With no module named, edges.py prints each path in a crate
+              # of the library that names the facade (`prodrome::`), which
+              # also breaks the build. It does not prove the layering of a
+              # cut: each stage of docs/design-core-face.md runs the script
+              # with a module set before it moves files, and its section
+              # records the commands.
               python3 scripts/edges.py data/src
               python3 scripts/edges.py memo/src
+              python3 scripts/edges.py declared/src
               python3 scripts/edges.py dag/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
               cargo test --locked --workspace --doc

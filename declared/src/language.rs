@@ -1,8 +1,8 @@
 //! The schema language: a declared schema's FORM, as the objects' own §2
 //! literal grammar spells it, under a closed vocabulary of its own.
 
-use crate::literal::{parse_literal, print_literal, Call, Table, Value};
-use crate::payload::{bool_field, required, string_field, tuple_field};
+use prodrome_data::literal::{parse_literal, print_literal, Call, Table, Value};
+use prodrome_data::payload::{bool_field, required, string_field, tuple_field};
 
 use super::{Law, Refusal};
 

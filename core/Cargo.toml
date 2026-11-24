@@ -49,6 +49,9 @@ prodrome-memo.workspace = true
 # signatures, which this crate re-exports at `prodrome::dag` and the other
 # paths that a program names.
 prodrome-dag.workspace = true
+# Schemas declared as text, which this crate re-exports as
+# `prodrome::declared`.
+prodrome-declared.workspace = true
 sha2 = "0.10"
 thiserror = "2"
 

@@ -1,10 +1,10 @@
 //! A declared register's order, interpreted: each of the closed vocabulary
-//! read as the core's own order on values ([`crate::fold::Order`]), so a
+//! read as the core's own order on values ([`prodrome_data::fold::Order`]), so a
 //! declared register is read by the completion every register is read by.
 
 use std::collections::BTreeSet;
 
-use crate::fold::{Discrete, Inflationary, Order, Total};
+use prodrome_data::fold::{Discrete, Inflationary, Order, Total};
 
 use super::Datum;
 
@@ -124,7 +124,7 @@ impl Order for Valued<'_> {
 
 /// A value of a register declared INFLATIONARY, and only of one: the
 /// declaration is not trusted, so the type that lets the append path call
-/// [`crate::fold::grows`] is made only where admission let the register
+/// [`prodrome_data::fold::grows`] is made only where admission let the register
 /// climb.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct Climbing<'d>(pub(crate) Valued<'d>);

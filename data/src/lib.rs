@@ -16,7 +16,6 @@
 #[doc(hidden)]
 pub mod bitset;
 pub mod change;
-pub mod declared;
 pub mod event;
 pub mod fold;
 pub mod genesis;

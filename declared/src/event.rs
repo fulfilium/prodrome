@@ -1,12 +1,12 @@
 //! An event of a declared schema, and an entity's registers under one: the
 //! `Schema` trait family implemented by interpreting the declaration.
 
-use crate::event::{Actor, Hash};
-use crate::fold::{grows, Climb, Frontier, Product, Register};
-use crate::literal::{Call, Datetime, ProdromeError, Value};
-use crate::payload::required;
-use crate::schema::Schema;
-use crate::stamp::Stamp;
+use prodrome_data::event::{Actor, Hash};
+use prodrome_data::fold::{grows, Climb, Frontier, Product, Register};
+use prodrome_data::literal::{Call, Datetime, ProdromeError, Value};
+use prodrome_data::payload::required;
+use prodrome_data::schema::Schema;
+use prodrome_data::stamp::Stamp;
 
 use super::language::Type;
 use super::order::{Climbing, Valued};

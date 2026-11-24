@@ -5,7 +5,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use crate::event::{Hash, ENVELOPE_SIGNATURES};
+use prodrome_data::event::{Hash, ENVELOPE_SIGNATURES};
 
 use super::language::{Event, Form, Poset, Type};
 use super::order::{Closure, Interpreted};

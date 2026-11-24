@@ -83,18 +83,17 @@
 //! ```
 //!
 //! The crate `prodrome-data` holds the data of a store: `literal`, `topo`,
-//! `genesis`, `change` and `declared`, and the parts of `event`, `payload`,
-//! `schema`, `snapshot`, `sign`, `policy` and `fold` that build, print, parse
-//! and hash objects. This crate re-exports each of them at the path below.
-//! A program that only builds and reads events can depend on
-//! `prodrome-data` alone. An example in the documentation of a module of
-//! `prodrome-data` works under this crate with `prodrome` in place of
-//! `prodrome_data`.
+//! `genesis` and `change`, and the parts of `event`, `payload`, `schema`,
+//! `snapshot`, `sign`, `policy` and `fold` that build, print, parse and hash
+//! objects. This crate re-exports each of them at the path below. A program
+//! that only builds and reads events can depend on `prodrome-data` alone.
+//! An example in the documentation of a module of `prodrome-data` works
+//! under this crate with `prodrome` in place of `prodrome_data`.
 //!
-//! The crate `prodrome-memo` holds `memo`. The crate `prodrome-dag` holds
-//! `dag` and `registers`, the rest of `policy` and `sign`, and the reading
-//! of an entity's registers, `fold::read`. This crate re-exports each of
-//! them at the same path. A program that reads an entity's registers under
+//! The crate `prodrome-memo` holds `memo`, and `prodrome-declared` holds
+//! `declared`. The crate `prodrome-dag` holds `dag` and `registers`, the
+//! rest of `policy` and `sign`, and the reading of an entity's registers,
+//! `fold::read`. This crate re-exports each of them at the same path. A program that reads an entity's registers under
 //! a policy can depend on `prodrome-data`, `prodrome-memo` and
 //! `prodrome-dag` alone.
 //!
@@ -159,7 +158,10 @@ pub mod view;
 
 // The modules of `prodrome-data` that the core does not extend, at the
 // paths that a program has always named.
-pub use prodrome_data::{change, declared, genesis, literal, text_literal, topo, word_literal};
+pub use prodrome_data::{change, genesis, literal, text_literal, topo, word_literal};
+// Schemas declared as text, from `prodrome-declared`, at the path that a
+// program has always named.
+pub use prodrome_declared as declared;
 // The caches, from `prodrome-memo`, at the path that a program has always
 // named.
 pub use prodrome_memo as memo;
