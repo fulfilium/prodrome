@@ -57,14 +57,20 @@ prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>
 A program that reads the registers of an entity from its events under a
 policy can depend on `prodrome-data`, `prodrome-memo` (the caches) and
 `prodrome-dag` (the DAG of a store's objects, its fold, the policies and
-the proof of signatures). A program that admits schemas declared as text
-can depend on `prodrome-declared`, on the data crate.
+the proof of signatures). A program that opens a store, appends to it and
+reads it under a policy can add `prodrome-store` (the store on disk and in
+memory, replicas, doors and frontiers). A program that admits schemas
+declared as text can depend on `prodrome-declared`, on the data crate. The
+crates `prodrome-tags` (tag sets), `prodrome-nest` (histories held in
+registers) and `prodrome-digest` (a summary tree over a log) each hold one
+module of the core.
 
 ```toml
 [dependencies]
 prodrome-dag = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 prodrome-memo = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
+prodrome-store = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
 A program that depends on several of these crates gives each the same

@@ -109,6 +109,15 @@ declared/     prodrome-declared, schemas declared as text at run time, on
 dag/          prodrome-dag, the readings of a store: the DAG of its objects,
               the fold of the DAG, the policies and the proof of signatures,
               on the data and memo crates. The core re-exports each module.
+store/        prodrome-store, the store on disk and in memory, its replicas,
+              doors and frontiers, and the attestation of a snapshot, on the
+              data and dag crates. The core re-exports each module.
+nest/         prodrome-nest, histories held in registers, on the data, memo
+              and dag crates. The core re-exports it as `prodrome::nest`.
+tags/         prodrome-tags, mergeable tag sets, on the data and dag crates.
+              The core re-exports it as `prodrome::tags`.
+digest/       prodrome-digest, a summary tree over a log, on the data and
+              memo crates. The core re-exports it as `prodrome::digest`.
 core/         prodrome-core, the database. The module list in core/src/lib.rs
               gives the SPEC section of each module. The module `reference`
               is the payload of the vectors.

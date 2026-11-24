@@ -242,6 +242,38 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The store, the tag sets, the nests and the digest are crates of their
+  own: `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
+  `prodrome-digest` (issue #92, section 11 of
+  `docs/design-core-face.md`).** A program that opens a store, appends to
+  it and reads it under a policy can depend on `prodrome-data`,
+  `prodrome-memo`, `prodrome-dag` and `prodrome-store` alone: 63,091
+  tokens by `scripts/face.py --lines`, in place of the 112,003 tokens of
+  `prodrome-core` and the crates below it. `prodrome-core` depends on the
+  four crates and re-exports each moved item at its old path, so a
+  program that depends on `prodrome-core` changes nothing. No behaviour,
+  stored byte, conformance vector or law changes, and no item is renamed
+  or narrowed. A program that moves to the new crates changes these
+  paths:
+  - `prodrome::store` becomes `prodrome_store::store`, and
+    `prodrome::snapshot` becomes `prodrome_store::snapshot`, which holds
+    `attest` and `Attestation` and re-exports `prodrome_data::snapshot`.
+    The crate depends on `prodrome-data` and `prodrome-dag`. The husk
+    types and `Sender`, which `prodrome_store::store` re-exports, are in
+    `prodrome_data::husk`;
+  - `prodrome::tags` becomes `prodrome_tags`, whole, on `prodrome-data`
+    and `prodrome-dag`;
+  - `prodrome::nest` becomes `prodrome_nest`, whole, on `prodrome-data`,
+    `prodrome-memo` and `prodrome-dag`;
+  - `prodrome::digest` becomes `prodrome_digest`, whole, on
+    `prodrome-data` and `prodrome-memo`;
+  - `prodrome::event::Lifecycle` becomes `prodrome_data::event::Lifecycle`,
+    because it holds only data. The other records of the todo schema stay
+    in `prodrome-core`.
+
+  The unit tests and the doc tests of the store drive it with the todo
+  schema, so `prodrome-store` has `prodrome-core` as a dev-dependency.
+
 - **The caches, the readings and the declared schemas of a store are
   their own crates, `prodrome-memo`, `prodrome-dag` and
   `prodrome-declared` (issue #92, section 10 of
