@@ -18,8 +18,8 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::marker::PhantomData;
 
 use super::holder::{Holder, Memory};
-use crate::event::Hash;
-use crate::literal::ProdromeError;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::ProdromeError;
 
 /// What an entry tabulates: the function's name (its code and everything
 /// that code reads) and its argument's name.

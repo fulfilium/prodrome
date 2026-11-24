@@ -15,7 +15,7 @@
 //! moves the cuts up to the end of the run.
 
 use super::fold::Tree;
-use crate::event::Hash;
+use prodrome_data::event::Hash;
 
 /// The most nodes that one chunk holds. A run with no boundary is cut here,
 /// so a run of equal elements still forms a tree.

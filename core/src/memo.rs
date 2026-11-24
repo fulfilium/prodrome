@@ -29,7 +29,7 @@ pub use fold::{fold, Algebra, Counts, Outcome, Report, Tree, Visit};
 pub use front::Front;
 pub use holder::{Holder, Memory};
 
-use crate::event::Hash;
+use prodrome_data::event::Hash;
 
 /// The content name of a node, over its own bytes and its children's names
 /// in order, so that a change anywhere below renames exactly the path up to

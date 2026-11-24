@@ -17,7 +17,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 use super::cache::{Finding, Key, Lookup};
-use crate::literal::ProdromeError;
+use prodrome_data::literal::ProdromeError;
 
 /// A set of (key, value) pairs, read as a partial function where it is one.
 pub trait Holder<V> {

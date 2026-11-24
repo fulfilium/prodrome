@@ -19,7 +19,7 @@ use std::collections::BTreeSet;
 
 use super::cache::{Cache, Evict, Finding, Key, Lookup};
 use super::holder::Holder;
-use crate::literal::ProdromeError;
+use prodrome_data::literal::ProdromeError;
 
 /// The holder `B`, read through a cache in memory under the policy `E`.
 #[derive(Debug, Clone)]

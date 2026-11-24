@@ -70,8 +70,8 @@ use rustix::fs::{flock, FlockOperation};
 use self::record::{Header, Names};
 use super::cache::{Finding, Key, Lookup};
 use super::holder::Holder;
-use crate::literal::codec::Literal;
-use crate::literal::{parse_literal, print_literal, Open, ProdromeError};
+use prodrome_data::literal::codec::Literal;
+use prodrome_data::literal::{parse_literal, print_literal, Open, ProdromeError};
 
 /// The first eight bytes of a cache file. The next eight bytes are its
 /// generation, big-endian, which each compaction raises by one.

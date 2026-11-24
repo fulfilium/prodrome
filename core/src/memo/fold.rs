@@ -8,7 +8,7 @@
 //! and the node's name. After a change, the fold computes the nodes whose
 //! names changed, and every other subtree is one hit at its top.
 
-use crate::event::Hash;
+use prodrome_data::event::Hash;
 
 use super::cache::{Key, Lookup};
 use super::holder::Holder;
