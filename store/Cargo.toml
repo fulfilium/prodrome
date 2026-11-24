@@ -1,0 +1,44 @@
+[package]
+name = "prodrome-store"
+description = "The store of a prodrome on disk and in memory: its files, its lock, replicas, doors and frontiers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "content-addressed", "database", "replication"]
+categories = ["database-implementations", "data-structures"]
+
+[lib]
+name = "prodrome_store"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The objects, the events, the husks and the policies that a store holds.
+prodrome-data.workspace = true
+# The DAG that a store reads, its fold, and the trait `Policy`.
+prodrome-dag.workspace = true
+# The errors of a frontier.
+thiserror = "2"
+
+# `EventStore::append` takes an exclusive `flock` on `root/.lock`, the same
+# file and the same operation as `store.py::_flock` of the reference writer
+# in Python, so two writers of one store wait for each other whatever
+# language each is in. The store
+# also draws the random bits of a temporary file's name, and reads the
+# kernel's release and the file system's type for `syncfs`. On Unix only,
+# because `prodrome-wasm` compiles this crate for `wasm32-unknown-unknown`,
+# which has no file system to lock.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs", "rand", "system"] }
+
+[dev-dependencies]
+# The unit tests of the store drive it with the todo schema and the
+# reference payload of `prodrome-core`. Cargo allows this cycle for a
+# dev-dependency. The tests pass only values of the data crate and of
+# `prodrome-dag` between the two crates, because the store that the core
+# links is another build of this crate.
+prodrome-core.workspace = true
+proptest = "1"

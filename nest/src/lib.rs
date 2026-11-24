@@ -4,6 +4,8 @@
 //! A register holds a history by its heads ([`Heads`]), and a schema tells
 //! which of its registers do ([`Nests`]). A [`Nest`] flattens into one
 //! [`History`] keyed by [`Path`]. A [`Set`] is a nest keyed by genesis.
+//!
+//! `prodrome-core` re-exports this crate as `prodrome::nest`.
 
 #![warn(clippy::pedantic)]
 

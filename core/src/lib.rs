@@ -93,9 +93,15 @@
 //! The crate `prodrome-memo` holds `memo`, and `prodrome-declared` holds
 //! `declared`. The crate `prodrome-dag` holds `dag` and `registers`, the
 //! rest of `policy` and `sign`, and the reading of an entity's registers,
-//! `fold::read`. This crate re-exports each of them at the same path. A program that reads an entity's registers under
-//! a policy can depend on `prodrome-data`, `prodrome-memo` and
-//! `prodrome-dag` alone.
+//! `fold::read`. A program that reads an entity's registers under a policy
+//! can depend on `prodrome-data`, `prodrome-memo` and `prodrome-dag` alone.
+//!
+//! The crate `prodrome-store` holds `store` and the rest of `snapshot`, on
+//! `prodrome-data` and `prodrome-dag`. A program that opens a store,
+//! appends to it and reads it under a policy can depend on these three
+//! crates alone. The crates `prodrome-nest`, `prodrome-tags` and
+//! `prodrome-digest` hold `nest`, `tags` and `digest`. This crate
+//! re-exports each module of these crates at the same path.
 //!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
@@ -134,13 +140,11 @@ extern crate self as prodrome;
 pub mod breaks;
 /// The chain compiler (SPEC §7.1).
 pub mod chain;
-pub mod digest;
 pub mod event;
 pub mod fold;
 pub mod fpl;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod nest;
 pub mod observe;
 pub mod payload;
 /// The reference payload, with which `conformance/*.py` was taken. A host
@@ -149,9 +153,6 @@ pub mod payload;
 pub mod reference;
 pub mod schedule;
 pub mod schema;
-pub mod snapshot;
-pub mod store;
-pub mod tags;
 pub mod term;
 pub mod todo;
 pub mod view;
@@ -171,7 +172,11 @@ pub use prodrome_memo as memo;
 // of a todo.
 pub use prodrome_dag::{dag, policy, registers, sign};
 
-// The property tests' case counts, one rule with the integration tests'.
-#[cfg(test)]
-#[path = "../tests/common/cases.rs"]
-mod cases;
+// The store and the attestation of a snapshot, from `prodrome-store`; the
+// histories held in registers, from `prodrome-nest`; the tag sets, from
+// `prodrome-tags`; and the summary tree, from `prodrome-digest`. Each is at
+// the path that a program has always named.
+pub use prodrome_digest as digest;
+pub use prodrome_nest as nest;
+pub use prodrome_store::{snapshot, store};
+pub use prodrome_tags as tags;

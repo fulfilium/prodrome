@@ -58,6 +58,10 @@ jobs:
               python3 scripts/edges.py memo/src
               python3 scripts/edges.py declared/src
               python3 scripts/edges.py dag/src
+              python3 scripts/edges.py store/src
+              python3 scripts/edges.py nest/src
+              python3 scripts/edges.py tags/src
+              python3 scripts/edges.py digest/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
               cargo test --locked --workspace --doc
           - check: test

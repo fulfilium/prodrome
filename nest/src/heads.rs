@@ -17,7 +17,7 @@ use prodrome_data::stamp::Stamp;
 /// replica of `I`'s objects.
 ///
 /// A register is declared to hold histories of one schema by a
-/// [`crate::fold::RegisterType`] whose values are `&Heads<I>`, never by a
+/// [`prodrome_data::fold::RegisterType`] whose values are `&Heads<I>`, never by a
 /// field of the object, which carries only the names as a sorted tuple.
 ///
 /// The order is inclusion of the heads. It is sound because one set of

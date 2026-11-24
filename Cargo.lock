@@ -492,9 +492,12 @@ dependencies = [
  "prodrome-dag",
  "prodrome-data",
  "prodrome-declared",
+ "prodrome-digest",
  "prodrome-memo",
+ "prodrome-nest",
+ "prodrome-store",
+ "prodrome-tags",
  "proptest",
- "rustix",
  "sha2",
  "thiserror",
  "unicode-general-category",
@@ -540,6 +543,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "prodrome-digest"
+version = "0.9.0"
+dependencies = [
+ "prodrome-data",
+ "prodrome-memo",
+]
+
+[[package]]
 name = "prodrome-github"
 version = "0.9.0"
 dependencies = [
@@ -558,6 +569,36 @@ dependencies = [
  "prodrome-data",
  "rustix",
  "sha2",
+]
+
+[[package]]
+name = "prodrome-nest"
+version = "0.9.0"
+dependencies = [
+ "prodrome-dag",
+ "prodrome-data",
+ "prodrome-memo",
+]
+
+[[package]]
+name = "prodrome-store"
+version = "0.9.0"
+dependencies = [
+ "prodrome-core",
+ "prodrome-dag",
+ "prodrome-data",
+ "proptest",
+ "rustix",
+ "thiserror",
+]
+
+[[package]]
+name = "prodrome-tags"
+version = "0.9.0"
+dependencies = [
+ "prodrome-dag",
+ "prodrome-data",
+ "thiserror",
 ]
 
 [[package]]

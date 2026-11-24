@@ -170,12 +170,12 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::{bracketed, read, Record, FILE};
-    use crate::dag::Heads;
-    use crate::event::{mk_reopened, Hash, TodoEvent};
-    use crate::literal::Datetime;
-    use crate::policy::Untrusted;
-    use crate::reference::Todo;
     use crate::store::EventStore;
+    use prodrome::dag::Heads;
+    use prodrome::event::{mk_reopened, Hash, TodoEvent};
+    use prodrome::literal::Datetime;
+    use prodrome::policy::Untrusted;
+    use prodrome::reference::Todo;
 
     type Event = TodoEvent<Todo>;
     type Store = EventStore<Event>;

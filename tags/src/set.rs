@@ -7,9 +7,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::tags::alias::{self, Alias, AliasEvent};
-use crate::tags::membership::{self, Membership, MembershipEvent, Presence};
-use crate::tags::Tagging;
+use crate::alias::{self, Alias, AliasEvent};
+use crate::membership::{self, Membership, MembershipEvent, Presence};
+use crate::Tagging;
 use prodrome_dag::registers::Prodrome;
 use prodrome_data::event::Actor;
 use prodrome_data::fold::sole::{Bodies, One, Only};

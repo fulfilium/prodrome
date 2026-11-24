@@ -76,7 +76,7 @@ impl<T: Ord> History<T> {
 
     /// The restricted join: this history plus exactly the values that
     /// `chosen` keeps of `inner`, each under `at`. At the root, `at` adds no
-    /// prefix. [`crate::store::accept`] does the same for replicas.
+    /// prefix. `accept` of `prodrome-store` does the same for replicas.
     #[must_use]
     pub fn accept(
         self,

@@ -3,7 +3,7 @@
 
 use std::marker::PhantomData;
 
-use crate::tags::{Names, Tagging};
+use crate::{Names, Tagging};
 use prodrome_data::event::Actor;
 use prodrome_data::fold::sole::{Bodies, One, Only};
 use prodrome_data::fold::{Order, Product as _};

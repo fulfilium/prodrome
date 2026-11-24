@@ -3,6 +3,9 @@
 //!
 //! The caller writes and records each summary; this module reads only which
 //! nodes have a summary and its length in bytes (`summarized(name)`).
+//!
+//! The crate depends only on `prodrome-data` and `prodrome-memo`.
+//! `prodrome-core` re-exports it as `prodrome::digest`.
 
 #![warn(clippy::pedantic)]
 

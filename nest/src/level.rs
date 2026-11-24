@@ -52,7 +52,8 @@ pub struct Leaf<E: Schema> {
 }
 
 impl<E: Schema> Leaf<E> {
-    /// The level of `dag`'s objects, a replica's ([`crate::store::Held`]).
+    /// The level of `dag`'s objects, such as the DAG that a replica of
+    /// `prodrome-store` holds.
     #[must_use]
     pub fn new(dag: Arc<Dag<E>>) -> Leaf<E> {
         Leaf { dag }

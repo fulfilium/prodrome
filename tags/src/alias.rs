@@ -4,7 +4,7 @@
 //! concurrently for one tag are a conflict, which the reading shows and the
 //! next rename settles.
 
-use crate::tags::{Names, Tagging};
+use crate::{Names, Tagging};
 use prodrome_data::event::Actor;
 use prodrome_data::fold::sole::{Bodies, One, Only};
 use prodrome_data::fold::Order;

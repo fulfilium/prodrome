@@ -1,0 +1,22 @@
+[package]
+name = "prodrome-digest"
+description = "A summary tree over an append-only log, read through a view that fits a budget"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["summary", "content-addressed", "tree"]
+categories = ["data-structures"]
+
+[lib]
+name = "prodrome_digest"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# `Hash` names a node, and `topo` orders the nodes.
+prodrome-data.workspace = true
+# The tree is a `memo::Tree`, and its nodes carry a `memo::Algebra`.
+prodrome-memo.workspace = true

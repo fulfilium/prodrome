@@ -108,7 +108,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// A store opened at `schema`: a declared schema admitted at run time
-    /// ([`crate::declared`]), or a Rust schema's unit.
+    /// (`prodrome-declared`), or a Rust schema's unit.
     pub fn at(root: impl Into<PathBuf>, policy: Pol, schema: E::Vocabulary) -> EventStore<E, Pol> {
         EventStore {
             root: root.into(),
@@ -1282,12 +1282,12 @@ fn sync_dir(dir: &Path) -> Result<(), ProdromeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::change::Change;
-    use crate::event::{
+    use prodrome::change::Change;
+    use prodrome::event::{
         mk_completed, mk_created, mk_reopened, mk_sealed, seal_hash, Actor, TodoEvent,
     };
-    use crate::literal::Datetime;
-    use crate::reference::Todo;
+    use prodrome::literal::Datetime;
+    use prodrome::reference::Todo;
     use proptest::prelude::*;
 
     /// The store these tests drive. The schema is the todo one, with the
@@ -1585,7 +1585,7 @@ mod tests {
             .expect("reads")
             .objects()
             .iter()
-            .map(|(name, object)| (name.clone(), crate::event::canonical_envelope(object)))
+            .map(|(name, object)| (name.clone(), prodrome::event::canonical_envelope(object)))
             .collect();
         by_bytes
             .adopt_objects(&over_the_wire, &theirs, Sender::Stranger)
@@ -1769,7 +1769,7 @@ mod tests {
         );
         let record = seal(
             &store,
-            crate::reference::mk_authored(
+            prodrome::reference::mk_authored(
                 "alpha",
                 at(2),
                 "triage",
@@ -2272,7 +2272,7 @@ mod tests {
             let before = Store::new(store.root(), roster()).dag().map(|dag| (*dag).clone());
             let temp = stage(
                 &store.objects_dir(),
-                crate::event::canonical_envelope(&next).as_bytes(),
+                prodrome::event::canonical_envelope(&next).as_bytes(),
             )
             .expect("stages");
             let file = temp.file_name().expect("a name").to_string_lossy().into_owned();

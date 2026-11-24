@@ -31,7 +31,7 @@ use prodrome_data::schema::Schema;
 /// # use prodrome::literal::Datetime;
 /// # use prodrome::policy::Untrusted;
 /// # use prodrome::reference::Todo;
-/// # use prodrome::store::EventStore;
+/// # use prodrome_store::store::EventStore;
 /// # fn main() -> Result<(), prodrome::literal::ProdromeError> {
 /// # let dir = std::env::temp_dir().join("prodrome-decision-doc");
 /// # let _ = std::fs::remove_dir_all(&dir);
@@ -57,7 +57,7 @@ use prodrome_data::schema::Schema;
 /// ```compile_fail
 /// use prodrome::event::TodoEvent;
 /// use prodrome::reference::Todo;
-/// use prodrome::store::{EventStore, Overlay};
+/// use prodrome_store::store::{EventStore, Overlay};
 ///
 /// type Store = EventStore<TodoEvent<Todo>>;
 /// fn send(overlay: &Overlay<TodoEvent<Todo>, Store>) {
@@ -69,7 +69,7 @@ use prodrome_data::schema::Schema;
 /// ```compile_fail
 /// use prodrome::event::TodoEvent;
 /// use prodrome::reference::Todo;
-/// use prodrome::store::MemoryStore;
+/// use prodrome_store::store::MemoryStore;
 ///
 /// fn send(replica: &MemoryStore<TodoEvent<Todo>>) {
 ///     // A store in memory has no lock any other writer takes.

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["cli", "core", "dag", "data", "declared", "derive", "github", "memo", "wasm", "wasm/exports"]
+members = ["cli", "core", "dag", "data", "declared", "derive", "digest", "github", "memo", "nest", "store", "tags", "wasm", "wasm/exports"]
 # Typst lives outside the core's workspace, with its own lock file: the
 # viewer's optional extra, never a dependency of `core/` or `cli/`.
 exclude = ["typst-wasm"]
@@ -61,3 +61,7 @@ prodrome-derive = { path = "derive", version = "0.9.0" }
 prodrome-memo = { path = "memo", version = "=0.9.0" }
 prodrome-dag = { path = "dag", version = "=0.9.0" }
 prodrome-declared = { path = "declared", version = "=0.9.0" }
+prodrome-digest = { path = "digest", version = "=0.9.0" }
+prodrome-nest = { path = "nest", version = "=0.9.0" }
+prodrome-store = { path = "store", version = "=0.9.0" }
+prodrome-tags = { path = "tags", version = "=0.9.0" }
