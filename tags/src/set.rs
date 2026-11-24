@@ -7,15 +7,16 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::event::Actor;
-use crate::fold::sole::{Bodies, One, Only};
-use crate::fold::Product as _;
-use crate::literal::Datetime;
-use crate::policy::Everything;
-use crate::registers::{Prodrome, Stamp};
-use crate::tags::alias::{self, Alias, AliasEvent};
-use crate::tags::membership::{self, Membership, MembershipEvent, Presence};
-use crate::tags::Tagging;
+use crate::alias::{self, Alias, AliasEvent};
+use crate::membership::{self, Membership, MembershipEvent, Presence};
+use crate::Tagging;
+use prodrome_dag::registers::Prodrome;
+use prodrome_data::event::Actor;
+use prodrome_data::fold::sole::{Bodies, One, Only};
+use prodrome_data::fold::Product as _;
+use prodrome_data::literal::Datetime;
+use prodrome_data::policy::Everything;
+use prodrome_data::stamp::Stamp;
 
 /// The tags on each target, and what each tag's name stands for.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -83,7 +84,7 @@ impl<S: Tagging> TagSet<S> {
         let mut on: BTreeMap<S::Target, BTreeSet<S::Tag>> = BTreeMap::new();
         for (pair, stream) in memberships {
             let registers: One<'_, Bodies<Membership<S>>> =
-                crate::fold::read(stream, None, &Everything);
+                prodrome_dag::fold::read(stream, None, &Everything);
             if membership::presence(&registers) == Presence::On {
                 on.entry(pair.target.clone())
                     .or_default()
@@ -94,7 +95,7 @@ impl<S: Tagging> TagSet<S> {
             .iter()
             .filter_map(|(tag, stream)| {
                 let registers: One<'_, Bodies<Alias<S>>> =
-                    crate::fold::read(stream, None, &Everything);
+                    prodrome_dag::fold::read(stream, None, &Everything);
                 let mut stamps: Vec<&Stamp<AliasEvent<S>>> = registers.reading(Only);
                 stamps.sort_by(|one, two| one.name.cmp(&two.name));
                 let mut values = stamps.into_iter().map(|stamp| stamp.event.body().clone());

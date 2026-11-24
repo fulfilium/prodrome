@@ -19,8 +19,8 @@ use std::io::Write;
 use std::path::Path;
 
 use super::{put_durably, sync_dir};
-use crate::dag::Heads;
-use crate::literal::ProdromeError;
+use prodrome_dag::dag::Heads;
+use prodrome_data::literal::ProdromeError;
 
 /// The record's file name in the store's root.
 pub(super) const FILE: &str = ".heads";
@@ -170,12 +170,12 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use super::{bracketed, read, Record, FILE};
-    use crate::dag::Heads;
-    use crate::event::{mk_reopened, Hash, TodoEvent};
-    use crate::literal::Datetime;
-    use crate::policy::Untrusted;
-    use crate::reference::Todo;
     use crate::store::EventStore;
+    use prodrome::dag::Heads;
+    use prodrome::event::{mk_reopened, Hash, TodoEvent};
+    use prodrome::literal::Datetime;
+    use prodrome::policy::Untrusted;
+    use prodrome::reference::Todo;
 
     type Event = TodoEvent<Todo>;
     type Store = EventStore<Event>;

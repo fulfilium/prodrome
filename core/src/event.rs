@@ -36,16 +36,6 @@ pub struct Created {
     pub note: String,
 }
 
-/// The fields of `Completed`, `Cancelled`, `Reopened` and `Tended`, each
-/// `(todo, at, actor, note)`.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Lifecycle {
-    pub todo: TodoId,
-    pub at: Datetime,
-    pub actor: Actor,
-    pub note: String,
-}
-
 /// `SpecRevised(todo, at, actor, spec, note)`: a new authored price, effective
 /// at `at`. It does not change the environment; the query layer picks the
 /// latest spec.

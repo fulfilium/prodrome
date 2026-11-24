@@ -5,7 +5,7 @@ use std::ops::{Deref, DerefMut};
 
 use super::memory::Memory;
 use super::writes::Mark;
-use crate::schema::Schema;
+use prodrome_data::schema::Schema;
 
 /// A handle's memory and the mark that the memory is level with: the mark
 /// read before the memory's last listing of `objects/`, or the mark that

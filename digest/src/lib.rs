@@ -3,15 +3,18 @@
 //!
 //! The caller writes and records each summary; this module reads only which
 //! nodes have a summary and its length in bytes (`summarized(name)`).
+//!
+//! The crate depends only on `prodrome-data` and `prodrome-memo`.
+//! `prodrome-core` re-exports it as `prodrome::digest`.
 
 #![warn(clippy::pedantic)]
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use crate::event::Hash;
-use crate::memo::{self, Algebra};
-use crate::topo;
+use prodrome_data::event::Hash;
+use prodrome_data::topo;
+use prodrome_memo::{self as memo, Algebra};
 
 mod cut;
 mod prefixes;

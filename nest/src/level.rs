@@ -7,10 +7,10 @@ use std::sync::Arc;
 use super::heads::Nests;
 use super::history::History;
 use super::path::{Path, Segment};
-use crate::dag::Dag;
-use crate::event::{parents_of, Envelope, Hash};
-use crate::literal::ProdromeError;
-use crate::schema::Schema;
+use prodrome_dag::dag::Dag;
+use prodrome_data::event::{parents_of, Envelope, Hash};
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// A tree of content-addressed histories: one level's history, each object
 /// at its entity's key, and the nest that each of its pointers holds, at
@@ -52,7 +52,8 @@ pub struct Leaf<E: Schema> {
 }
 
 impl<E: Schema> Leaf<E> {
-    /// The level of `dag`'s objects, a replica's ([`crate::store::Held`]).
+    /// The level of `dag`'s objects, such as the DAG that a replica of
+    /// `prodrome-store` holds.
     #[must_use]
     pub fn new(dag: Arc<Dag<E>>) -> Leaf<E> {
         Leaf { dag }
@@ -245,7 +246,7 @@ impl Nest {
             let path = path.to_string();
             bytes.extend(format!("held {} {path}\n", path.len()).bytes());
         }
-        crate::memo::name(&bytes, held.values().map(|nest| &nest.name))
+        prodrome_memo::name(&bytes, held.values().map(|nest| &nest.name))
     }
 
     /// The nest's content name, over its own objects, the paths that it
@@ -332,7 +333,7 @@ impl Nest {
 /// computes those and hits every other. [`Nest::flatten`] is such a fold,
 /// its algebra a level's own objects joined with its children's results
 /// under their paths.
-impl crate::memo::Tree for Nest {
+impl prodrome_memo::Tree for Nest {
     fn name(&self) -> &Hash {
         &self.name
     }

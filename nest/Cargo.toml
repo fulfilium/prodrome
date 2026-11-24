@@ -1,0 +1,25 @@
+[package]
+name = "prodrome-nest"
+description = "Histories of a prodrome held in registers, and nests of them"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "content-addressed", "crdt", "dag"]
+categories = ["data-structures"]
+
+[lib]
+name = "prodrome_nest"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The events, the literals and the register algebra of the heads that a
+# register holds.
+prodrome-data.workspace = true
+# A level of a nest reads a `Dag`, and the heads read an entity's registers.
+prodrome-dag.workspace = true
+# A nest is a tree that `memo::fold` reads, and its name is `memo::name`.
+prodrome-memo.workspace = true

@@ -9,13 +9,14 @@
 //! a merge of two tags writes aliases and no membership.
 //! [`TagSet`](set::TagSet) reads the two stores together. A host describes
 //! its sets with one [`Tagging`]. The target and the tag can be one type.
+//! `prodrome-core` re-exports this crate as `prodrome::tags`.
 //!
 //! The two field names must differ from each other and from `at`, `actor`
 //! and `to`, because a print with a repeated field does not parse. The check
 //! runs at compile time, when a schema is first used with a [`Tagging`]:
 //!
 //! ```compile_fail
-//! use prodrome::tags::{membership, Tagging};
+//! use prodrome_tags::{membership, Tagging};
 //!
 //! #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 //! struct Labels;
@@ -27,14 +28,14 @@
 //!     const TAG: &'static str = "label";
 //! }
 //!
-//! let _ = <membership::Membership<Labels> as prodrome::schema::headed::Body>::EVENTS;
+//! let _ = <membership::Membership<Labels> as prodrome_data::schema::headed::Body>::EVENTS;
 //! ```
 
 #![warn(clippy::pedantic)]
 
 use std::fmt::Debug;
 
-use crate::literal::codec::Literal;
+use prodrome_data::literal::codec::Literal;
 
 pub mod alias;
 pub mod membership;

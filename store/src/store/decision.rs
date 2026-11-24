@@ -9,13 +9,13 @@ use super::levelled::Levelled;
 use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
 use super::{replace, sync_dir, EventStore};
-use crate::dag::Dag;
-use crate::event::{Envelope, Hash};
-use crate::literal::ProdromeError;
-use crate::policy::Policy;
-use crate::registers::Folded;
-use crate::schema::Schema;
+use prodrome_dag::dag::Dag;
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::Folded;
+use prodrome_data::event::{Envelope, Hash};
 use prodrome_data::husk::{HuskObject, Husking};
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// The store of record under its lock, which [`EventStore::decide`] returns.
 ///
@@ -31,7 +31,7 @@ use prodrome_data::husk::{HuskObject, Husking};
 /// # use prodrome::literal::Datetime;
 /// # use prodrome::policy::Untrusted;
 /// # use prodrome::reference::Todo;
-/// # use prodrome::store::EventStore;
+/// # use prodrome_store::store::EventStore;
 /// # fn main() -> Result<(), prodrome::literal::ProdromeError> {
 /// # let dir = std::env::temp_dir().join("prodrome-decision-doc");
 /// # let _ = std::fs::remove_dir_all(&dir);
@@ -57,7 +57,7 @@ use prodrome_data::husk::{HuskObject, Husking};
 /// ```compile_fail
 /// use prodrome::event::TodoEvent;
 /// use prodrome::reference::Todo;
-/// use prodrome::store::{EventStore, Overlay};
+/// use prodrome_store::store::{EventStore, Overlay};
 ///
 /// type Store = EventStore<TodoEvent<Todo>>;
 /// fn send(overlay: &Overlay<TodoEvent<Todo>, Store>) {
@@ -69,7 +69,7 @@ use prodrome_data::husk::{HuskObject, Husking};
 /// ```compile_fail
 /// use prodrome::event::TodoEvent;
 /// use prodrome::reference::Todo;
-/// use prodrome::store::MemoryStore;
+/// use prodrome_store::store::MemoryStore;
 ///
 /// fn send(replica: &MemoryStore<TodoEvent<Todo>>) {
 ///     // A store in memory has no lock any other writer takes.

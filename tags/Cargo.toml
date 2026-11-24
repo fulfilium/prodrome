@@ -1,0 +1,24 @@
+[package]
+name = "prodrome-tags"
+description = "Mergeable tag sets over a prodrome store"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "crdt", "tags"]
+categories = ["data-structures"]
+
+[lib]
+name = "prodrome_tags"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The events, the literal codec and the register algebra of a tag set.
+prodrome-data.workspace = true
+# A tag set is the registers of an entity, read with `fold::read`.
+prodrome-dag.workspace = true
+# The error of an alias.
+thiserror = "2"

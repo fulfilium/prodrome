@@ -25,7 +25,7 @@ use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
 
-use crate::literal::ProdromeError;
+use prodrome_data::literal::ProdromeError;
 
 /// The file's name in the store's root.
 pub(super) const FILE: &str = ".writes";

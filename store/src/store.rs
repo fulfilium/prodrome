@@ -33,15 +33,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use crate::dag::{decode, Dag, Finding, Heads, Unread};
-use crate::event::{mk_woven, parents_of, Envelope, Hash};
-use crate::genesis::mk_genesis;
-use crate::literal::ProdromeError;
-use crate::policy::{Policy, Untrusted};
-use crate::registers::{Folded, Node};
-use crate::schema::Schema;
+use prodrome_dag::dag::{decode, Dag, Finding, Heads, Unread};
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::{Folded, Node};
+use prodrome_dag::spread::spread;
+use prodrome_data::event::{mk_woven, parents_of, Envelope, Hash};
+use prodrome_data::genesis::mk_genesis;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::policy::Untrusted;
+use prodrome_data::schema::Schema;
+
 use crate::snapshot::{attest, Attestation};
-use crate::spread::spread;
 
 pub use decision::{Decision, Stopped};
 pub use doors::Doors;
@@ -106,7 +108,7 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// A store opened at `schema`: a declared schema admitted at run time
-    /// ([`crate::declared`]), or a Rust schema's unit.
+    /// (`prodrome-declared`), or a Rust schema's unit.
     pub fn at(root: impl Into<PathBuf>, policy: Pol, schema: E::Vocabulary) -> EventStore<E, Pol> {
         EventStore {
             root: root.into(),
@@ -1280,12 +1282,12 @@ fn sync_dir(dir: &Path) -> Result<(), ProdromeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::change::Change;
-    use crate::event::{
+    use prodrome::change::Change;
+    use prodrome::event::{
         mk_completed, mk_created, mk_reopened, mk_sealed, seal_hash, Actor, TodoEvent,
     };
-    use crate::literal::Datetime;
-    use crate::reference::Todo;
+    use prodrome::literal::Datetime;
+    use prodrome::reference::Todo;
     use proptest::prelude::*;
 
     /// The store these tests drive. The schema is the todo one, with the
@@ -1583,7 +1585,7 @@ mod tests {
             .expect("reads")
             .objects()
             .iter()
-            .map(|(name, object)| (name.clone(), crate::event::canonical_envelope(object)))
+            .map(|(name, object)| (name.clone(), prodrome::event::canonical_envelope(object)))
             .collect();
         by_bytes
             .adopt_objects(&over_the_wire, &theirs, Sender::Stranger)
@@ -1767,7 +1769,7 @@ mod tests {
         );
         let record = seal(
             &store,
-            crate::reference::mk_authored(
+            prodrome::reference::mk_authored(
                 "alpha",
                 at(2),
                 "triage",
@@ -2270,7 +2272,7 @@ mod tests {
             let before = Store::new(store.root(), roster()).dag().map(|dag| (*dag).clone());
             let temp = stage(
                 &store.objects_dir(),
-                crate::event::canonical_envelope(&next).as_bytes(),
+                prodrome::event::canonical_envelope(&next).as_bytes(),
             )
             .expect("stages");
             let file = temp.file_name().expect("a name").to_string_lossy().into_owned();

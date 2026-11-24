@@ -8,13 +8,13 @@ use std::fs;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 
-use crate::change::mk_change;
-use crate::dag::{decode, lacked_among, Dag, Heads, Prints, Unread};
-use crate::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope, Hash};
-use crate::literal::{Datetime, ProdromeError};
-use crate::registers::{deps_for, fold, Folded, Genesis};
-use crate::schema::Schema;
 use crate::store::{HuskObject, Sender, Stored};
+use prodrome_dag::dag::{decode, lacked_among, Dag, Heads, Prints, Unread};
+use prodrome_dag::registers::{deps_for, fold, Folded, Genesis};
+use prodrome_data::change::mk_change;
+use prodrome_data::event::{canonical, canonical_envelope, parents_of, rests_on, Envelope, Hash};
+use prodrome_data::literal::{Datetime, ProdromeError};
+use prodrome_data::schema::Schema;
 
 /// A store's objects as it last read them, and their fold.
 ///

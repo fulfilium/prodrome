@@ -52,17 +52,18 @@ prodrome-dag.workspace = true
 # Schemas declared as text, which this crate re-exports as
 # `prodrome::declared`.
 prodrome-declared.workspace = true
+# The summary tree, which this crate re-exports as `prodrome::digest`.
+prodrome-digest.workspace = true
+# Histories held in registers, which this crate re-exports as
+# `prodrome::nest`.
+prodrome-nest.workspace = true
+# The store and the attestation of a snapshot, which this crate re-exports
+# at `prodrome::store` and `prodrome::snapshot`.
+prodrome-store.workspace = true
+# Mergeable tag sets, which this crate re-exports as `prodrome::tags`.
+prodrome-tags.workspace = true
 sha2 = "0.10"
 thiserror = "2"
-
-# THE STORE'S LOCK, ON UNIX ONLY. `EventStore::append` takes an exclusive
-# `flock` on `root/.lock` — the same file and the same operation the earlier
-# Python writer took (the reference's `store.py::_flock`), so two writers of
-# one store serialise whatever language each is in. Target-gated because
-# `prodrome-wasm` compiles this crate for `wasm32-unknown-unknown`, which has no
-# filesystem to lock and whose `errno` will not build.
-[target.'cfg(unix)'.dependencies]
-rustix = { version = "1", features = ["fs", "rand", "system"] }
 
 [dev-dependencies]
 proptest = "1"

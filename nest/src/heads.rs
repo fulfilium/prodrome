@@ -4,19 +4,20 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::event::{hashes, hashes_value, sorted_distinct, Hash};
-use crate::fold::{read, Order, Product};
-use crate::literal::{Call, ProdromeError, Value};
-use crate::policy::Everything;
-use crate::registers::Stamp;
-use crate::schema::Schema;
+use prodrome_dag::fold::read;
+use prodrome_data::event::{hashes, hashes_value, sorted_distinct, Hash};
+use prodrome_data::fold::{Order, Product};
+use prodrome_data::literal::{Call, ProdromeError, Value};
+use prodrome_data::policy::Everything;
+use prodrome_data::schema::Schema;
+use prodrome_data::stamp::Stamp;
 
 /// The value of a register that holds a history of the schema `I`: the
 /// history's heads. The history is everything that the heads rest on, in a
 /// replica of `I`'s objects.
 ///
 /// A register is declared to hold histories of one schema by a
-/// [`crate::fold::RegisterType`] whose values are `&Heads<I>`, never by a
+/// [`prodrome_data::fold::RegisterType`] whose values are `&Heads<I>`, never by a
 /// field of the object, which carries only the names as a sorted tuple.
 ///
 /// The order is inclusion of the heads. It is sound because one set of

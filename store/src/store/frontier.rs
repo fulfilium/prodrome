@@ -12,10 +12,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
-use crate::dag::{Dag, Reach};
-use crate::event::{Envelope, Hash};
-use crate::literal::ProdromeError;
-use crate::schema::Schema;
+use prodrome_dag::dag::{Dag, Reach};
+use prodrome_data::event::{Envelope, Hash};
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// The name of a frontier: the sha256 of its tips, with each name on a
 /// line of its own in sorted order. It is 64 lowercase hex digits.
