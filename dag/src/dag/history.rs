@@ -58,11 +58,15 @@ impl<E> History<E> {
         &mut self.objects
     }
 
-    /// The object `name` replaced by `object`, which rests on what it
-    /// rests on, and the object it replaced; `None`, and nothing replaced,
-    /// for a name not held. The kept facts read only the names and what
-    /// each rests on, so they are kept.
+    /// The object `name` replaced by `object`, and the object it replaced;
+    /// `None`, and nothing replaced, for a name not held. The kept facts
+    /// read only the names and what each rests on, so they are kept where
+    /// `object` rests on what the held object rests on, and let go
+    /// otherwise.
     pub(super) fn replace(&mut self, name: &Hash, object: Envelope<E>) -> Option<Envelope<E>> {
+        if rests_on(self.objects.get(name)?) != rests_on(&object) {
+            self.facts = Facts::default();
+        }
         let held = self.objects.get_mut(name)?;
         Some(std::mem::replace(held, object))
     }

@@ -165,11 +165,11 @@ impl<E> Dag<E> {
     }
 
     /// For the core; no promise.
-    /// The object `name` of the history replaced by its husk, which rests on
-    /// what the object rests on, since it is the object's `Change` with its
-    /// event husked. So the kept facts (the tips, the order and its index)
-    /// still describe the objects, and are kept.
-    /// A name the history does not hold is passed over.
+    /// The object `name` of the history replaced by its husk. The husk of
+    /// the object's own `Change` rests on what the object rests on, so the
+    /// kept facts (the tips, the order and its index) are kept; a husk that
+    /// rests on other names lets them go. A name the history does not hold
+    /// is passed over.
     #[doc(hidden)]
     pub fn husk(&mut self, name: &Hash, husk: HuskObject<E>) {
         if self.history.replace(name, husk.into_object()).is_some() {

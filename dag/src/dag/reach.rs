@@ -77,11 +77,12 @@ impl<'d> Reach<'d> {
     }
 
     /// For the core; no promise.
-    /// Put the position `at` in the set.
+    /// Put the position `at` in the set. A position past the order is
+    /// passed over.
     #[doc(hidden)]
     #[inline]
     pub fn insert(&mut self, at: usize) {
-        if !self.has(at) {
+        if at < self.order.len() && !self.has(at) {
             self.bits[at / 64] |= 1 << (at % 64);
             self.len += 1;
         }

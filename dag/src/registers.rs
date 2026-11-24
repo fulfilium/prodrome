@@ -73,8 +73,9 @@ pub type Prodrome<E> = BTreeMap<<E as Schema>::Key, Vec<Stamp<E>>>;
 /// use prodrome_data::event::{Envelope, Hash};
 ///
 /// fn misplace<E: Clone>(name: Hash, object: &Envelope<E>) -> Node<E> {
-///     // No node is made of one envelope, which cannot say its prodrome.
-///     Node::of(name, object)
+///     // Only a DAG places a node, because one envelope cannot say its
+///     // prodrome.
+///     Node::placed(name, object, None)
 /// }
 /// ```
 #[derive(Debug, Clone, PartialEq)]
@@ -143,16 +144,17 @@ impl<E: Schema> Folded<E> {
 
     /// For the core; no promise.
     /// The stamp of `name` reads `event` in place of its event: the husk of
-    /// the object it was (SPEC §3), whose key is the same, so it stays in
-    /// its entity's stream where it was. A name with no stamp is passed
-    /// over.
+    /// the object it was (SPEC §3), whose key and instant are the same, so
+    /// it stays in its entity's stream where it was. A name with no stamp,
+    /// or whose stamp has another key or instant, is passed over.
     #[doc(hidden)]
     pub fn rewrite(&mut self, name: &Hash, event: &E) {
         for prodrome in self.prodromes.values_mut() {
-            if let Some(stamp) = prodrome
-                .get_mut(event.key())
-                .and_then(|stream| stream.iter_mut().find(|stamp| stamp.name == *name))
-            {
+            if let Some(stamp) = prodrome.get_mut(event.key()).and_then(|stream| {
+                stream
+                    .iter_mut()
+                    .find(|stamp| stamp.name == *name && stamp.event.at() == event.at())
+            }) {
                 stamp.event = Arc::new(event.clone());
                 return;
             }
