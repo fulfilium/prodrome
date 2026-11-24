@@ -8,6 +8,7 @@ use std::thread;
 /// items costs less than a thread does.
 const SHARE: usize = 64;
 
+/// For the core; no promise.
 /// `items.into_iter().map(work).collect()`, with the items shared among the
 /// cores that [`thread::available_parallelism`] reports: item `i` goes to
 /// thread `i % threads`, so a run of large items is shared too, and the
@@ -15,7 +16,8 @@ const SHARE: usize = 64;
 /// work where the host reports one core or none (a browser does), and where
 /// there are fewer than two shares of items. A panic in `work` is resumed
 /// on the calling thread, as it would be without threads.
-pub(crate) fn spread<T: Send, U: Send>(items: Vec<T>, work: impl Fn(T) -> U + Sync) -> Vec<U> {
+#[doc(hidden)]
+pub fn spread<T: Send, U: Send>(items: Vec<T>, work: impl Fn(T) -> U + Sync) -> Vec<U> {
     let threads = thread::available_parallelism()
         .map_or(1, NonZeroUsize::get)
         .min(items.len() / SHARE);

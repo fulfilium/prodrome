@@ -1,20 +1,14 @@
 //! Folds (SPEC §6): each entity's stream folded into its registers
 //! ([`read`], under any schema), and the readings of a todo (SPEC §6.1 to
-//! §6.5), each a projection of its [`Registers`]. The register algebra,
-//! such as [`Product`] and [`Frontier`], is defined in `prodrome-data` and
-//! re-exported here.
-//!
-//! A write joins its register when it is dated at or before the moment asked
-//! and the policy binds it. Only ancestry decides what a write supersedes: no
-//! clock and no linearisation picks a winner.
+//! §6.5), each a projection of its [`Registers`]. [`read`] is defined in
+//! `prodrome-dag`, and the register algebra, such as [`Product`] and
+//! [`Frontier`], in `prodrome-data`. This module re-exports both.
 
 mod write;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::reading::admits;
-pub use crate::reading::read;
-pub use prodrome_data::fold::*;
+pub use prodrome_dag::fold::*;
 pub use write::{Kind, Write};
 
 use crate::event::{Authored, TodoEvent, TodoId};
@@ -41,7 +35,7 @@ pub fn readings<'a, E: Schema>(
     policy: &impl Policy<E>,
 ) -> Schedule<E::Registers<'a>> {
     let mut knots = BTreeMap::new();
-    crate::reading::scan(stream, at, policy, |instant, registers| {
+    prodrome_dag::fold::scan(stream, at, policy, |instant, registers| {
         knots.insert(instant, registers.clone());
     });
     Schedule::of(E::Registers::default(), knots)

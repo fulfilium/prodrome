@@ -50,6 +50,7 @@ jobs:
               python3 scripts/test_edges.py
               python3 scripts/edges.py data/src
               python3 scripts/edges.py memo/src
+              python3 scripts/edges.py dag/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
               cargo test --locked --workspace --doc
           - check: test

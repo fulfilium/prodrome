@@ -40,15 +40,15 @@ path = "tests/all/main.rs"
 # The law kit's strategies, with the `laws` feature only.
 proptest = { version = "1", optional = true }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
-# `sign::Secret`, an Ed25519 signing key. Pure Rust, so the browser's build
-# needs no C toolchain. No `rand_core`: a key is a seed the host draws and
-# keeps (design §6.4), never one drawn here.
-ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"] }
 # The data of a store, which this crate re-exports at the paths that a
 # program names: `prodrome::event`, `prodrome::literal` and the others.
 prodrome-data.workspace = true
 # The caches, which this crate re-exports as `prodrome::memo`.
 prodrome-memo.workspace = true
+# The DAG, the fold of its objects, the policies and the proof of
+# signatures, which this crate re-exports at `prodrome::dag` and the other
+# paths that a program names.
+prodrome-dag.workspace = true
 sha2 = "0.10"
 thiserror = "2"
 

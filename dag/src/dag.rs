@@ -1,5 +1,5 @@
-//! The DAG as a value, with no files (SPEC §3). [`crate::store`] keeps the
-//! files around one.
+//! The DAG as a value, with no files (SPEC §3). The module `store` of
+//! `prodrome-core` keeps the files around a DAG.
 
 mod below;
 mod facts;
@@ -27,12 +27,14 @@ use prodrome_data::husk::{Hashed, HuskObject, Sender, Stored};
 use prodrome_data::literal::{Datetime, ProdromeError};
 use prodrome_data::schema::Schema;
 
+/// For the core; no promise.
 /// What a [`Dag`] holds, let go of: every object, every print that is not
 /// one, and the names of the objects held as husks.
-pub(crate) struct Prints<E> {
-    pub(crate) objects: BTreeMap<Hash, Envelope<E>>,
-    pub(crate) unread: BTreeMap<Hash, Unread>,
-    pub(crate) husks: BTreeSet<Hash>,
+#[doc(hidden)]
+pub struct Prints<E> {
+    pub objects: BTreeMap<Hash, Envelope<E>>,
+    pub unread: BTreeMap<Hash, Unread>,
+    pub husks: BTreeSet<Hash>,
 }
 
 /// A set of named prints read at the schema `E`, each an object or a print
@@ -122,18 +124,24 @@ impl<E> Dag<E> {
         self.objects().get(name)
     }
 
+    /// For the core; no promise.
     /// Every object held, in the history or waiting outside it.
-    pub(crate) fn held(&self) -> impl Iterator<Item = (&Hash, &Envelope<E>)> {
+    #[doc(hidden)]
+    pub fn held(&self) -> impl Iterator<Item = (&Hash, &Envelope<E>)> {
         self.objects().iter().chain(&self.waiting)
     }
 
+    /// For the core; no promise.
     /// Is `name` held as an object, in the history or waiting outside it?
-    pub(crate) fn holds(&self, name: &Hash) -> bool {
+    #[doc(hidden)]
+    pub fn holds(&self, name: &Hash) -> bool {
         self.objects().contains_key(name) || self.waiting.contains_key(name)
     }
 
+    /// For the core; no promise.
     /// Every print `name` was held as, an object or unread, let go.
-    pub(crate) fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
+    #[doc(hidden)]
+    pub fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
         self.unread.remove(name);
         self.husks.remove(name);
         self.history
@@ -142,30 +150,38 @@ impl<E> Dag<E> {
             .or_else(|| self.waiting.remove(name))
     }
 
+    /// For the core; no promise.
     /// The prints that are not objects: `unread`, in place of those held.
-    pub(crate) fn set_unread(&mut self, unread: BTreeMap<Hash, Unread>) {
+    #[doc(hidden)]
+    pub fn set_unread(&mut self, unread: BTreeMap<Hash, Unread>) {
         self.unread = unread;
     }
 
+    /// For the core; no promise.
     /// `names`, held as objects, are held as husks.
-    pub(crate) fn hold_husks(&mut self, names: impl IntoIterator<Item = Hash>) {
+    #[doc(hidden)]
+    pub fn hold_husks(&mut self, names: impl IntoIterator<Item = Hash>) {
         self.husks.extend(names);
     }
 
+    /// For the core; no promise.
     /// The object `name` of the history replaced by its husk, which rests on
     /// what the object rests on, since it is the object's `Change` with its
     /// event husked. So the kept facts (the tips, the order and its index)
     /// still describe the objects, and are kept.
     /// A name the history does not hold is passed over.
-    pub(crate) fn husk(&mut self, name: &Hash, husk: HuskObject<E>) {
+    #[doc(hidden)]
+    pub fn husk(&mut self, name: &Hash, husk: HuskObject<E>) {
         if self.history.replace(name, husk.into_object()).is_some() {
             self.husks.insert(name.clone());
         }
     }
 
+    /// For the core; no promise.
     /// Every object held, every print that is not one, and the names of the
     /// objects held as husks.
-    pub(crate) fn into_prints(self) -> Prints<E> {
+    #[doc(hidden)]
+    pub fn into_prints(self) -> Prints<E> {
         let mut objects = self.history.into_objects();
         objects.extend(self.waiting);
         Prints {
@@ -193,13 +209,16 @@ impl<E> Dag<E> {
         interior
     }
 
+    /// For the core; no promise.
     /// Make the history the interior of every object held: each one waits,
     /// and [`Dag::grow`] takes back in what rests only on the rest.
-    pub(crate) fn settle(&mut self) {
+    #[doc(hidden)]
+    pub fn settle(&mut self) {
         let held = std::mem::take(self.history.edit());
         self.grow(held);
     }
 
+    /// For the core; no promise.
     /// Extend this down-set by every object `arrived` and held waiting that
     /// rests only on it and on each other, and answer the names taken; the
     /// rest wait, each resting on something neither holds. The one step
@@ -210,7 +229,8 @@ impl<E> Dag<E> {
     /// The names taken come in order. Maps are joined whole where that
     /// costs less than an insert per object: a merge costs the sizes of
     /// both maps, and an insert the logarithm of the larger.
-    pub(crate) fn grow(&mut self, mut arrived: BTreeMap<Hash, Envelope<E>>) -> Vec<Hash> {
+    #[doc(hidden)]
+    pub fn grow(&mut self, mut arrived: BTreeMap<Hash, Envelope<E>>) -> Vec<Hash> {
         arrived.retain(|name, _| !self.objects().contains_key(name));
         for name in arrived.keys() {
             self.unread.remove(name);
@@ -398,14 +418,18 @@ impl<E> Dag<E> {
         Ok(Reach::empty(order, index))
     }
 
+    /// For the core; no promise.
     /// `among`, parents first, by Kahn's walk over them alone: a parent
     /// outside them is passed over. A cycle is a refusal.
-    pub(crate) fn order_among(&self, among: &BTreeSet<&Hash>) -> Result<Vec<Hash>, ProdromeError> {
+    #[doc(hidden)]
+    pub fn order_among(&self, among: &BTreeSet<&Hash>) -> Result<Vec<Hash>, ProdromeError> {
         self.history.order_among(among)
     }
 
+    /// For the core; no promise.
     /// Is `name` a legacy root, a `Sealed` with no `prev`?
-    pub(crate) fn is_root(&self, name: &Hash) -> bool {
+    #[doc(hidden)]
+    pub fn is_root(&self, name: &Hash) -> bool {
         matches!(
             self.objects().get(name),
             Some(Envelope::Sealed { prev: None, .. })
@@ -488,11 +512,13 @@ impl<E: Schema> Dag<E> {
         })
     }
 
+    /// For the core; no promise.
     /// [`Dag::from_prints`] of the prints `read` answers for `names`. Each
     /// print is read on the thread that decodes it, so the bytes of a print
     /// are let go once it is decoded, and the reads of a large store run on
     /// every core as the decoding does.
-    pub(crate) fn read_prints(
+    #[doc(hidden)]
+    pub fn read_prints(
         schema: &E::Vocabulary,
         names: Vec<Hash>,
         read: impl Fn(&Hash) -> Result<Vec<u8>, ProdromeError> + Sync,
@@ -543,8 +569,10 @@ impl<E: Schema> Dag<E> {
             .collect())
     }
 
+    /// For the core; no promise.
     /// One object as the registers read it, in this DAG's prodromes.
-    pub(crate) fn node(&self, name: &Hash) -> Option<Node<E>> {
+    #[doc(hidden)]
+    pub fn node(&self, name: &Hash) -> Option<Node<E>> {
         let (name, object) = self.objects().get_key_value(name)?;
         Some(Node::placed(
             name.clone(),
@@ -830,9 +858,11 @@ pub(crate) fn tips_among<'a>(
     apart(graph).0.into_iter().cloned().collect()
 }
 
+/// For the core; no promise.
 /// What a graph given as each name with the parents it names lacks: the
 /// names a parent list names that are not names of the graph.
-pub(crate) fn lacked_among<'a>(
+#[doc(hidden)]
+pub fn lacked_among<'a>(
     graph: impl IntoIterator<Item = (&'a Hash, Vec<&'a Hash>)>,
 ) -> BTreeSet<Hash> {
     apart(graph).1.into_iter().cloned().collect()
@@ -897,158 +927,4 @@ fn up(
         }
     }
     found
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::event::{canonical_envelope, mk_created, mk_sealed, mk_woven, seal_hash, TodoEvent};
-    use crate::reference::Todo;
-    use proptest::prelude::*;
-
-    type Object = Envelope<TodoEvent<Todo>>;
-
-    /// Objects as drawn: for each object in turn, picks among the objects
-    /// before it, which [`realise`] reduces to its parents.
-    fn a_dag() -> impl Strategy<Value = Vec<Vec<usize>>> {
-        prop::collection::vec(prop::collection::vec(0usize..64, 0..3), 1..16)
-    }
-
-    /// The drawn objects, in the order drawn: `Sealed` for one parent or
-    /// none, and `Woven` for more.
-    fn realise(drawn: &[Vec<usize>]) -> Vec<(Hash, Object)> {
-        let at = Datetime::new(2026, 9, 1, 12, 0, 0, 0).expect("a real instant");
-        let mut objects: Vec<(Hash, Object)> = Vec::with_capacity(drawn.len());
-        for (i, picks) in drawn.iter().enumerate() {
-            let parents: BTreeSet<Hash> = picks
-                .iter()
-                .filter(|_| i > 0)
-                .map(|pick| objects[pick % i].0.clone())
-                .collect();
-            let event = mk_created(&format!("t{i}"), at, "ada", "", "").expect("valid");
-            let object = if parents.len() > 1 {
-                mk_woven(parents.into_iter().collect(), Some(event)).expect("distinct parents")
-            } else {
-                mk_sealed(parents.into_iter().next(), event)
-            };
-            objects.push((seal_hash(&object), object));
-        }
-        objects
-    }
-
-    /// One of the DAG's own operations that change its objects, over the
-    /// drawn objects by their places.
-    #[derive(Debug, Clone)]
-    enum Step {
-        Extend(Vec<usize>),
-        Grow(Vec<usize>),
-        Forget(usize),
-        Settle,
-        Interior,
-    }
-
-    fn a_step() -> impl Strategy<Value = Step> {
-        let some = || prop::collection::vec(0usize..64, 0..6);
-        prop_oneof![
-            some().prop_map(Step::Extend),
-            some().prop_map(Step::Grow),
-            (0usize..64).prop_map(Step::Forget),
-            Just(Step::Settle),
-            Just(Step::Interior),
-        ]
-    }
-
-    proptest! {
-        #![proptest_config(crate::cases::cases(256))]
-
-        /// Law 59: the kept tips and the kept order equal those of a DAG
-        /// read fresh from the same objects, after any sequence of `extend`,
-        /// `grow`, `forget`, `settle` and `interior`, with each fact asked
-        /// for before and after every step.
-        #[test]
-        fn a_kept_fact_is_the_fresh_one(
-            drawn in a_dag(),
-            steps in prop::collection::vec(a_step(), 0..12),
-        ) {
-            let objects = realise(&drawn);
-            let pick = |at: &usize| objects[at % objects.len()].clone();
-            let mut dag: Dag<TodoEvent<Todo>> = Dag::from_iter([]);
-            for step in steps {
-                let _ = (dag.tips(), dag.linearise().map(<[Hash]>::len));
-                match step {
-                    Step::Extend(picks) => dag.extend(picks.iter().map(pick)),
-                    Step::Grow(picks) => {
-                        dag.grow(picks.iter().map(pick).collect());
-                    }
-                    Step::Forget(at) => {
-                        dag.forget(&pick(&at).0);
-                    }
-                    Step::Settle => dag.settle(),
-                    Step::Interior => dag = dag.interior(),
-                }
-                let fresh: Dag<TodoEvent<Todo>> = dag.objects().clone().into_iter().collect();
-                prop_assert_eq!(dag.tips(), fresh.tips());
-                prop_assert_eq!(dag.linearise(), fresh.linearise());
-            }
-        }
-    }
-
-    #[test]
-    fn linearise_refuses_a_missing_parent() {
-        let at = Datetime::new(2026, 9, 1, 12, 0, 0, 0).expect("a real instant");
-        let event = mk_created("alpha", at, "bassel", "", "").expect("valid");
-        let absent = Hash::new("a".repeat(64)).expect("hex");
-        let orphaned: Envelope<TodoEvent<Todo>> = mk_sealed(Some(absent.clone()), event);
-        let name = seal_hash(&orphaned);
-        let dag: Dag<TodoEvent<Todo>> = [(name.clone(), orphaned)].into_iter().collect();
-        assert_eq!(
-            dag.linearise().unwrap_err().to_string(),
-            format!(
-                "missing object {}, named as a parent by {}",
-                absent.as_str(),
-                name.as_str()
-            )
-        );
-    }
-
-    /// A print that is not an object, and the chain on it: the history
-    /// leaves out the print and both objects above it, and `excluded` says
-    /// so, with the parse's own refusal, as `verify` reports it.
-    #[test]
-    fn excluded_names_an_unread_print_and_what_rests_on_it() {
-        let at = Datetime::new(2026, 9, 1, 12, 0, 0, 0).expect("a real instant");
-        let junk = b"Sealed(prev=None, event=Nonsense())".to_vec();
-        let unread = Hash::of_bytes(&junk);
-        let first: Envelope<TodoEvent<Todo>> = mk_sealed(
-            Some(unread.clone()),
-            mk_created("alpha", at, "bassel", "", "").expect("valid"),
-        );
-        let second: Envelope<TodoEvent<Todo>> = mk_sealed(
-            Some(seal_hash(&first)),
-            mk_created("beta", at, "bassel", "", "").expect("valid"),
-        );
-        let print = |object: &Envelope<TodoEvent<Todo>>| {
-            (
-                seal_hash(object),
-                Ok(canonical_envelope(object).into_bytes()),
-            )
-        };
-        let dag: Dag<TodoEvent<Todo>> = Dag::from_prints(
-            &crate::todo::TodoVocabulary::default(),
-            [(unread.clone(), Ok(junk)), print(&first), print(&second)],
-            Sender::Stranger,
-        );
-        let excluded = dag.excluded();
-        assert_eq!(excluded.len(), 1);
-        assert_eq!(excluded[0].name, unread);
-        assert!(matches!(excluded[0].why, Some(Unread::Unparsed(_))));
-        assert_eq!(
-            excluded[0].resting,
-            [seal_hash(&first), seal_hash(&second)].into()
-        );
-        assert!(dag.interior().objects().is_empty());
-        let findings = dag.verify(&crate::policy::Everything);
-        assert!(matches!(&findings[0], Finding::Unread { name, .. } if *name == unread));
-        assert!(matches!(&findings[1], Finding::Broken { at, why: Some(_) } if *at == unread));
-    }
 }

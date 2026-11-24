@@ -104,6 +104,9 @@ data/         prodrome-data, the data of a store: literals, events, the
               it at the paths that a program names.
 memo/         prodrome-memo, the caches: tabulations of pure functions, on
               the data crate. The core re-exports it as `prodrome::memo`.
+dag/          prodrome-dag, the readings of a store: the DAG of its objects,
+              the fold of the DAG, the policies and the proof of signatures,
+              on the data and memo crates. The core re-exports each module.
 core/         prodrome-core, the database. The module list in core/src/lib.rs
               gives the SPEC section of each module. The module `reference`
               is the payload of the vectors.

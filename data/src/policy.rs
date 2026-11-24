@@ -19,6 +19,7 @@ pub enum Standing {
 
 impl Standing {
     /// `Binds` only where both bind.
+    #[inline]
     #[must_use]
     pub fn and(self, other: Standing) -> Standing {
         if self.binds() && other.binds() {
@@ -28,11 +29,13 @@ impl Standing {
         }
     }
 
+    #[inline]
     #[must_use]
     pub fn binds(self) -> bool {
         matches!(self, Standing::Binds)
     }
 
+    #[inline]
     #[must_use]
     pub fn claims(self) -> bool {
         matches!(self, Standing::Claims)

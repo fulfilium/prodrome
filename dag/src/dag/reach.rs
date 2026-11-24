@@ -31,18 +31,21 @@ impl<'d> Reach<'d> {
     }
 
     /// The number of objects in the set.
+    #[inline]
     #[must_use]
     pub fn len(&self) -> usize {
         self.len
     }
 
     /// Whether the set holds no object.
+    #[inline]
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     /// Whether the set holds the object `name`.
+    #[inline]
     #[must_use]
     pub fn contains(&self, name: &Hash) -> bool {
         self.index
@@ -60,27 +63,35 @@ impl<'d> Reach<'d> {
         (0..self.order.len()).filter(move |&at| self.has(at) == held)
     }
 
+    /// For the core; no promise.
     /// The positions of the order that the set does not hold, in order,
     /// each with its name.
-    pub(crate) fn outside(&self) -> impl Iterator<Item = (usize, &'d Hash)> + '_ {
+    #[doc(hidden)]
+    pub fn outside(&self) -> impl Iterator<Item = (usize, &'d Hash)> + '_ {
         self.positions(false).map(|at| (at, &self.order[at]))
     }
 
+    #[inline]
     fn has(&self, at: usize) -> bool {
         self.bits[at / 64] & (1 << (at % 64)) != 0
     }
 
+    /// For the core; no promise.
     /// Put the position `at` in the set.
-    pub(crate) fn insert(&mut self, at: usize) {
+    #[doc(hidden)]
+    #[inline]
+    pub fn insert(&mut self, at: usize) {
         if !self.has(at) {
             self.bits[at / 64] |= 1 << (at % 64);
             self.len += 1;
         }
     }
 
+    /// For the core; no promise.
     /// Put `seeds` in the set, and everything they rest on. A name that
     /// the DAG does not hold is passed over.
-    pub(crate) fn close<'n>(&mut self, seeds: impl IntoIterator<Item = &'n Hash>) {
+    #[doc(hidden)]
+    pub fn close<'n>(&mut self, seeds: impl IntoIterator<Item = &'n Hash>) {
         let mut pending: Vec<usize> = seeds
             .into_iter()
             .filter_map(|name| self.index.position(self.order, name))
@@ -93,8 +104,10 @@ impl<'d> Reach<'d> {
         }
     }
 
+    /// For the core; no promise.
     /// The members that no member names as a parent.
-    pub(crate) fn tips(&self) -> BTreeSet<Hash> {
+    #[doc(hidden)]
+    pub fn tips(&self) -> BTreeSet<Hash> {
         let mut named = vec![0_u64; self.bits.len()];
         for at in self.positions(true) {
             for &parent in self.index.parents(at) {

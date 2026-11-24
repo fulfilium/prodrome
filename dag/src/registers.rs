@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 pub use prodrome_data::stamp::Stamp;
 
+use crate::fold::read;
 use crate::policy::Everything;
-use crate::reading::read;
 use prodrome_data::bitset::BitSet;
 use prodrome_data::event::{Envelope, Hash};
 use prodrome_data::fold::Product;
@@ -59,22 +59,20 @@ pub type Prodrome<E> = BTreeMap<<E as Schema>::Key, Vec<Stamp<E>>>;
 /// in two, so the fields are private and no constructor is public.
 ///
 /// ```compile_fail
-/// use prodrome::event::{Hash, TodoEvent};
-/// use prodrome::reference::Todo;
-/// use prodrome::registers::Node;
+/// use prodrome_dag::registers::Node;
+/// use prodrome_data::event::Hash;
 ///
-/// fn misplace(name: Hash, parents: Vec<Hash>) -> Node<TodoEvent<Todo>> {
+/// fn misplace<E>(name: Hash, parents: Vec<Hash>) -> Node<E> {
 ///     // A node's place is its DAG's to give.
 ///     Node { name, parents, event: None, genesis: None }
 /// }
 /// ```
 ///
 /// ```compile_fail
-/// use prodrome::event::{Envelope, Hash, TodoEvent};
-/// use prodrome::reference::Todo;
-/// use prodrome::registers::Node;
+/// use prodrome_dag::registers::Node;
+/// use prodrome_data::event::{Envelope, Hash};
 ///
-/// fn misplace(name: Hash, object: &Envelope<TodoEvent<Todo>>) -> Node<TodoEvent<Todo>> {
+/// fn misplace<E: Clone>(name: Hash, object: &Envelope<E>) -> Node<E> {
 ///     // No node is made of one envelope, which cannot say its prodrome.
 ///     Node::of(name, object)
 /// }
@@ -143,11 +141,13 @@ impl<E: Schema> Folded<E> {
         self.index.contains_key(name) || self.attestations.contains(name)
     }
 
+    /// For the core; no promise.
     /// The stamp of `name` reads `event` in place of its event: the husk of
     /// the object it was (SPEC §3), whose key is the same, so it stays in
     /// its entity's stream where it was. A name with no stamp is passed
     /// over.
-    pub(crate) fn rewrite(&mut self, name: &Hash, event: &E) {
+    #[doc(hidden)]
+    pub fn rewrite(&mut self, name: &Hash, event: &E) {
         for prodrome in self.prodromes.values_mut() {
             if let Some(stamp) = prodrome
                 .get_mut(event.key())

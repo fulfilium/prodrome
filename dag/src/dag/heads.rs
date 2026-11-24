@@ -9,19 +9,22 @@ use prodrome_data::literal::{parse_literal, print_literal, ProdromeError, Table}
 /// The tips of a history and the count of its objects (SPEC §3, "The record
 /// of heads").
 ///
-/// A program gets a `Heads` only from a derivation in this crate or from a
+/// A program gets a `Heads` only from a derivation in the library or from a
 /// read of its literal ([`Heads::parse`] or [`Literal::from_value`]). It
 /// prints as `Heads(count=<n>, tips=(<names>))`.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(crate = prodrome_data)]
 pub struct Heads {
     count: usize,
     tips: BTreeSet<Hash>,
 }
 
 impl Heads {
+    /// For the core; no promise.
     /// The heads of a history whose tips are `tips` and which holds
     /// `count` objects.
-    pub(crate) fn new(tips: BTreeSet<Hash>, count: usize) -> Heads {
+    #[doc(hidden)]
+    pub fn new(tips: BTreeSet<Hash>, count: usize) -> Heads {
         Heads { tips, count }
     }
 
