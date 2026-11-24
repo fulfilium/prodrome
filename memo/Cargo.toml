@@ -1,0 +1,29 @@
+[package]
+name = "prodrome-memo"
+description = "Caches of a prodrome store, as tabulations of pure functions"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["cache", "memoization", "content-addressed"]
+categories = ["caching", "data-structures"]
+
+[lib]
+name = "prodrome_memo"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# A cache file's reader finds the mark of the next record with a vectorised
+# byte search.
+memchr = "2"
+# `Hash` names an entry, and the literal codec prints a cache file's values.
+prodrome-data.workspace = true
+# Each record of a cache file ends with the SHA-256 of its bytes.
+sha2 = "0.10"
+
+# `memo::File` takes an exclusive `flock` on its file, on Unix only.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1", features = ["fs"] }

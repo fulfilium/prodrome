@@ -19,8 +19,8 @@
 
 use sha2::{Digest as _, Sha256};
 
+use crate::Key;
 use prodrome_data::event::Hash;
-use crate::memo::Key;
 
 /// The first bytes of every record.
 pub(super) const MARK: [u8; 4] = [0xFF, b'm', b'r', 0x00];

@@ -102,6 +102,8 @@ were fixed when the JSON code moved to that crate.
 data/         prodrome-data, the data of a store: literals, events, the
               objects that hold them, and their names. The core re-exports
               it at the paths that a program names.
+memo/         prodrome-memo, the caches: tabulations of pure functions, on
+              the data crate. The core re-exports it as `prodrome::memo`.
 core/         prodrome-core, the database. The module list in core/src/lib.rs
               gives the SPEC section of each module. The module `reference`
               is the payload of the vectors.

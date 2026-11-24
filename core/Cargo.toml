@@ -47,9 +47,8 @@ ed25519-dalek = { version = "2", default-features = false, features = ["zeroize"
 # The data of a store, which this crate re-exports at the paths that a
 # program names: `prodrome::event`, `prodrome::literal` and the others.
 prodrome-data.workspace = true
-# A cache file's reader finds the mark of the next record with a vectorised
-# byte search. Pure Rust, and it builds for the browser.
-memchr = "2"
+# The caches, which this crate re-exports as `prodrome::memo`.
+prodrome-memo.workspace = true
 sha2 = "0.10"
 thiserror = "2"
 

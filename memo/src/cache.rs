@@ -9,8 +9,9 @@
 //! every [`Holder`]: over a file, it bounds the keys and so the file (law
 //! 58). [`Cache::forget`] also erases the bytes of the values (law 55).
 //!
-//! A cache is not a [`crate::store::Replica`]: an entry is deleted freely,
-//! is verified by recomputing and stays out of every checkpoint. The two
+//! A cache is not a replica of a store (`store::Replica`): an entry is
+//! deleted freely, is verified by recomputing and stays out of every
+//! checkpoint. The two
 //! never share a type, so that no entry can be received into a history and
 //! no object can be evicted from one.
 

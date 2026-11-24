@@ -8,8 +8,9 @@
 //! sequence a balanced shape, so that a change renames a logarithmic number
 //! of nodes.
 //!
-//! The module depends only on the hash type and on the literal codec of the
-//! crate: it uses no schema, no store and no FPL.
+//! The crate depends only on `prodrome-data`, for the hash type and the
+//! literal codec. It uses no schema, no store and no FPL. `prodrome-core`
+//! re-exports it as `prodrome::memo`.
 
 #![warn(clippy::pedantic)]
 
