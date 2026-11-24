@@ -1,5 +1,7 @@
 //! The reference digest view: `digest::view` as it was first written, line by
-//! line and closing by closing, through the public API alone. It sorts every
+//! line and closing by closing, through the public API alone, with the two
+//! waters of law 88: a merge starts over the high water and stops at the
+//! low water. It sorts every
 //! open node by due after each line while the view is over its budget, and it
 //! walks each closing leftward part by part, so it costs time quadratic in
 //! the log's length. The law
@@ -9,16 +11,46 @@
 use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
-use prodrome::digest::{Node, Part, Tree, View};
+use prodrome::digest::{Node, Part, Tree, View, Waters};
 use prodrome::event::Hash;
 
-/// The view of the log under `budget` bytes, as `digest::view` documents it.
-pub fn view<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>, budget: u64) -> View {
+/// The view of the log under `waters`, as `digest::view` documents it: an
+/// arrival over the high water closes down to the low water.
+pub fn view<M>(
+    tree: &Tree<M>,
+    line: impl Fn(&Node<M>) -> u64,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+    waters: Waters,
+) -> View {
+    replay(tree, line, summarized, |bytes| {
+        (bytes > waters.high()).then_some(waters.low())
+    })
+}
+
+/// The view of law 46 under one budget, as it was first written: after
+/// each arrival, closings are made while the view is over the budget.
+pub fn one_budget<M>(
+    tree: &Tree<M>,
+    line: impl Fn(&Node<M>) -> u64,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+    budget: u64,
+) -> View {
+    replay(tree, line, summarized, |_| Some(budget))
+}
+
+/// The replay: after each arrival, `merge(bytes)` gives the cost that the
+/// closings stop at, or `None` for no closing.
+fn replay<M>(
+    tree: &Tree<M>,
+    line: impl Fn(&Node<M>) -> u64,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+    merge: impl Fn(u64) -> Option<u64>,
+) -> View {
     let arena = Arena::of(tree);
     let cost = |id: usize| -> Option<u64> {
         let node = arena.nodes[id];
         if node.is_leaf() {
-            Some(node.bytes())
+            Some(line(node))
         } else {
             summarized(node.name()).map(u64::from)
         }
@@ -46,8 +78,9 @@ pub fn view<M>(tree: &Tree<M>, summarized: impl Fn(&Hash) -> Option<u32>, budget
     let mut refused: BTreeSet<usize> = BTreeSet::new();
     for (now, &leaf) in arena.leaves.iter().enumerate() {
         let now = now + 1;
-        cut.close(leaf, arena.nodes[leaf].bytes());
-        while cut.bytes > budget {
+        cut.close(leaf, line(arena.nodes[leaf]));
+        let stop = merge(cut.bytes);
+        while stop.is_some_and(|stop| cut.bytes > stop) {
             let mut order: Vec<usize> = cut
                 .open
                 .iter()

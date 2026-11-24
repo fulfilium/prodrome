@@ -12,7 +12,7 @@
 use std::collections::BTreeSet;
 use std::time::{Duration, Instant};
 
-use prodrome::digest::{pending, tree, view, Leaf};
+use prodrome::digest::{pending, tree, view, Leaf, Node, Waters};
 use prodrome::event::Hash;
 use prodrome::memo;
 
@@ -51,7 +51,7 @@ fn main() {
         let mut shown = None;
         for _ in 0..RUNS {
             let started = Instant::now();
-            let now = view(&tree, summary, BUDGET);
+            let now = view(&tree, Node::bytes, summary, Waters::at(BUDGET));
             best = best.min(started.elapsed());
             shown = Some(now);
         }

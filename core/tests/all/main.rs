@@ -20,6 +20,7 @@ mod declared;
 mod derive;
 mod digest;
 mod digest_reference;
+mod digest_waters;
 mod down_set;
 mod events;
 mod fields;

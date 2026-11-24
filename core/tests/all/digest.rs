@@ -19,7 +19,7 @@
 use std::collections::BTreeSet;
 
 use prodrome::digest::{
-    self, pending, tree, view, zoom, Leaf, Measure, Measured, Node, Tree, View,
+    self, pending, tree, zoom, Leaf, Measure, Measured, Node, Tree, View, Waters,
 };
 use prodrome::event::Hash;
 use prodrome::memo::{self, fold, Cache};
@@ -28,7 +28,7 @@ use proptest::prelude::*;
 /// A measure whose join is not commutative: the first and last line's
 /// names and how many lines, so a measure folded out of order is caught.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Ends(Option<(Hash, Hash)>, usize);
+pub(crate) struct Ends(pub(crate) Option<(Hash, Hash)>, pub(crate) usize);
 
 impl Measure for Ends {
     fn empty() -> Self {
@@ -43,19 +43,19 @@ impl Measure for Ends {
     }
 }
 
-fn line_name(id: u16) -> Hash {
+pub(crate) fn line_name(id: u16) -> Hash {
     memo::name(b"line", [&memo::name(&id.to_be_bytes(), [])])
 }
 
 /// A line of a generated log: its id, its cost, and the ids it rests on.
 #[derive(Debug, Clone, PartialEq, Eq)]
-struct Line {
-    id: u16,
-    bytes: u32,
-    parents: Vec<u16>,
+pub(crate) struct Line {
+    pub(crate) id: u16,
+    pub(crate) bytes: u32,
+    pub(crate) parents: Vec<u16>,
 }
 
-fn leaf(line: &Line) -> Leaf<Ends> {
+pub(crate) fn leaf(line: &Line) -> Leaf<Ends> {
     let name = line_name(line.id);
     Leaf {
         measure: Ends(Some((name.clone(), name.clone())), 1),
@@ -65,13 +65,13 @@ fn leaf(line: &Line) -> Leaf<Ends> {
     }
 }
 
-fn leaves(log: &[Line]) -> Vec<Leaf<Ends>> {
+pub(crate) fn leaves(log: &[Line]) -> Vec<Leaf<Ends>> {
     log.iter().map(leaf).collect()
 }
 
 /// A log: distinct lines, each resting on up to two lines before it, so
 /// some are concurrent and the order is the tree's to choose.
-fn a_log(most: usize) -> impl Strategy<Value = Vec<Line>> {
+pub(crate) fn a_log(most: usize) -> impl Strategy<Value = Vec<Line>> {
     prop::collection::vec(
         (
             any::<u16>(),
@@ -121,21 +121,21 @@ fn causal_order(log: &[Line]) -> Vec<Hash> {
 }
 
 /// The tree over a generated log.
-fn tree_of(log: &[Line]) -> Tree<Ends> {
+pub(crate) fn tree_of(log: &[Line]) -> Tree<Ends> {
     tree(leaves(log)).expect("no cycle").expect("a line")
 }
 
 /// Which inner nodes have a summary, and how long: a draw from the name,
 /// so a function of it, summarising `percent` of nodes.
 #[derive(Debug, Clone, Copy)]
-struct Summaries {
-    seed: u64,
-    percent: u64,
-    longest: u64,
+pub(crate) struct Summaries {
+    pub(crate) seed: u64,
+    pub(crate) percent: u64,
+    pub(crate) longest: u64,
 }
 
 impl Summaries {
-    fn of(&self, name: &Hash) -> Option<u32> {
+    pub(crate) fn of(&self, name: &Hash) -> Option<u32> {
         let draw = |salt: u64, modulo: u64| {
             let hash = memo::name(&(self.seed ^ salt).to_be_bytes(), [name]);
             u64::from_str_radix(&hash.as_str()[..12], 16).expect("hex") % modulo
@@ -145,7 +145,7 @@ impl Summaries {
     }
 }
 
-fn summaries() -> impl Strategy<Value = Summaries> {
+pub(crate) fn summaries() -> impl Strategy<Value = Summaries> {
     (
         any::<u64>(),
         prop_oneof![Just(100u64), 0..=100u64],
@@ -158,12 +158,66 @@ fn summaries() -> impl Strategy<Value = Summaries> {
         })
 }
 
-fn a_budget() -> impl Strategy<Value = u64> {
+pub(crate) fn a_budget() -> impl Strategy<Value = u64> {
     prop_oneof![0..200u64, 0..4000u64, Just(u64::MAX)]
 }
 
+/// Two waters: a budget as the high water, and as the low water the same
+/// budget, half of it, or any cost under it.
+pub(crate) fn some_waters() -> impl Strategy<Value = Waters> {
+    (a_budget(), any::<prop::sample::Index>(), 0..3u8).prop_map(|(high, low, how)| {
+        let low = match how {
+            0 => high,
+            1 => high / 2,
+            _ => u64::try_from(low.index(usize::try_from(high.min(1 << 20)).expect("small") + 1))
+                .expect("small"),
+        };
+        Waters::new(high, low).expect("the low water is at or below the high water")
+    })
+}
+
+/// What a line costs in a view: its bytes, or, for a share of the lines
+/// drawn from the name, a placeholder of `placeholder` bytes.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LineCosts {
+    seed: u64,
+    percent: u64,
+    placeholder: u64,
+}
+
+impl LineCosts {
+    pub(crate) fn of<M>(&self, node: &Node<M>) -> u64 {
+        let hash = memo::name(&self.seed.to_be_bytes(), [node.name()]);
+        let draw = u64::from_str_radix(&hash.as_str()[..12], 16).expect("hex") % 100;
+        if draw < self.percent {
+            self.placeholder
+        } else {
+            node.bytes()
+        }
+    }
+}
+
+pub(crate) fn line_costs() -> impl Strategy<Value = LineCosts> {
+    (any::<u64>(), prop_oneof![Just(0u64), 0..=100u64], 0..=8u64).prop_map(
+        |(seed, percent, placeholder)| LineCosts {
+            seed,
+            percent,
+            placeholder,
+        },
+    )
+}
+
+/// The view that charges each line its bytes.
+pub(crate) fn view<M>(
+    tree: &Tree<M>,
+    summarized: impl Fn(&Hash) -> Option<u32>,
+    waters: Waters,
+) -> View {
+    digest::view(tree, Node::bytes, summarized, waters)
+}
+
 /// Every node of the tree, in pre-order.
-fn nodes<M>(tree: &Tree<M>) -> Vec<&Node<M>> {
+pub(crate) fn nodes<M>(tree: &Tree<M>) -> Vec<&Node<M>> {
     let mut all = Vec::new();
     let mut stack = vec![tree.root()];
     while let Some(node) = stack.pop() {
@@ -269,9 +323,9 @@ proptest! {
     /// the log in order, it costs what its parts cost, and each closed
     /// part has a summary.
     #[test]
-    fn a_view_tiles_the_log(log in a_log(300), summaries in summaries(), budget in a_budget()) {
+    fn a_view_tiles_the_log(log in a_log(300), summaries in summaries(), waters in some_waters()) {
         let tree = tree_of(&log);
-        let view = view(&tree, |name| summaries.of(name), budget);
+        let view = view(&tree, |name| summaries.of(name), waters);
         let mut at = 0;
         for part in &view.parts {
             prop_assert_eq!(part.span.start, at);
@@ -284,22 +338,22 @@ proptest! {
         prop_assert_eq!(view.bytes, total);
     }
 
-    /// Law 2, budget: a view never costs more than its budget or its
-    /// lines, whichever is more; it fits its budget unless no closing it
-    /// may make would lower its cost; and whatever waits is pending, and
+    /// Law 2, budget: a view never costs more than its high water or its
+    /// lines, whichever is more; it fits its high water unless no closing
+    /// it may make would lower its cost; and whatever waits is pending, and
     /// not under a part.
     #[test]
     fn a_view_fits_its_budget_unless_no_closing_lowers_it(
         log in a_log(300),
         summaries in summaries(),
-        budget in a_budget(),
+        waters in some_waters(),
     ) {
         let tree = tree_of(&log);
         let of = |name: &Hash| summaries.of(name);
-        let view = view(&tree, of, budget);
-        prop_assert!(view.bytes <= budget.max(lines_cost(&tree)));
+        let view = view(&tree, of, waters);
+        prop_assert!(view.bytes <= waters.high().max(lines_cost(&tree)));
         prop_assert!(view.bytes <= lines_cost(&tree));
-        if view.bytes > budget {
+        if view.bytes > waters.high() {
             let lowering = closings_that_lower(&tree, &of, &view);
             prop_assert!(lowering.is_empty(), "{} could close and lower the cost", lowering.len());
         }
@@ -312,27 +366,27 @@ proptest! {
             }), "waiting under a part");
         }
         // An unbounded budget shows every line.
-        let whole = view_of(&tree, summaries, u64::MAX);
+        let whole = view_of(&tree, summaries, Waters::at(u64::MAX));
         prop_assert_eq!(whole.parts.len(), tree.lines());
     }
 
     /// Law 2, followed: a summariser that writes what `waiting` names,
     /// round after round, never writes one twice, and stops with the view
-    /// in its budget, or with every settled node the view could close
-    /// summarised and no closing that lowers the cost.
+    /// under its high water, or with every settled node the view could
+    /// close summarised and no closing that lowers the cost.
     #[test]
     fn following_waiting_fits_the_budget_or_nothing_lowers(
         log in a_log(200),
         summaries in summaries(),
         seed in any::<u64>(),
-        budget in a_budget(),
+        waters in some_waters(),
     ) {
         let tree = tree_of(&log);
         let would = Summaries { seed, percent: 100, ..summaries };
         let mut written: BTreeSet<Hash> = BTreeSet::new();
         loop {
             let of = |name: &Hash| summaries.of(name).or_else(|| if written.contains(name) { would.of(name) } else { None });
-            let view = view(&tree, of, budget);
+            let view = view(&tree, of, waters);
             if !view.waiting.is_empty() {
                 for name in &view.waiting {
                     prop_assert!(!written.contains(name), "waiting twice");
@@ -340,7 +394,7 @@ proptest! {
                 written.extend(view.waiting);
                 continue;
             }
-            if view.bytes > budget {
+            if view.bytes > waters.high() {
                 let shown = |node: &Node<Ends>| !view.parts.iter().any(|part| {
                     part.span.start <= node.span().start && node.span().end <= part.span.end
                 });
@@ -357,9 +411,9 @@ proptest! {
 
     /// Law 3, decay: toward the present, the parts' levels never rise.
     #[test]
-    fn a_view_decays(log in a_log(400), summaries in summaries(), budget in a_budget()) {
+    fn a_view_decays(log in a_log(400), summaries in summaries(), waters in some_waters()) {
         let tree = tree_of(&log);
-        let view = view(&tree, |name| summaries.of(name), budget);
+        let view = view(&tree, |name| summaries.of(name), waters);
         let levels: Vec<usize> = view
             .parts
             .iter()
@@ -371,9 +425,9 @@ proptest! {
     /// Law 4, refinement: zooming every part down to the lines reads the
     /// log back, line for line; a line does not open.
     #[test]
-    fn zooming_every_part_reads_the_log(log in a_log(300), summaries in summaries(), budget in a_budget()) {
+    fn zooming_every_part_reads_the_log(log in a_log(300), summaries in summaries(), waters in some_waters()) {
         let tree = tree_of(&log);
-        let view = view(&tree, |name| summaries.of(name), budget);
+        let view = view(&tree, |name| summaries.of(name), waters);
         let mut open = view.parts;
         let mut lines = Vec::new();
         while !open.is_empty() {
@@ -405,13 +459,15 @@ proptest! {
     /// Law 5, free: the tree, `pending` and the view are functions of the
     /// set of lines: the same however the lines are ordered and however
     /// many times each is given, so two replicas that hold one log build
-    /// one tree.
+    /// one tree. Law 90: the view is a function of the tree, the costs of
+    /// its lines and summaries, and the two waters.
     #[test]
     fn a_digest_is_a_function_of_the_set_of_lines(
         (log, shuffled) in a_log(300).prop_flat_map(|log| (Just(log.clone()), Just(log).prop_shuffle())),
         again in prop::collection::vec(any::<prop::sample::Index>(), 0..40),
         summaries in summaries(),
-        budget in a_budget(),
+        lines in line_costs(),
+        waters in some_waters(),
     ) {
         let mut given = shuffled;
         for which in again {
@@ -422,8 +478,12 @@ proptest! {
         prop_assert_eq!(&once, &twice);
         let of = |name: &Hash| summaries.of(name);
         prop_assert_eq!(pending(&once, of), pending(&twice, of));
-        prop_assert_eq!(view(&once, of, budget), view(&twice, of, budget));
-        prop_assert_eq!(digest::read(&once, of), digest::read(&twice, of));
+        let line = |node: &Node<Ends>| lines.of(node);
+        prop_assert_eq!(
+            digest::view(&once, line, of, waters),
+            digest::view(&twice, line, of, waters)
+        );
+        prop_assert_eq!(digest::read(&once, line, of), digest::read(&twice, line, of));
     }
 
     /// `pending` is exactly the settled inner nodes with no summary whose
@@ -492,7 +552,10 @@ proptest! {
         let id = (0..=u16::MAX).find(|id| !ids.contains(id)).expect("a free id");
         let last = Line { id, bytes: line, parents: ids.into_iter().collect() };
         let (before, after) = (tree_of(&log), tree_of(&[log.clone(), vec![last]].concat()));
-        let (old, new) = (view(&before, of, budget), view(&after, of, budget));
+        let (old, new) = (
+            view(&before, of, Waters::at(budget)),
+            view(&after, of, Waters::at(budget)),
+        );
         for part in &old.parts {
             prop_assert!(
                 new.parts.iter().any(|wider| wider.span.start <= part.span.start && part.span.end <= wider.span.end),
@@ -547,7 +610,7 @@ proptest! {
         log in a_log(300),
         summaries in summaries(),
         other in any::<u64>(),
-        budget in a_budget(),
+        waters in some_waters(),
     ) {
         let tree = tree_of(&log);
         let mut cache = Cache::default();
@@ -564,24 +627,26 @@ proptest! {
         let of = |name: &Hash| summaries.of(name);
         let elsewhere = Summaries { seed: other, ..summaries };
         let off = |name: &Hash| if names.contains(name) { of(name) } else { elsewhere.of(name) };
-        prop_assert_eq!(digest::read(&tree, of), digest::read(&tree, off));
-        prop_assert_eq!(view(&tree, of, budget), view(&tree, off, budget));
+        prop_assert_eq!(digest::read(&tree, Node::bytes, of), digest::read(&tree, Node::bytes, off));
+        prop_assert_eq!(view(&tree, of, waters), view(&tree, off, waters));
         prop_assert_eq!(pending(&tree, of), pending(&tree, off));
 
         // What the view reads moves the key.
-        let read = digest::read(&tree, of);
+        let read = digest::read(&tree, Node::bytes, of);
         if let Some(next) = pending(&tree, of).first().cloned() {
             let recorded = |name: &Hash| if *name == next { Some(1) } else { of(name) };
-            prop_assert_ne!(digest::read(&tree, recorded), read.clone());
+            prop_assert_ne!(digest::read(&tree, Node::bytes, recorded), read.clone());
         }
         let mut dearer = log.clone();
         dearer[0].bytes += 1;
-        prop_assert_ne!(digest::read(&tree_of(&dearer), of), read);
+        prop_assert_ne!(digest::read(&tree_of(&dearer), Node::bytes, of), read.clone());
+        let placeholder = |node: &Node<Ends>| if node.span().start == 0 { node.bytes() + 1 } else { node.bytes() };
+        prop_assert_ne!(digest::read(&tree, placeholder, of), read);
     }
 }
 
-fn view_of<M>(tree: &Tree<M>, summaries: Summaries, budget: u64) -> View {
-    view(tree, |name| summaries.of(name), budget)
+fn view_of<M>(tree: &Tree<M>, summaries: Summaries, waters: Waters) -> View {
+    view(tree, |name| summaries.of(name), waters)
 }
 
 /// A view of one line is that line, and a view with no budget and every
@@ -601,7 +666,7 @@ fn a_view_with_no_budget_is_as_coarse_as_the_log_allows() {
             percent: 100,
             longest: 4,
         },
-        0,
+        Waters::at(0),
     );
     assert_eq!(view.parts.len(), 1);
     assert_eq!((view.bytes, view.waiting.len()), (9, 0));
@@ -619,7 +684,7 @@ fn a_view_with_no_budget_is_as_coarse_as_the_log_allows() {
         percent: 100,
         longest: 8,
     };
-    let view = view_of(&tree, all, 0);
+    let view = view_of(&tree, all, Waters::at(0));
     assert!(view.waiting.is_empty());
     assert!(closings_that_lower(&tree, &|name| all.of(name), &view).is_empty());
     // At most one level of the path to the last line is open per level,
@@ -658,7 +723,7 @@ fn a_summary_longer_than_its_lines_never_closes() {
                 },
             )
         };
-        let view = view(&tree, long_or_short, 169);
+        let view = view(&tree, long_or_short, Waters::at(169));
         assert!(
             view.bytes <= 170,
             "{} bytes in {} parts",
@@ -689,7 +754,7 @@ fn a_closing_decay_forces_closes_with_it() {
             percent: 100,
             longest: 160,
         };
-        let view = view_of(&tree, summaries, 600);
+        let view = view_of(&tree, summaries, Waters::at(600));
         assert!(view.bytes <= lines_cost(&tree));
         forced += view
             .parts
@@ -745,7 +810,7 @@ fn a_dear_start_does_not_close_on_a_forced_nodes_account() {
             }
         };
         let budget = lines_cost(&tree) - 1;
-        let view = view(&tree, summaries, budget);
+        let view = view(&tree, summaries, Waters::at(budget));
         let parts: BTreeSet<&Hash> = view.parts.iter().map(|part| &part.node).collect();
         assert!(parts.contains(&cheap), "the cheap node closes");
         assert!(!parts.contains(&dear), "the dear start does not");
@@ -845,26 +910,29 @@ proptest! {
     /// Law 46, the view's cost: `digest::view` answers exactly what the
     /// reference view in `digest_reference.rs` answers (the same parts,
     /// bytes and waiting nodes), over summaries drawn at random and over
-    /// summaries that a compactor wrote first, partly or wholly.
+    /// summaries that a compactor wrote first, partly or wholly, under any
+    /// two waters and any costs of the lines.
     #[test]
     fn the_view_is_the_reference_view(
         log in a_log(400),
         summaries in summaries(),
         most in prop_oneof![Just(usize::MAX), 0..400usize],
-        budget in a_budget(),
+        lines in line_costs(),
+        waters in some_waters(),
     ) {
         let tree = tree_of(&log);
         let drawn = |name: &Hash| summaries.of(name);
+        let line = |node: &Node<Ends>| lines.of(node);
         prop_assert_eq!(
-            view(&tree, drawn, budget),
-            crate::digest_reference::view(&tree, drawn, budget)
+            digest::view(&tree, line, drawn, waters),
+            crate::digest_reference::view(&tree, line, drawn, waters)
         );
         let written = compacted(&tree, summaries, most);
         let first = Summaries { percent: 100, ..summaries };
         let compacted = |name: &Hash| written.contains(name).then(|| first.of(name)).flatten();
         prop_assert_eq!(
-            view(&tree, compacted, budget),
-            crate::digest_reference::view(&tree, compacted, budget)
+            view(&tree, compacted, waters),
+            crate::digest_reference::view(&tree, Node::bytes, compacted, waters)
         );
     }
 }
