@@ -3,12 +3,12 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use crate::dag::{Dag, Heads};
-use crate::event::Hash;
-use crate::literal::ProdromeError;
-use crate::registers::Folded;
-use crate::schema::Schema;
 use crate::store::Sender;
+use prodrome_dag::dag::{Dag, Heads};
+use prodrome_dag::registers::Folded;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// What a replica holds, as of one look.
 #[derive(Debug, Clone)]

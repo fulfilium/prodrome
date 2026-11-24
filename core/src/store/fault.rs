@@ -2,7 +2,7 @@
 //! staging of one print, the sync of the batch, and the sync of the
 //! directory. Outside the unit tests, no step fails here.
 
-use crate::literal::ProdromeError;
+use prodrome_data::literal::ProdromeError;
 
 /// A step of [`super::EventStore::place`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

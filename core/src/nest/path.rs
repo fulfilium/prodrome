@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::literal::ProdromeError;
+use prodrome_data::literal::ProdromeError;
 
 /// One step of a path: an entity's key, or a register's name. A segment is
 /// not empty and holds no `/`, so a path prints as its segments joined by

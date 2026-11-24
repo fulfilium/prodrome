@@ -19,8 +19,8 @@ use std::io::Write;
 use std::path::Path;
 
 use super::{put_durably, sync_dir};
-use crate::dag::Heads;
-use crate::literal::ProdromeError;
+use prodrome_dag::dag::Heads;
+use prodrome_data::literal::ProdromeError;
 
 /// The record's file name in the store's root.
 pub(super) const FILE: &str = ".heads";

@@ -5,11 +5,11 @@ use std::sync::{Arc, Mutex, MutexGuard};
 
 use super::memory::{self, Memory, Verified};
 use super::replica::{accept, Held, Replica};
-use crate::dag::Dag;
-use crate::event::Hash;
-use crate::literal::ProdromeError;
-use crate::schema::Schema;
 use crate::store::Sender;
+use prodrome_dag::dag::Dag;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// A replica over `base`: it holds what it appends or receives (its own
 /// objects) in memory, and reads `own ∪ base`; its own objects reach `base`

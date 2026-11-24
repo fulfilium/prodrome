@@ -3,13 +3,13 @@
 
 use std::marker::PhantomData;
 
-use crate::event::Actor;
-use crate::fold::sole::{Bodies, One, Only};
-use crate::fold::{Order, Product as _};
-use crate::literal::codec::{no_arm, Constructor, Fields, Literal as _};
-use crate::literal::{Datetime, ProdromeError, Value};
-use crate::schema::headed::{Body, Constructors, Event, KeyFields};
 use crate::tags::{Names, Tagging};
+use prodrome_data::event::Actor;
+use prodrome_data::fold::sole::{Bodies, One, Only};
+use prodrome_data::fold::{Order, Product as _};
+use prodrome_data::literal::codec::{no_arm, Constructor, Fields, Literal as _};
+use prodrome_data::literal::{Datetime, ProdromeError, Value};
+use prodrome_data::schema::headed::{Body, Constructors, Event, KeyFields};
 
 /// Whether a tag is on a target. `On` is above `Off`, so concurrent writes
 /// read as `On` when any of them is `On`.

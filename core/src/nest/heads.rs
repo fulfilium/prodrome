@@ -4,12 +4,13 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::marker::PhantomData;
 
-use crate::event::{hashes, hashes_value, sorted_distinct, Hash};
-use crate::fold::{read, Order, Product};
-use crate::literal::{Call, ProdromeError, Value};
-use crate::policy::Everything;
-use crate::registers::Stamp;
-use crate::schema::Schema;
+use prodrome_dag::fold::read;
+use prodrome_data::event::{hashes, hashes_value, sorted_distinct, Hash};
+use prodrome_data::fold::{Order, Product};
+use prodrome_data::literal::{Call, ProdromeError, Value};
+use prodrome_data::policy::Everything;
+use prodrome_data::schema::Schema;
+use prodrome_data::stamp::Stamp;
 
 /// The value of a register that holds a history of the schema `I`: the
 /// history's heads. The history is everything that the heads rest on, in a

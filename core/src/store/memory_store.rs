@@ -5,10 +5,10 @@ use std::sync::{Mutex, MutexGuard};
 
 use super::memory::{self, Memory};
 use super::replica::{Held, Replica};
-use crate::event::Hash;
-use crate::literal::ProdromeError;
-use crate::schema::Schema;
 use crate::store::Sender;
+use prodrome_data::event::Hash;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// A replica that holds its objects and their prints in memory (SPEC §3,
 /// "A replica").

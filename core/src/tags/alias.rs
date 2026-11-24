@@ -4,13 +4,13 @@
 //! concurrently for one tag are a conflict, which the reading shows and the
 //! next rename settles.
 
-use crate::event::Actor;
-use crate::fold::sole::{Bodies, One, Only};
-use crate::fold::Order;
-use crate::literal::codec::{no_arm, Constructor, Fields, Literal as _};
-use crate::literal::{Datetime, ProdromeError, Value};
-use crate::schema::headed::{Body, Constructors, Event};
 use crate::tags::{Names, Tagging};
+use prodrome_data::event::Actor;
+use prodrome_data::fold::sole::{Bodies, One, Only};
+use prodrome_data::fold::Order;
+use prodrome_data::literal::codec::{no_arm, Constructor, Fields, Literal as _};
+use prodrome_data::literal::{Datetime, ProdromeError, Value};
+use prodrome_data::schema::headed::{Body, Constructors, Event};
 
 /// What a tag's name stands for.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]

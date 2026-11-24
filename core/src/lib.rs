@@ -169,7 +169,6 @@ pub use prodrome_memo as memo;
 // The readings, from `prodrome-dag`, at the paths that a program has always
 // named. `fold` re-exports the readings of `prodrome-dag` with the readings
 // of a todo.
-use prodrome_dag::spread;
 pub use prodrome_dag::{dag, policy, registers, sign};
 
 // The property tests' case counts, one rule with the integration tests'.

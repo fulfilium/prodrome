@@ -3,9 +3,9 @@
 
 pub use prodrome_data::snapshot::*;
 
-use crate::dag::Dag;
-use crate::event::{Envelope, Hash};
-use crate::literal::ProdromeError;
+use prodrome_dag::dag::Dag;
+use prodrome_data::event::{Envelope, Hash};
+use prodrome_data::literal::ProdromeError;
 
 /// What a writer attests of a prodrome: the snapshot that already attests
 /// its tips, or a new one to write.

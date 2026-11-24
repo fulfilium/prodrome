@@ -34,7 +34,7 @@
 
 use std::fmt::Debug;
 
-use crate::literal::codec::Literal;
+use prodrome_data::literal::codec::Literal;
 
 pub mod alias;
 pub mod membership;

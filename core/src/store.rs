@@ -33,15 +33,17 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::SystemTime;
 
-use crate::dag::{decode, Dag, Finding, Heads, Unread};
-use crate::event::{mk_woven, parents_of, Envelope, Hash};
-use crate::genesis::mk_genesis;
-use crate::literal::ProdromeError;
-use crate::policy::{Policy, Untrusted};
-use crate::registers::{Folded, Node};
-use crate::schema::Schema;
+use prodrome_dag::dag::{decode, Dag, Finding, Heads, Unread};
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::{Folded, Node};
+use prodrome_dag::spread::spread;
+use prodrome_data::event::{mk_woven, parents_of, Envelope, Hash};
+use prodrome_data::genesis::mk_genesis;
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::policy::Untrusted;
+use prodrome_data::schema::Schema;
+
 use crate::snapshot::{attest, Attestation};
-use crate::spread::spread;
 
 pub use decision::{Decision, Stopped};
 pub use doors::Doors;

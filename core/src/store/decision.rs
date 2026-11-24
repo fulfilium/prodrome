@@ -9,13 +9,13 @@ use super::levelled::Levelled;
 use super::memory::{Printed, Seen};
 use super::record::{Record, Removal};
 use super::{replace, sync_dir, EventStore};
-use crate::dag::Dag;
-use crate::event::{Envelope, Hash};
-use crate::literal::ProdromeError;
-use crate::policy::Policy;
-use crate::registers::Folded;
-use crate::schema::Schema;
+use prodrome_dag::dag::Dag;
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::Folded;
+use prodrome_data::event::{Envelope, Hash};
 use prodrome_data::husk::{HuskObject, Husking};
+use prodrome_data::literal::ProdromeError;
+use prodrome_data::schema::Schema;
 
 /// The store of record under its lock, which [`EventStore::decide`] returns.
 ///

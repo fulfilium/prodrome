@@ -9,9 +9,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Range;
 
-use crate::event::Hash;
-use crate::memo::{self, Algebra};
-use crate::topo;
+use prodrome_data::event::Hash;
+use prodrome_data::topo;
+use prodrome_memo::{self as memo, Algebra};
 
 mod cut;
 mod prefixes;
