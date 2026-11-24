@@ -7,8 +7,8 @@ as this note made. Section 8 records stage 3, the data crate, which a
 later pull request made before stage 2. Section 9 records the stage after
 it, which moved the instant conversions to the data crate and shortened
 the data crate's doc comments. Section 10 records the stage after that,
-which made the crates `prodrome-memo` and `prodrome-dag`, and gives the
-order of the stages that remain. The other stages are proposals.
+which made the crates `prodrome-memo`, `prodrome-dag` and
+`prodrome-declared`, and gives the order of the stages that remain. The other stages are proposals.
 For what is implemented, see `SPEC.md` and `CHANGELOG.md`.
 
 Terms used below:
@@ -286,11 +286,19 @@ item that belongs in a lower layer than its module:
 | `prodrome-data` | `literal`, the names and the envelope of `event`, `genesis`, `change`, `snapshot`, `schema`, the register algebra of `fold/`, the object types of `sign`, `store/husk.rs`, `topo`, the field helpers of `payload` | none of these |
 | `prodrome-memo` | `memo` | data |
 | `prodrome-digest` | `digest` | data, memo |
-| `prodrome-store` | `store`, `dag`, `registers`, `policy`, the proof of `sign`, `nest`, `declared`, `tags`, `attest` | data, memo |
+| `prodrome-dag` | `dag`, `registers`, `policy`, the proof of `sign`, `fold::read` | data, memo |
+| `prodrome-declared` | `declared` | data |
+| `prodrome-store` | `store`, `nest`, `tags`, `attest` | data, memo, dag |
 | `prodrome-fpl` | `term`, `fpl`, `schedule`, `chain`, `breaks`, `observe` | data |
 | `prodrome-reading` | the readings of `fold.rs`, `view`, the traits `Price`, `History`, `Bind`, `Row` | data, store, fpl |
 | `prodrome-todo` | `todo`, `reference`, `Payload`, `TodoEvent` | data, fpl, reading |
 | `prodrome-core` | re-exports every crate above at today's paths, and holds `laws` behind its feature | all |
+
+This table is the proposal as the stages made it. The first proposal put
+`dag`, `registers`, `policy`, the proof of `sign` and `declared` in the
+store crate. Section 10 made `prodrome-dag` and `prodrome-declared`
+instead, and the data crate holds `Standing`, `Everything` and
+`Untrusted`. The faces below are the estimates of the first proposal.
 
 Signing stays in the store crate, because `dag::verify` reports forged
 signatures with the proof, and the proof reads a `Dag`. A separate signing
@@ -369,18 +377,24 @@ So the stages of section 5 have these targets, in the line measure:
 | 3, the data crate | | 15,000 | |
 | 3, as made (section 8) | 92,381 without the data crate | 22,260 | |
 | 3, the instants and the words (section 9) | 92,204 without the data crate | 19,231 | |
-| 4, the readings, as made (section 10) | 66,060 without the data, memo and dag crates | 24,107 | 28,767 (`store`, `nest`, `tags`, still in the core) |
-| 4, each further crate | | | under 25,000 in each of two crates |
+| 4, the readings, as made (section 10) | 66,077 without the data, memo, declared and dag crates | 19,654 | 28,767 (`store`, `nest`, `tags`, still in the core) |
+| 4, each further crate | | under 25,000 by the application's tool | under 25,000 |
+
+The targets of 15,000 and 19,000 for the data crate were set before
+stage 3. Since section 9, the target of every crate, the data crate with
+it, is the budget of 25,000 tokens by the application's own tool, which
+counts 14 to 17 percent more than `scripts/face.py --lines`. So a crate
+is under the budget when it is under about 21,400 tokens by this note's
+line measure.
 
 Stage 2 reaches its numbers by removing `pub` from items that only their
 own module uses, and by a third pass of words over the data modules
 (`literal`, `schema`, `event`). Stage 3 reaches 15,000 when the data crate
 holds only the data modules, and the items of `literal` that only its
 parser and its printer use have lost `pub`. Stage 4 divides the store
-crate in two: `prodrome-dag` (`dag`, `registers`, `policy` and the proof
-of `sign`, about 15,000 tokens today) and `prodrome-store` (`store`,
-`nest`, `declared` and `tags`), whose module `store` must lose about a
-third of its count by stage 2.
+crate: section 10 made `prodrome-dag` (`dag`, `registers`, `policy` and
+the proof of `sign`) and `prodrome-declared`, and `prodrome-store`
+(`store`, `nest` and `tags`) remains.
 
 ## 5. The stages
 
@@ -798,13 +812,12 @@ The module `policy` is named by nineteen of them, more than any other
 module that is not in the data crate. Three units need only `declared`,
 and one unit needs only `memo`. The units that read the registers of an
 entity need `dag`, `registers`, `policy` and the reading `fold::read`
-together. This stage made the crate `prodrome-memo` and the crate
-`prodrome-dag`, which holds the readings, and it moved `declared` and the
+together. This stage made three crates: `prodrome-memo`, `prodrome-dag`,
+which holds the readings, and `prodrome-declared`. It also moved the
 data of `policy` to `prodrome-data`.
 
-**The method.** The method is the method of stage 3. The stage made four
-commits that each build and pass the three commands of `AGENTS.md`, and a
-fifth commit that records the stage:
+**The method.** The method is the method of stage 3. Each commit below
+builds and passes the three commands of `AGENTS.md`:
 
 1. The cut of `memo`: the module names the data crate at its own paths.
    `python3 scripts/edges.py core/src memo` passes.
@@ -818,13 +831,24 @@ fifth commit that records the stage:
    sign spread reading` and `python3 scripts/edges.py data/src` pass.
 4. The move of those modules to `dag/src/`. The module `reading` became
    the module `fold` of the new crate.
+5. The methods of the new crate that became public keep the facts of
+   their values (see below).
+6. The move of `declared` from the data crate to `declared/src/`, after
+   the review found the data crate over the budget with it.
+   `python3 scripts/edges.py declared/src` passes, and the crate names
+   only public items of the data crate.
+7. The pass of words over `prodrome-declared`.
 
-The CI's lint check runs `scripts/edges.py` over `data/src`, `memo/src`
-and `dag/src`. With no module named, the script prints each use of
-`prodrome` or `prodrome_core`, so it shows that no lower crate names the
-facade. `prodrome-core` re-exports every moved item at its old path, so
-`cli/`, `wasm/`, `github/` and the tests build with no change of an
-import. No trait was added, and no item was renamed or narrowed.
+Other commits record the stage in this note and fix the words of the
+docs. The CI's lint check runs `scripts/edges.py` over `data/src`,
+`memo/src`, `declared/src` and `dag/src` with no module named. In that
+form, the script prints each use of the facade `prodrome` in a crate of
+the library, which also breaks the build. The comment in the workflow
+says so: the proof of each cut is the module-set form above, which runs
+before the files move. `prodrome-core` re-exports every moved item at
+its old path, so `cli/`, `wasm/`, `github/` and the tests build with no
+change of an import. No trait was added, and no item was renamed or
+narrowed.
 
 **Where a policy lives.** A policy is a predicate over the objects of a
 history. The test of section 9 decides where each part goes: an item is
@@ -859,7 +883,7 @@ section 4.
 | Module | Items |
 |---|---|
 | `dag` | the whole module: `Dag`, `Heads`, `Finding`, `Unread`, `Excluded`, `Reach` and the others |
-| `registers` | the whole module: `Folded`, `Node`, `fold`, `extend`, `since`, `heads`, `deps_for` |
+| `registers` | the whole module: `Folded`, `Node`, `fold`, `extend`, `since`, `heads`, `deps_for`, and a re-export of `prodrome_data::stamp::Stamp` |
 | `policy` | `Policy` and `Proven`, and a re-export of `prodrome_data::policy` |
 | `sign` | `Secret`, `Registrar`, `Proved`, `Proof` and `Checks`, and a re-export of `prodrome_data::sign` |
 | `fold` | `read`, and a re-export of `prodrome_data::fold` |
@@ -881,13 +905,41 @@ in the core:
 on ed25519-dalek, for `Secret`. The core no longer depends on
 ed25519-dalek or on memchr.
 
-Twenty-four items of `prodrome-dag` are public and `#[doc(hidden)]`,
-because the core uses them and `pub(crate)` does not reach across crates.
-Each doc starts with "For the core; no promise.": `fold::scan`,
-`fold::admits`, `spread::spread`, `dag::Prints` and thirteen methods of
-`Dag` that the store calls, `dag::lacked_among`, `Heads::new`,
-`Folded::rewrite`, and four methods of `Reach`. `Node::placed` stays
-crate-visible, so only a `Dag` places a node, as section 8 requires.
+**The items that became public.** Twenty-four items of `prodrome-dag` are
+public and `#[doc(hidden)]`, because the core uses them and `pub(crate)`
+does not reach across crates. Each doc starts with "For the core; no
+promise.": `fold::scan`, `fold::admits`, `spread::spread`, `dag::Prints`
+and thirteen methods of `Dag` that the store calls, `dag::lacked_among`,
+`Heads::new`, `Folded::rewrite`, and four methods of `Reach`.
+`Node::placed` stays crate-visible, so only a `Dag` places a node, as
+section 8 requires. The review asked of each item whether a program
+outside the library can use it to put a value's kept facts out of step
+with what the value holds, so that a later public call trusts a wrong
+fact:
+
+- `Dag::husk` kept the tips, the order and the index on its caller's word
+  that the husk rests on what the held object rests on. It now compares
+  the two, and lets the facts go where they differ. The test
+  `a_husk_of_another_change_leaves_no_stale_facts` in
+  `core/tests/all/husk.rs` puts the husk of another change under a name,
+  and fails without the comparison.
+- `Folded::rewrite` passes over a stamp whose key or instant differs
+  from the event's, so a stamp keeps its place in its entity's stream.
+- `Reach::insert` passes over a position past the order.
+- `Dag::grow`, `Dag::forget` and `Dag::settle` change the history only
+  through `History::edit`, which lets the kept facts go.
+- `Dag::set_unread` and `Dag::hold_husks` change only the caller's own
+  `Dag`: no kept fact reads the unread prints or the names of the husks.
+  `excluded`, `verify` and `whole` report the unread prints, and a name
+  held as a husk is vouched for in place of proven, and refused by
+  `Secret::sign_whole`. Both answers are stricter, never looser.
+- `Heads::new` makes a `Heads`, which `Heads::parse` already makes from
+  any text.
+- The other items read and change nothing: `held`, `holds`,
+  `into_prints`, `order_among`, `is_root`, `node`, `read_prints`,
+  `lacked_among`, `scan`, `admits`, `spread`, and `outside`, `close` and
+  `tips` of `Reach`.
+
 Small functions that a fold or a frontier calls for each object crossed
 a crate boundary, so they are `#[inline]`: the methods of `Standing`,
 `Untrusted::actors`, and `len`, `is_empty`, `contains`, `has` and `insert`
@@ -896,40 +948,48 @@ of `Reach`.
 The unit tests of `dag`, `sign` and `policy` use the todo schema, which
 stays in the core. They moved unchanged, except for their imports, to
 `core/tests/all/dag_steps.rs`, `sign.rs` and `policy.rs`: 17 tests,
-among them the law 59 test. The test of `spread` stays in the new crate.
-The two `compile_fail` examples of `registers::Node` name the new crate
-and a generic schema, and a check outside the tree showed that each fails
-for the reason that it states: the fields of `Node` are private, and
-`Node` has no function `of`.
+among them the law 59 test, which passed once at 20,000 cases. The test
+of `spread` stays in the new crate. The two `compile_fail` examples of
+`registers::Node` name the new crate and a generic schema. The first
+builds a `Node` from its private fields. The second calls
+`Node::placed`, the constructor that only a `Dag` may call. A check
+outside the tree showed that each fails for the reason that it states.
 
 **`declared`.** `Declaration` names `Hash`, and the literal types
 `Signature` and `Vocabulary`. `Declared` names `Actor`, `Hash`, the
 register algebra (`Climb`, `Frontier`, `Product`, `Register`, `grows`),
 literal values, the field read `payload::required`, `Stamp` and `Schema`.
-Every one of these is in the data crate, so the whole module moved there.
-The store reads a declaration through `EventStore::at`, which stays in
-the core. The data crate is 24,107 tokens by `scripts/face.py --lines
-data`, under the budget of 25,000. Of the increase of 4,876 tokens,
-`declared` is 4,448 and `policy` is 419.
+Every one of these is a public item of the data crate, so `declared` is
+data. But with it, the data crate was 24,107 tokens by
+`scripts/face.py --lines`, which is 27,500 to 28,200 by the application's
+tool, over the budget. A pass of words cannot free the 2,200 tokens that
+were needed, because most of the docs of `declared` state its contract.
+So `declared` is the crate `prodrome-declared`, on the data crate, with
+no hidden item and no impl of its own trait on a foreign type. The core
+re-exports it as `prodrome::declared`. A store reads a declaration
+through `EventStore::at`, which stays in the core. A unit that `declared`
+alone holds reads the data crate and `prodrome-declared`.
 
-Section 9 found that the application's own tool counted 17 percent more
-than `scripts/face.py --lines` for the data crate. If that ratio holds,
-the tool counts about 28,200 tokens for the data crate now, which is over
-the budget. A pass of words over `declared` by the rule of section 2, as
-section 9 made for the rest of the data crate, would bring it back. That
-pass changes only words, so it is a separate pull request.
+The pass of words in the new crate moved the module example to the test
+`declared/tests/admit.rs`, removed the docs that restate a method's name
+or a field, and made the words in capitals plain. With blank lines and
+comment lines removed, each file equals the file before the pass. The
+crate fell from 4,458 to 4,151 tokens.
 
 **What stays for the store crate.** The modules `store` (20,655 tokens),
 `nest` (4,096) and `tags` (4,016) stay in the core, with `snapshot::attest`.
-Together they are 28,767 tokens, 3,767 over the budget. `scripts/edges.py`
-shows that `tags` and `nest` name no module of the store: `tags` names the
-event, the register algebra, `fold::read` and `Everything`, and `nest`
-names the same and `Dag`. So the next stage can bring the store crate
-under 25,000 in either of two ways:
+Together they are 28,767 tokens, 3,767 over the budget by this note's
+measure and about 7,000 over by the application's tool. `scripts/edges.py`
+shows that `tags` and `nest` name no module of the store: `tags` names
+the event, the register algebra, `fold::read` and `Everything`, and `nest`
+names the same and `Dag`. So the next stage can do these things:
 
-- Move `tags` to `prodrome-dag`, which is then about 18,400 tokens. The
-  store crate is then about 24,750 tokens. `tags` reads a tag set as the
-  registers of an entity under `Everything`, which is a reading.
+- Move `tags` to `prodrome-dag`, which is then about 18,450 tokens.
+  `tags` reads a tag set as the registers of an entity under
+  `Everything`, which is a reading. The store crate is then about 24,750
+  tokens, still over the budget by the application's tool.
+- Move `nest` with `tags`, or to a crate of its own on `prodrome-dag`, to
+  bring the store crate to about 20,650 tokens.
 - Remove `pub` from the items of `store` that only their own file uses.
   The items of `store` that are `pub(crate)` or `pub(super)` are about
   1,700 tokens, so this alone is not enough.
@@ -939,52 +999,57 @@ under 25,000 in either of two ways:
 `Sender` and the husk types of `store` can change its path and drop the
 core now.
 
-**The face.** "Before" is the merge base `588e306`.
+**The face.** "Before" is the merge base `588e306`. The column "by the
+application's tool" multiplies the line measure by 1.14 and 1.17, the
+ratios that sections 9 and the review found.
 
-| Crate | Lines, before | Lines, after | Rustdoc, before | Rustdoc, after |
-|---|--:|--:|--:|--:|
-| `prodrome-core`, without the crates below | 92,204 | 66,060 | 38,311 | 26,576 |
-| `prodrome-data` | 19,231 | 24,107 | 11,669 | 13,964 |
-| `prodrome-memo` | | 7,697 | | 4,304 |
-| `prodrome-dag` | | 14,379 | | 5,658 |
-| all | 111,435 | 112,243 | 49,980 | 50,502 |
+| Crate | Lines, before | Lines, after | By the application's tool, after | Rustdoc, before | Rustdoc, after |
+|---|--:|--:|--:|--:|--:|
+| `prodrome-core`, without the crates below | 92,204 | 66,077 | 75,300 to 77,300 | 38,311 | 26,591 |
+| `prodrome-data` | 19,231 | 19,654 | 22,400 to 23,000 | 11,669 | 11,967 |
+| `prodrome-memo` | | 7,697 | 8,800 to 9,000 | | 4,304 |
+| `prodrome-declared` | | 4,151 | 4,700 to 4,900 | | 1,747 |
+| `prodrome-dag` | | 14,424 | 16,400 to 16,900 | | 5,664 |
+| all | 111,435 | 112,003 | | 49,980 | 50,273 |
 
 The rustdoc measure is with the default features. With the feature
-`laws`, `prodrome-core` is 42,133 tokens before and 30,398 after. The
-crates together are 808 tokens more than before by the line measure: the
-root docs of the two new crates, the heads of the modules that re-export,
-and the marks of the hidden items.
+`laws`, `prodrome-core` is 42,133 tokens before and 30,413 after. The
+crates together are 568 tokens more than before by the line measure: the
+root docs of the three new crates, the heads of the modules that
+re-export, and the marks of the hidden items, less the pass of words over
+`declared`. Every crate below the core is under the budget by both
+measures.
 
 A unit that reads the registers of an entity under a policy reads
-`prodrome-data`, `prodrome-memo` and `prodrome-dag`: 24,107 + 7,697 +
-14,379 = 46,183 tokens, in place of the 92,204 tokens of `prodrome-core`
-and the 19,231 of `prodrome-data`. Each of the three faces is under the
-budget. The root doc of `prodrome-dag` lists, in four items, how a
-program holds a DAG, folds it, reads the registers of an entity under a
+`prodrome-data`, `prodrome-memo` and `prodrome-dag`: 19,654 + 7,697 +
+14,424 = 41,775 tokens (47,600 to 48,900 by the application's tool), in
+place of the 92,204 tokens of `prodrome-core` and the 19,231 of
+`prodrome-data`. The root doc of `prodrome-dag` lists, in four items, how
+a program holds a DAG, folds it, reads the registers of an entity under a
 policy, and proves and checks signatures.
 
 **Which crates a unit reads.** The table has one row for each holder set
 of the count at the start of this section. A holder set is the set of
 modules outside the data crate that a unit names, without the instants.
-"All four" is `prodrome-core` with the three crates below it, 112,243
-tokens. Before this stage, every one of these units read
-`prodrome-core` and `prodrome-data`, 111,435 tokens.
+"All five" is `prodrome-core` with the four crates below it, 112,003
+tokens. Before this stage, every one of these units read `prodrome-core`
+and `prodrome-data`, 111,435 tokens.
 
 | The modules that hold the unit | Units | Crates after | Tokens after |
 |---|--:|---|--:|
-| `declared` | 3 | data | 24,107 |
-| `memo` | 1 | data, memo | 31,804 |
-| `policy`, `sign` | 1 | data, if the unit names only `Untrusted`, `Everything`, `Standing` and the object types of `sign`; otherwise data, memo, dag | 24,107 or 46,183 |
-| `fpl`, `policy` | 1 | as the row above, if the unit's names of `fpl` are the instant conversions; otherwise all four | 24,107, 46,183 or 112,243 |
-| `declared`, `fold`, `policy`, `registers` | 1 | data, memo, dag, if the unit's names of `fold` are `read`, `sole`, `Product` and the rest of the register algebra | 46,183 |
-| `fpl`, `policy`, `term` | 1 | all four | 112,243 |
-| `declared`, `store` | 1 | all four; data alone if its names of `store` are `Sender` and the husk types | 112,243 or 24,107 |
-| `fold`, `policy`, `registers`, `tags` | 1 | all four, until `tags` moves | 112,243 |
-| `dag`, `memo`, `sign`, `store` | 1 | all four | 112,243 |
-| `dag`, `fold`, `policy`, `registers`, `store` | 1 | all four | 112,243 |
-| six or more modules | 15 | all four | 112,243 |
+| `declared` | 3 | data, declared | 23,805 |
+| `memo` | 1 | data, memo | 27,351 |
+| `policy`, `sign` | 1 | data, if the unit names only `Untrusted`, `Everything`, `Standing` and the object types of `sign`; otherwise data, memo, dag | 19,654 or 41,775 |
+| `fpl`, `policy` | 1 | as the row above, if the unit's names of `fpl` are the instant conversions; otherwise all five | 19,654, 41,775 or 112,003 |
+| `declared`, `fold`, `policy`, `registers` | 1 | data, memo, dag, declared, if the unit's names of `fold` are `read`, `sole`, `Product` and the rest of the register algebra | 45,926 |
+| `declared`, `store` | 1 | all five; data and declared if its names of `store` are `Sender` and the husk types | 112,003 or 23,805 |
+| `fpl`, `policy`, `term` | 1 | all five | 112,003 |
+| `fold`, `policy`, `registers`, `tags` | 1 | all five, until `tags` moves | 112,003 |
+| `dag`, `memo`, `sign`, `store` | 1 | all five | 112,003 |
+| `dag`, `fold`, `policy`, `registers`, `store` | 1 | all five | 112,003 |
+| six or more modules | 15 | all five | 112,003 |
 
-So five units, and up to eight, read at most 46,183 tokens after this
+So five units, and up to eight, read at most 45,926 tokens after this
 stage, in place of 111,435. The other units are held by `store`, `tags`,
 `term` or `fpl`, which the stages below move.
 
@@ -994,18 +1059,20 @@ no link-time optimisation, on a generated store of 15,000 objects over
 of each operation. The base binary and the branch binary ran in turn,
 eleven times each, on one store, and the table gives the median of the
 eleven medians, in milliseconds. Each run appends ten objects, so the
-store grows by 220 objects over the runs, alike for both binaries.
+store grows by 220 objects over the runs, alike for both binaries. The
+branch is the tree with `prodrome-declared`.
 
 | Operation | Before | After | Change |
 |---|--:|--:|--:|
-| cold read | 131.8 | 126.7 | −3.9 % |
-| `registers::fold` | 29.4 | 30.0 | +2.0 % |
-| `view::entries` | 34.2 | 34.9 | +1.9 % |
-| `Dag::verify` | 34.0 | 33.1 | −2.6 % |
-| append | 26.3 | 26.3 | −0.1 % |
+| cold read | 134.6 | 132.6 | −1.5 % |
+| `registers::fold` | 31.1 | 30.0 | −3.3 % |
+| `view::entries` | 34.2 | 34.5 | +0.9 % |
+| `Dag::verify` | 33.8 | 32.5 | −3.7 % |
+| append | 27.0 | 27.0 | −0.0 % |
 
 No operation is slower by more than 3 percent. The runs vary by more
-than these changes: one `registers::fold` of the base took 48.8 ms.
+than these changes, so the operations that are faster are not faster
+because of this stage.
 
 **Compile time.** A build of the workspace in the dev profile, with four
 cores, twice each, each time in a new target directory. "Touch" is the
@@ -1013,21 +1080,19 @@ build after `touch data/src/lib.rs`, twice after each clean build.
 
 | Build | Before | After |
 |---|--:|--:|
-| clean | 24.7 s, 26.5 s | 25.0 s, 26.5 s |
-| touch | 2.3 s, 2.4 s, 2.7 s, 2.5 s | 2.4 s, 2.6 s, 2.4 s, 2.7 s |
+| clean | 26.6 s, 25.4 s | 25.4 s, 26.6 s |
+| touch | 2.3 s, 2.6 s, 2.4 s, 2.7 s | 2.4 s, 2.5 s, 2.4 s, 2.6 s |
 
-The two new crates do not make a clean build or the common edit slower
+The three new crates do not make a clean build or the common edit slower
 by a measurable amount.
 
 **What remains, in order.** The units of the application that still
 depend on `prodrome-core` are held by `store`, `tags`, `term` and `fpl`:
 
-1. a pass of words over `declared`, if the application's tool finds the
-   data crate over the budget;
-2. the store crate: `store`, `nest`, `tags` and `snapshot::attest`, under
-   25,000 tokens, by one of the two ways above;
-3. fpl: `term`, `fpl`, `schedule`, `chain`, `breaks` and `observe`;
-4. digest;
-5. the reading crate: the readings of a todo, `fold::readings`, `view`,
+1. the store crate: `store`, `nest`, `tags` and `snapshot::attest`, under
+   the budget by the application's tool, by the moves above;
+2. fpl: `term`, `fpl`, `schedule`, `chain`, `breaks` and `observe`;
+3. digest;
+4. the reading crate: the readings of a todo, `fold::readings`, `view`,
    and the traits `Price`, `History`, `Bind` and `Row`;
-6. todo.
+5. todo.
