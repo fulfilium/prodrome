@@ -54,9 +54,20 @@ event's instant:
 prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
-A program that depends on both crates gives both the same revision. The
-core requires the exact version of the data crate that it is released
-with.
+A program that reads the registers of an entity from its events under a
+policy can depend on `prodrome-data`, `prodrome-memo` (the caches) and
+`prodrome-dag` (the DAG of a store's objects, its fold, the policies and
+the proof of signatures):
+
+```toml
+[dependencies]
+prodrome-dag = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
+prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
+```
+
+A program that depends on several of these crates gives each the same
+revision. The core requires the exact version of each of the other crates
+that it is released with.
 
 The library needs Rust 1.85 or later. The command-line tool is called
 `prodrome`, and it is in the crate `prodrome-cli`. Install it with cargo or

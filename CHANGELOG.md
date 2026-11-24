@@ -242,6 +242,43 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The caches and the readings of a store are their own crates,
+  `prodrome-memo` and `prodrome-dag` (issue #92, section 10 of
+  `docs/design-core-face.md`).** A program that reads the registers of an
+  entity from its events under a policy can depend on `prodrome-data`,
+  `prodrome-memo` and `prodrome-dag` alone. Their faces are 24,107, 7,697
+  and 14,379 tokens by `scripts/face.py --lines`, 46,183 in all, in place
+  of the 92,204 tokens of `prodrome-core` and the 19,231 of `prodrome-data`
+  that such a program read before. `prodrome-core` depends on both crates
+  and re-exports each moved item at its old path, so a program that
+  depends on `prodrome-core` changes nothing. No behaviour, stored byte,
+  conformance vector or law changes, and no item is renamed or narrowed.
+  A program that moves to the new crates changes these paths:
+  - `prodrome::memo` becomes `prodrome_memo`, whole. The crate depends on
+    `prodrome-data` alone;
+  - `prodrome::dag`, `prodrome::registers` and `prodrome::sign` become
+    `prodrome_dag::dag`, `prodrome_dag::registers` and
+    `prodrome_dag::sign`. `prodrome_dag::sign` re-exports the object
+    types of `prodrome_data::sign`;
+  - `prodrome::fold::read` becomes `prodrome_dag::fold::read`.
+    `prodrome_dag::fold` re-exports the register algebra of
+    `prodrome_data::fold`, with `Product` and `fold::sole`. The readings of
+    a todo, such as `readings`, `env` and `flatten`, stay in
+    `prodrome-core`;
+  - `prodrome::policy::{Policy, Proven}` become `prodrome_dag::policy::…`.
+    `Standing`, `Everything` and `Untrusted` become
+    `prodrome_data::policy::…`, because they name only an `Actor`, and
+    `prodrome_dag::policy` re-exports them. The trait `Policy` names a
+    `Dag` in `Policy::at`, so it is in `prodrome-dag`, with its impls for
+    the three types;
+  - `prodrome::declared` becomes `prodrome_data::declared`, whole, because
+    `Declared`, `Declaration` and their parts name only data. A store
+    reads a declaration through `EventStore::at`, which stays in
+    `prodrome-core`.
+
+  The items of `prodrome-dag` that only `prodrome-core` uses are public
+  and `#[doc(hidden)]`, with no promise between versions, and
+  `prodrome-core` requires the exact version of each new crate.
 - **The conversions between a stored `Datetime` and an instant are in
   `prodrome-data` (issue #92, section 9 of `docs/design-core-face.md`).**
   The type `Instant`, the functions `instant_of`, `datetime_of`, `iso` and
