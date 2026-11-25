@@ -581,7 +581,7 @@ impl<E: Schema> Replica<E> {
     ///
     /// # Errors
     ///
-    /// A claimed name that is no name ([`Replica::order`]).
+    /// A claimed name that is no name (`Replica::order`).
     pub fn read(&self) -> Result<Read<'_, E>, Refusal> {
         self.nodes.as_ref().map_err(Clone::clone).map(|nodes| Read {
             dag: &self.history,

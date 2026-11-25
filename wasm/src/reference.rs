@@ -211,7 +211,7 @@ pub fn fold(objects: &str, at: Option<String>, untrusted: &str) -> Result<String
 /// kind, each named by the object that made it.
 ///
 /// `{}` on a chain, which is why this is a separate call and not a sixth key
-/// on [`fold`]: the answer is empty on today's store, and an ancestry bitset
+/// on [`fold()`]: the answer is empty on today's store, and an ancestry bitset
 /// per object is not a cost to pay on every fold to learn that again.
 #[wasm_bindgen]
 pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<String, JsError> {
@@ -249,7 +249,7 @@ pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<S
 /// (ISO, or `null` for everything the chain holds), under `untrusted`.
 ///
 /// THE COMPOSITION IS THE CORE'S. Until this existed the tab performed it
-/// itself — two [`fold`]s, a [`registers`] call, and the page's TypeScript deciding
+/// itself — two [`fold()`]s, a [`registers()`] call, and the page's TypeScript deciding
 /// what a claim is, when an entry is provisional, and which environment prices
 /// it. That was a second reading of §6.7 in a second language,
 /// which is exactly what this crate exists to prevent, and it is gone.
@@ -260,7 +260,7 @@ pub fn registers(objects: &str, at: Option<String>, untrusted: &str) -> Result<S
 /// is here. So the answer carries the records the rows actually name, and
 /// nothing else: it is the caller's own lookup done on the caller's behalf,
 /// not the Prodrome deciding what a body is for. The shape is
-/// [`wire::json_record`] — `todo`, `at`, `actor` and the payload's own fields
+/// [`json_record`] — `todo`, `at`, `actor` and the payload's own fields
 /// under the names it stores them by.
 ///
 /// `order` is the rows' todo ids in §6.7's list order ([`prodrome::view::list_order`]):
@@ -570,7 +570,7 @@ pub fn link_in(term: &str, specs: &str, stores: &str) -> Result<String, JsError>
 /// §7's knots — the curve a graph draws over `[from, to]`, and whether the
 /// knots ARE the curve. A knot's value is `null` where the term reads `∅`.
 ///
-/// `history` is the environment as a function of time ([`fold`]'s key of that
+/// `history` is the environment as a function of time ([`fold()`]'s key of that
 /// name), because every knot is evaluated against the environment AS OF its own
 /// instant: a dependency an `After` reads is unbound before it completed and
 /// bound from then, exactly as `view.series_of` does it.
