@@ -8,15 +8,18 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use crate::event::{Hash, TodoEvent};
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::{self, Genesis, Node};
+use prodrome_data::event::Hash;
+use prodrome_data::literal::{Datetime, ProdromeError};
+use prodrome_data::policy::Everything;
+use prodrome_fpl::fpl::{self, Candidates, LinkError, Outcome};
+use prodrome_term::term::Term;
+use prodrome_todo::event::TodoEvent;
+use prodrome_todo::payload::Payload;
+
 use crate::fold::{self, Product};
-use crate::fpl::{self, Candidates, LinkError, Outcome};
-use crate::literal::{Datetime, ProdromeError};
-use crate::payload::Payload;
-use crate::policy::{Everything, Policy};
-use crate::registers::{self, Genesis, Node};
 use crate::schema::{Bind, History, Row};
-use crate::term::Term;
 
 /// An entity's fulfillment function (SPEC §6.4) and its value at a moment.
 ///
@@ -284,11 +287,11 @@ pub fn entries<E: Row + History + Bind>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dag::Dag;
-    use crate::event::{mk_completed, mk_sealed, seal_hash, Actor};
-    use crate::fpl::mk_flat;
-    use crate::policy::Untrusted;
-    use crate::reference::{mk_authored, Todo};
+    use prodrome_dag::dag::Dag;
+    use prodrome_data::policy::Untrusted;
+    use prodrome_fpl::fpl::mk_flat;
+    use prodrome_todo::event::{mk_completed, mk_sealed, seal_hash, Actor};
+    use prodrome_todo::reference::{mk_authored, Todo};
 
     type Event = TodoEvent<Todo>;
 
@@ -491,7 +494,8 @@ mod tests {
             authored("alpha", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
             // A record with no spec, and a todo only ever created.
             authored("beta", 1, "bassel", None),
-            crate::event::mk_created("gamma", at(1), "bassel", "a note", "").expect("valid"),
+            prodrome_todo::event::mk_created("gamma", at(1), "bassel", "a note", "")
+                .expect("valid"),
             authored("group", 1, "bassel", Some(group)),
         ]);
         let rows = entries(&nodes, at(9), &roster()).expect("folds");

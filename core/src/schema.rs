@@ -5,9 +5,9 @@
 
 pub use prodrome_data::schema::*;
 
-use crate::fpl::{Env, FplError};
-use crate::policy::Policy;
-use crate::term::Term;
+use prodrome_dag::policy::Policy;
+use prodrome_term::fpl::{Env, FplError};
+use prodrome_term::term::Term;
 
 /// A schema's price: the FPL term of each candidate of an entity's reading,
 /// which [`crate::fold::price`] combines as their `Least` (SPEC §6, "A

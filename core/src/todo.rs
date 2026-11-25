@@ -7,12 +7,14 @@ use std::collections::BTreeSet;
 
 pub use prodrome_todo::todo::*;
 
-use crate::event::{Hash, TodoEvent, TodoId};
-use crate::fpl::{self, Candidates, Env, FplError, Outcome};
-use crate::payload::Payload;
-use crate::policy::Policy;
+use prodrome_dag::policy::Policy;
+use prodrome_data::event::Hash;
+use prodrome_term::fpl::{self, Candidates, Env, FplError, Outcome};
+use prodrome_term::term::Term;
+use prodrome_todo::event::{TodoEvent, TodoId};
+use prodrome_todo::payload::Payload;
+
 use crate::schema::{Bind, History, Price, Row};
-use crate::term::Term;
 
 /// What a todo's row shows (SPEC §6.7): its candidate outcomes, with `None`
 /// for open, and the sorted names of its candidate content records.
