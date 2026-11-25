@@ -30,10 +30,9 @@ pub trait Tree {
 /// An algebra over a tree: the result at a node, given its children's
 /// results.
 ///
-/// `apply` must be pure: a function of the node and its children's results,
-/// and of nothing that the node's name does not cover. The algebra's name
-/// must cover its code and everything that the code reads, so that two
-/// algebras share a cache without sharing an entry.
+/// `apply` must be pure, and a function of nothing that the node's name does
+/// not cover. The algebra's name must cover its code and everything that the
+/// code reads, so that two algebras never share an entry.
 pub trait Algebra<T: ?Sized> {
     /// What the fold answers at each node.
     type Out;
@@ -132,13 +131,13 @@ enum Frame<'t, T> {
 /// The algebra folded over `tree` bottom-up, memoised in `cache` at every
 /// node by the algebra's name and the node's name, with what it looked at.
 ///
-/// The value equals the plain fold's (`memo f = f`, law 51) whatever entries
-/// were dropped, provided that the folds of a pure algebra made every entry
-/// of the cache, here or in a cache joined into this one. The fold computes
-/// a key that holds two values, never chooses one, and reports it. A single
-/// value that an untrusted writer put at a key that nothing else filled is
-/// a claim, and only a recomputation checks it. The fold is iterative, so
-/// the depth of a tree costs heap and not stack.
+/// The value equals the plain fold's (law 51) whatever entries were
+/// dropped, provided that the folds of a pure algebra made every entry of
+/// the cache. A single value that an untrusted writer put at a key that
+/// nothing else filled is a claim, and only a recomputation checks it. A key
+/// that holds two values is computed and reported, and the fold uses neither
+/// value. The fold is iterative, so the depth of a tree costs heap and not
+/// stack.
 // Its one `expect` cannot fire: every node entered leaves exactly one value,
 // so the root's is the one left when the stack empties.
 #[allow(clippy::missing_panics_doc)]

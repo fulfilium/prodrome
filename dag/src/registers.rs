@@ -51,12 +51,11 @@ pub type Prodrome<E> = BTreeMap<<E as Schema>::Key, Vec<Stamp<E>>>;
 /// What the fold reads of a stored object: its name, its parents, its event
 /// and the prodrome that it is in.
 ///
-/// Only [`crate::dag::Dag::nodes`] makes a node. The prodrome of an object
-/// depends on the set of objects that it is in: a `Change` that names a
-/// legacy root is in the legacy prodrome, and nothing in the change's bytes
-/// tells whether its genesis is a root or a `Genesis`. A node built from one
-/// envelope would put that change in a prodrome of its own and split its todo
-/// in two, so the fields are private and no constructor is public.
+/// Only [`crate::dag::Dag::nodes`] makes a node, because the prodrome of an
+/// object depends on the set of objects that it is in. A `Change` that names
+/// a legacy root is in the legacy prodrome, and nothing in the change's
+/// bytes tells whether its genesis is a root or a `Genesis`. A node built
+/// from one envelope would split the todo of that change in two.
 ///
 /// ```compile_fail
 /// use prodrome_dag::registers::Node;
@@ -143,10 +142,7 @@ impl<E: Schema> Folded<E> {
     }
 
     /// For this library's own code; no promise.
-    /// The stamp of `name` reads `event` in place of its event: the husk of
-    /// the object it was (SPEC §3), whose key and instant are the same, so
-    /// it stays in its entity's stream where it was. A name with no stamp,
-    /// or whose stamp has another key or instant, is passed over.
+    /// Replaces the event of the stamp of `name` with the husk `event`.
     #[doc(hidden)]
     pub fn rewrite(&mut self, name: &Hash, event: &E) {
         for prodrome in self.prodromes.values_mut() {
@@ -164,12 +160,9 @@ impl<E: Schema> Folded<E> {
     /// Whether every object folded rests only on objects of its own scope and
     /// on its genesis.
     ///
-    /// Where it does, each scope's order is decided within the scope, and
-    /// [`Folded::insert`] can place an object without the rest. The genesis
-    /// orders nothing within a scope, because every object of the scope rests
-    /// on it and it rests on nothing. Every store
-    /// that appends wrote is local: a change's deps never leave its entity,
-    /// and a legacy object's parents are legacy.
+    /// Where it does, [`Folded::insert`] can place an object without the
+    /// rest. Every store that appends wrote is local: a change's deps never
+    /// leave its entity, and a legacy object's parents are legacy.
     pub fn local(&self) -> bool {
         self.local
     }
@@ -225,11 +218,10 @@ impl<E: Schema> Folded<E> {
 
     /// Folds `node` in where the linearisation of the union puts it: after
     /// its parents, and before the first later object of its scope whose
-    /// name is greater, where Kahn's walk takes it.
+    /// name is greater.
     ///
-    /// For objects given parents first, in any order, inserting each gives
-    /// the `fold` of them all, so the state depends only on the set of
-    /// objects. An object already folded changes nothing.
+    /// Given parents first, in any order, inserting each gives the `fold` of
+    /// them all. An object already folded changes nothing.
     ///
     /// # Errors
     ///
@@ -403,8 +395,7 @@ pub fn since<'a, E: Schema>(state: &Folded<E>, nodes: &'a [Node<E>]) -> Vec<&'a 
         .collect()
 }
 
-/// The deps of a change: the heads of its entity, which are the writes to the
-/// entity, in any register, that no other write to it descends from.
+/// The deps of a change: the heads of its entity.
 ///
 /// The function reads the heads under the policy that binds everything and
 /// at no moment, so the deps cover every write to the entity that the writer
@@ -415,8 +406,7 @@ pub fn since<'a, E: Schema>(state: &Folded<E>, nodes: &'a [Node<E>]) -> Vec<&'a 
 /// Returns the refusal of the append, before any object exists, where
 /// `event` does not stand on the reading that it supersedes
 /// ([`Product::grows`]). For the first write to an entity, that reading is
-/// the empty product's, so the append asks every write the same question
-/// that `verify` asks.
+/// the empty product's.
 pub fn deps_for<E: Schema>(
     state: &Folded<E>,
     genesis: &Genesis,

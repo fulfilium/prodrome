@@ -77,8 +77,7 @@ impl AsRef<str> for Key {
 /// An event of a declared schema: one of its constructors, with every field
 /// a value of its declared type.
 ///
-/// The event holds its declaration to find the registers it writes, and it
-/// never prints the declaration, so no object carries a schema.
+/// The event never prints its declaration, so no object carries a schema.
 #[derive(Debug, Clone)]
 pub struct Declared {
     schema: Declaration,
@@ -210,8 +209,7 @@ impl Schema for Declared {
 /// An entity's registers under a declared schema, each read under its
 /// declared order.
 ///
-/// The value learns the declaration from the first write that it joins;
-/// before that write, every register is unwritten.
+/// The value learns the declaration from the first write that it joins.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Registers<'a> {
     held: Vec<Held<'a>>,

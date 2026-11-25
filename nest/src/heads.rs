@@ -16,18 +16,17 @@ use prodrome_data::stamp::Stamp;
 /// history's heads. The history is everything that the heads rest on, in a
 /// replica of `I`'s objects.
 ///
-/// A register is declared to hold histories of one schema by a
-/// [`prodrome_data::fold::RegisterType`] whose values are `&Heads<I>`, never by a
-/// field of the object, which carries only the names as a sorted tuple.
+/// A [`prodrome_data::fold::RegisterType`] whose values are `&Heads<I>`
+/// declares that a register holds histories of `I`. The object carries only
+/// the names, as a sorted tuple.
 ///
-/// The order is inclusion of the heads. It is sound because one set of
-/// heads within another names a history within the other's. A pointer
-/// whose maximal writes the order cannot compare is never read as one of
-/// them: its reading is the union of their histories ([`fn@pointer`]),
-/// which needs the inner objects and so is not the order's join. The order
-/// is not inflationary: a write moves the pointer to whatever its writer
-/// saw, and a writer that saw less is not refused, because the outer
-/// history holds everything that any of its writes named.
+/// The order is inclusion of the heads. When the order cannot compare the
+/// maximal writes of a pointer, the pointer reads as the union of their
+/// histories ([`fn@pointer`]), which needs the inner objects and so is not
+/// the order's join. The order is not inflationary: a write moves the
+/// pointer to what its writer saw, and a writer that saw less is not
+/// refused, because the outer history holds everything that any of its
+/// writes named.
 pub struct Heads<I> {
     names: BTreeSet<Hash>,
     inner: PhantomData<fn() -> I>,
@@ -96,12 +95,12 @@ impl<I> Order for &Heads<I> {
 }
 
 /// A schema of which some registers hold histories, as a nest reads it
-/// ([`super::Level`]). Each held register is a register type whose values
-/// are [`Heads`] of its inner schema.
+/// ([`super::Level`]). The values of a held register are [`Heads`] of its
+/// inner schema.
 ///
 /// A held register's history sits at the path `key/segment` of the entity
 /// that holds it, and each of its objects at that path and then its own
-/// key. So a nest refuses an entity's key that is not a path segment.
+/// key. So a nest refuses an entity key that is not a path segment.
 pub trait Nests: Schema<Key: AsRef<str>> {
     /// The registers whose values are histories.
     const HELD: &'static [Self::Register];

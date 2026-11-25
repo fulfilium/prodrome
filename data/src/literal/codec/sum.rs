@@ -26,7 +26,7 @@ pub trait Sum: Literal {
     fn from_arm(call: &Call) -> Result<Self, ProdromeError>;
 }
 
-/// For this library's own code; no promise. The number of names in the table of `head` and `arms`.
+/// For this library's own code; no promise. The length of a name table.
 #[doc(hidden)]
 #[must_use]
 pub const fn headed_len(head: &[&str], arms: &[Constructor]) -> usize {
@@ -39,8 +39,7 @@ pub const fn headed_len(head: &[&str], arms: &[Constructor]) -> usize {
     total
 }
 
-/// For this library's own code; no promise. For each arm in order, `head` and then the arm's
-/// fields.
+/// For this library's own code; no promise. The names of a table.
 #[doc(hidden)]
 #[must_use]
 pub const fn headed_names<const TOTAL: usize>(
@@ -69,8 +68,7 @@ pub const fn headed_names<const TOTAL: usize>(
     names
 }
 
-/// For this library's own code; no promise. Each arm's name with its slice of `names`
-/// ([`headed_names`]).
+/// For this library's own code; no promise. The table of [`headed_names`].
 #[doc(hidden)]
 #[must_use]
 pub const fn headed_table<const ARMS: usize>(
@@ -90,8 +88,7 @@ pub const fn headed_table<const ARMS: usize>(
     table
 }
 
-/// For this library's own code; no promise. Whether a constructor of `arms` has a field named
-/// `name`.
+/// For this library's own code; no promise. Whether an arm has a field `name`.
 #[doc(hidden)]
 #[must_use]
 pub const fn names_field(arms: &[Constructor], name: &str) -> bool {
@@ -110,8 +107,7 @@ pub const fn names_field(arms: &[Constructor], name: &str) -> bool {
     false
 }
 
-/// For this library's own code; no promise. Whether the constructors of `table` have distinct
-/// names; the derive checks a table with it at compile time.
+/// For this library's own code; no promise. Whether the names of `table` differ.
 #[doc(hidden)]
 #[must_use]
 pub const fn distinct(table: &[Constructor]) -> bool {

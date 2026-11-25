@@ -192,10 +192,8 @@ pub struct Series {
 ///
 /// Exact where the term is piecewise-linear: knots at the window edges, at
 /// every slope change inside it, and a second on either side of every jump.
-/// Composite terms also get [`SAMPLES`] evenly spaced evaluations. Each knot
-/// is evaluated against `env_at(t)`, the environment as of that instant, so a
-/// dependency that an `After` reads is unbound before it completed and bound
-/// from then on.
+/// Composite terms also get `SAMPLES` evenly spaced evaluations. Each knot
+/// is evaluated against `env_at(t)`, the environment as of that instant.
 pub fn series_knots(
     term: &Closed,
     from: Instant,

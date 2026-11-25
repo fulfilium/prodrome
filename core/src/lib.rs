@@ -8,6 +8,43 @@
 //! vectors in `conformance/` fix prints, hashes, linearisations, frontiers
 //! and `verify` findings exactly, and fulfillments to within 1e-9.
 //!
+//! # Which crate to depend on
+//!
+//! This crate re-exports the twelve other crates of the library at the paths
+//! of its modules, and it holds the law kit (feature `laws`). A program that
+//! needs only some of the library depends on those crates and not on this
+//! one. A crate's "tokens" are the size of its public API as an agent reads
+//! it: `scripts/face.py --lines`, four characters to a token.
+//! `docs/design-core-face.md`, section 14, gives the method and the numbers.
+//!
+//! | Crate | Holds | Tokens |
+//! |---|---|--:|
+//! | `prodrome-data` | values and their print, events, objects and their names, the traits of a schema and of a register, `#[derive(Literal)]` | 19,994 |
+//! | `prodrome-memo` | caches and the cached fold | 7,296 |
+//! | `prodrome-dag` | the DAG of a store's objects, its fold, policies, the proof of signatures | 14,118 |
+//! | `prodrome-store` | the store on disk and in memory, replicas, doors, frontiers | 21,027 |
+//! | `prodrome-declared` | schemas declared as text | 3,973 |
+//! | `prodrome-tags`, `prodrome-nest`, `prodrome-digest` | tag sets; histories held in registers; a summary tree over a log | 3,979, 3,903, 4,099 |
+//! | `prodrome-term` | FPL terms: build, print, parse; schedules | 6,574 |
+//! | `prodrome-fpl` | the evaluator, the chain compiler, breakpoints, observation | 5,500 |
+//! | `prodrome-todo` | the todo schema's events and payload, the reference payload | 4,686 |
+//! | `prodrome-reading` | a todo's price and its row in a list | 3,949 |
+//!
+//! What to depend on, for what a program does:
+//!
+//! | The program | Depends on | Tokens |
+//! |---|---|--:|
+//! | writes events with a store and reads them under a policy | data, memo, dag, store | 62,435 |
+//! | reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 62,117 |
+//! | has a schema of its own and no todos: defines it, prints and parses its events | data | 19,994 |
+//! | the same, and folds its events under a policy | data, memo, dag | 41,408 |
+//! | the same, and keeps them in a store | data, memo, dag, store | 62,435 |
+//! | adds a second backend for a replica: implements `store::Replica` | data, memo, dag, store | 62,435 |
+//! | uses the whole library, or the law kit | this crate | 112,431 |
+//!
+//! `prodrome-dag` depends on `prodrome-memo`, so a program that reads a DAG
+//! reads both. `prodrome-store` also holds the files of a store on disk.
+//!
 //! # Quick start
 //!
 //! ```
@@ -82,47 +119,9 @@
 //! # }
 //! ```
 //!
-//! The crate `prodrome-data` holds the data of a store: `literal`, `topo`,
-//! `genesis` and `change`, and the parts of `event`, `payload`, `schema`,
-//! `snapshot`, `sign`, `policy` and `fold` that build, print, parse and hash
-//! objects. This crate re-exports each of them at the path below. A program
-//! that only builds and reads events can depend on `prodrome-data` alone.
-//! An example in the documentation of a module of `prodrome-data` works
-//! under this crate with `prodrome` in place of `prodrome_data`.
+//! # Modules
 //!
-//! The crate `prodrome-memo` holds `memo`, and `prodrome-declared` holds
-//! `declared`. The crate `prodrome-dag` holds `dag` and `registers`, the
-//! rest of `policy` and `sign`, and the reading of an entity's registers,
-//! `fold::read`. A program that reads an entity's registers under a policy
-//! can depend on `prodrome-data`, `prodrome-memo` and `prodrome-dag` alone.
-//!
-//! The crate `prodrome-store` holds `store` and the rest of `snapshot`, on
-//! `prodrome-data` and `prodrome-dag`. A program that opens a store,
-//! appends to it and reads it under a policy can depend on these three
-//! crates alone. The crates `prodrome-nest`, `prodrome-tags` and
-//! `prodrome-digest` hold `nest`, `tags` and `digest`. This crate
-//! re-exports each module of these crates at the same path.
-//!
-//! The crate `prodrome-term` holds `term`, `schedule`, and the parts of
-//! `fpl` that build, print and parse a term, on `prodrome-data`. The crate
-//! `prodrome-fpl` holds the rest of `fpl` (the evaluator), `chain`,
-//! `breaks` and `observe`, on `prodrome-term`. The crate `prodrome-todo`
-//! holds `event`, `payload` and `reference`, and the todo schema's
-//! vocabulary and registers, which `todo` and `fold` re-export, on
-//! `prodrome-term`. A program that writes a todo's events can depend on
-//! `prodrome-data`, `prodrome-term` and `prodrome-todo` alone.
-//!
-//! The crate `prodrome-reading` holds `fold` (the readings of a todo, with
-//! the re-exports of the register algebra and of `fold::read`), `schema`
-//! (the traits `Price`, `History`, `Bind` and `Row`), `todo` (their impls
-//! for the todo schema) and `view`, on `prodrome-data`, `prodrome-dag`,
-//! `prodrome-term`, `prodrome-fpl` and `prodrome-todo`. A program that
-//! reads a todo's price and its row in a list can depend on these
-//! crates alone, with `prodrome-memo`, on which `prodrome-dag` depends.
-//! This crate holds only the law kit, behind the feature
-//! `laws`, and re-exports every other module.
-//!
-//! Modules, with the section of `SPEC.md` (or of a design note) for each:
+//! Each module, with the section of `SPEC.md` (or of a design note) for it:
 //! - `literal`: values and the literal grammar (§2)
 //! - `schema`: the events, entities and registers of a store (§4 to §6)
 //! - `declared`: a schema as data (design §5, §6.0)

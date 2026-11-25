@@ -4,10 +4,8 @@
 /// The high water and the low water of a view, in bytes, with the low
 /// water at or below the high water.
 ///
-/// When a line's arrival puts the view over the high water, the view makes
-/// closings until it costs at most the low water or no closing is
-/// admissible (design §6.5). Between two such merges, an arrival adds one
-/// part at the end of the view and changes no other part.
+/// An arrival that puts the view over the high water makes closings until the
+/// view costs at most the low water or no closing is admissible (design §6.5).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Waters {
     high: u64,

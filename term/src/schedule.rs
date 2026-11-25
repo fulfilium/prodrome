@@ -1,8 +1,5 @@
-//! A behaviour that is piecewise constant (design §6.2, time).
-//!
-//! A [`Schedule<A>`] means a function of time, `Instant → A`: its value at
-//! `t` is the value of the last knot at or before `t`, or the head before the
-//! first knot. `tests/all/schedule.rs` checks each of these laws against
+//! A piecewise constant function of time, `Instant → A` (design §6.2).
+//! `tests/all/schedule.rs` checks each of these laws against
 //! [`Schedule::at`]:
 //!
 //! - `map f s` at `t` is `f` of `s` at `t` (a functor);
@@ -29,7 +26,7 @@ use thiserror::Error;
 use crate::fpl::{Delta, Instant};
 
 /// A step function of time: `head` until the first knot, then each knot's
-/// value from its instant until the next. Knots strictly increase.
+/// value from its instant until the next.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schedule<A> {
     head: A,
@@ -54,7 +51,7 @@ impl<A> Schedule<A> {
         }
     }
 
-    /// `head` until the first of `knots`, each knot's value from its instant.
+    /// A schedule of `head` and `knots`.
     ///
     /// # Errors
     ///

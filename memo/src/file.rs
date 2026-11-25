@@ -1,17 +1,11 @@
 //! A holder whose pairs are in one file (design §6.2; SPEC §6, "A cache
 //! file").
 //!
-//! The file is a header and then a run of records, each record one pair
-//! with the SHA-256 of its own bytes. A holder keeps an index in memory
-//! from each key to where its records lie, and checks a record each time it
-//! reads one. So a record that a stop cut short, that the disk damaged, or
-//! that another program wrote in another form is not a value: its key
-//! misses (law 52).
-//!
-//! A dead record keeps its mark and its length, and has zeros for the rest:
-//! its names, its value and its check. A dead record frames as a record of
-//! that length, so every holder agrees where the records of a file end, and
-//! no byte of its value is left.
+//! The holder checks the SHA-256 of a record each time it reads one. A
+//! record that a stop cut short, that the disk damaged, or that another
+//! program wrote in another form misses (law 52). A dead record frames as a
+//! record of its own length, so every holder agrees where the records end,
+//! and no byte of its value is left.
 //!
 //! The order of writes. A holder puts each new record in a buffer in memory.
 //! It writes the buffer when the buffer is full, at [`Holder::settle`], and
@@ -22,35 +16,28 @@
 //! at the end, kills every record of each key that it removed, and appends
 //! the buffer in one write. A stop before the append leaves the file as it
 //! was, with some removed records dead. A stop during the append leaves
-//! whole records and one record cut short at the end, which is no entry. A
-//! record that the disk did not keep, or kept in part, is no entry. So a
-//! stop at any point leaves a file that holds a subset of the pairs that
+//! whole records and one record cut short at the end, which is no entry. So
+//! a stop at any point leaves a file that holds a subset of the pairs that
 //! were written (law 54).
 //!
-//! Two processes that write one file each take the lock for each write. A
-//! holder reads a record without a lock and checks it instead. When a
+//! A holder reads a record without a lock and checks it instead. When a
 //! record that its index names does not check, the holder reads the file
 //! again under a shared lock. A removal kills every record of the key that
 //! the file holds when the holder writes, a copy that another holder wrote
 //! included (law 57).
 //!
 //! The bound. When the dead bytes are more than the live bytes and more
-//! than [`SLACK`], the holder compacts the file in place. Under the
-//! exclusive lock it raises the generation in the header, writes the live
-//! records that check one after the other from the header, truncates the
-//! rest, and syncs. So a file is at most twice its live records, the slack
+//! than [`SLACK`], the holder compacts the file in place under the
+//! exclusive lock. So a file is at most twice its live records, the slack
 //! and one buffer long, and a policy that bounds the keys bounds the file
-//! (law 58). Another process sees the new generation and reads the file
-//! again. The file keeps its inode, so every process that holds it open
+//! (law 58). The file keeps its inode, so every process that holds it open
 //! reads the compacted file. A stop during a compaction can lose a live
-//! record: a record that moves toward the header by less than its own
-//! length is overwritten by the start of its own new copy. What is left is
-//! still a subset of what was written.
+//! record, because a record that moves toward the header by less than its
+//! own length is overwritten by the start of its own new copy. What is left
+//! is still a subset of what was written.
 //!
-//! A holder reads the whole file into memory to read it again, and a
-//! compaction holds the old file and the new one at once. So a holder needs
-//! memory of at most twice the file's length, and an index of about 100
-//! bytes for each key.
+//! A holder needs memory of at most twice the file's length, and an index of
+//! about 100 bytes for each key.
 //!
 //! A forget ([`Holder::forget`]) kills every record of each doomed key, no
 //! further than the next mark where a length was never checked, syncs, and

@@ -242,6 +242,46 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **Every public item of the thirteen crates is reviewed, and 15 lose
+  `pub` (issue #92, section 14 of `docs/design-core-face.md`).** The note
+  lists each item with its reason. The library is below 1.0, so these
+  narrowings are in one release, with no deprecation release. No
+  behaviour, stored byte, canonical print, conformance vector or law
+  changes. These items are narrowed, by crate:
+  - `prodrome-data`: `BitSet::open`; `Change::to_value` and
+    `Change::from_call`; `Genesis::to_value` and `Genesis::from_call`;
+    `Snapshot::to_value` and `Snapshot::from_call`; `Signed::from_call`;
+    `KeyAdded::to_value` and `KeyAdded::from_call`; `KeyRevoked::to_value`
+    and `KeyRevoked::from_call`; `literal::codec::required`, which
+    `payload::required` calls and which stays public;
+  - `prodrome-dag`: `registers::Folded::push`;
+  - `prodrome-fpl`: `breaks::SAMPLES`.
+
+  Ten items of `prodrome_data::literal::codec` that the derive of
+  `Literal` calls are now `#[doc(hidden)]`: `read`, `read_or_default`,
+  `call_of`, `headed_len`, `headed_names`, `headed_table`, `names_field`,
+  `distinct`, `Site` and `Reader`. They stay public, because the derive's
+  output names them, and they carry no promise. Every `#[doc(hidden)]` item
+  of the library now starts its doc with "For this library's own code; no
+  promise.", and the note lists all of them. The root doc of
+  `prodrome-core` says which crate to depend on for each kind of program,
+  with the size of each set in tokens, and `README.md` and
+  `docs/guide.md` point at the crates. `scripts/outside.py` lists who names
+  each public item. The docs of the ten longest items of each crate, and
+  of each item that changed, are shorter.
+
+  **Migration.** A program that names none of the items above, on the
+  facade or on a crate, changes nothing. A program that names one changes
+  as follows. Read and print an object through `Envelope`
+  (`Envelope::from_value`, `Envelope::to_value`) in place of the
+  conversions of `Change`, `Genesis`, `Snapshot`, `Signed`, `KeyAdded` and
+  `KeyRevoked`. Fold nodes with `Folded::insert` or `registers::extend` in
+  place of `Folded::push`. Copy the constant 96 in place of
+  `breaks::SAMPLES`, and call `payload::required` in place of
+  `codec::required`. A hand-written codec that called a hidden helper of
+  the derive keeps compiling, and reads fields with `Fields::of` and
+  `Fields::get`.
+
 - **`digest::view` takes two waters and the cost of a line (issue #104,
   SPEC laws 88 to 91).** The signature is
   `view(tree, line, summarized, waters)`. `line(node)` gives what a line

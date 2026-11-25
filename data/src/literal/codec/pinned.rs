@@ -7,8 +7,7 @@
 use super::Constructor;
 
 /// Checks that `constructors` spell `pinned`: one `Name(field, …)` on each
-/// line, in order, with `Name()` for no field; outer spaces and empty lines
-/// do not count.
+/// line, `Name()` for no field; outer spaces and empty lines do not count.
 ///
 /// ```
 /// use prodrome_data::literal::codec::assert_pinned;

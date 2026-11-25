@@ -78,10 +78,9 @@ pub enum TermF<A> {
     /// The fulfillment of the entity `entity`, a free variable that
     /// `fpl::link` binds (SPEC §7.2).
     ///
-    /// With `store` set to `None`, it names an entity of the term's own
-    /// prodrome and prints as `Ref(todo)`. Otherwise it names an entity of
-    /// the prodrome that `store` names in the set that the host passes, and it
-    /// prints as `RefIn(store, entity)`.
+    /// `store` is `None` for an entity of the term's own prodrome, which
+    /// prints as `Ref(todo)`. Otherwise it names the prodrome in the set that
+    /// the host passes, and the term prints as `RefIn(store, entity)`.
     Ref {
         store: Option<String>,
         entity: String,
@@ -100,10 +99,8 @@ pub struct CurvePoint {
 
 impl<A> TermF<A> {
     /// The layer with `f` applied to every child in declaration order; it
-    /// stops at the first error.
-    ///
-    /// It takes the children by reference, so that `map`, `as_ref` and
-    /// `children` derive from it. It clones the layer's own fields.
+    /// stops at the first error. It takes the children by reference, so that
+    /// `map`, `as_ref` and `children` derive from it.
     pub fn traverse<'a, B, E>(
         &'a self,
         mut f: impl FnMut(&'a A) -> Result<B, E>,

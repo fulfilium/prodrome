@@ -1,7 +1,5 @@
-//! FPL's one evaluator (SPEC §7): closed terms, evaluation, explanation
-//! and linking. The terms, their smart constructors, their print and parse
-//! and the environment that a term reads are in the module that this
-//! module re-exports.
+//! FPL's one evaluator (SPEC §7). The terms and their constructors are in
+//! the module that this module re-exports.
 //!
 //! The code is a port of the reference `fpl.py`, checked against
 //! `conformance/fpl.py`. The port keeps the reference's order of arithmetic,
@@ -704,10 +702,8 @@ pub fn link(term: &Term, specs: &BTreeMap<String, Term>) -> Result<Closed, LinkE
 }
 
 /// [`link`], with `stores` as the set that the qualified references read
-/// (SPEC §7.2, "A qualified reference.").
-///
-/// A store that the set does not hold, or an entity that its member does
-/// not hold, reads `∅`.
+/// (SPEC §7.2, "A qualified reference."). A store or an entity that the set
+/// does not hold reads `∅`.
 ///
 /// # Errors
 ///

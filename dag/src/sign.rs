@@ -119,10 +119,8 @@ pub enum Proved {
 /// and the actors that have a registered key, each in its prodrome (SPEC
 /// §5, "Proof: who wrote an object, read from the history").
 ///
-/// Law 42: the proof depends only on the object set, never on the order in
-/// which the objects arrived. Law 77: no signature proves a husk, and no
-/// object from a party other than its keeper is proven or vouched for
-/// unless the receiver hashed its bytes to its name.
+/// Law 42: the proof depends only on the object set, not on the order of
+/// arrival. Law 77: no signature proves a husk.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Proof {
     // Two sets of names and no third: an object in neither is unsigned.

@@ -222,12 +222,11 @@ pub fn member<E: History + Bind>(
     })
 }
 
-/// The prodromes of a replica as a set (design §6.3.1, SPEC §7.2): one
-/// [`member`] for each prodrome that a `Genesis` begins, keyed by its genesis.
+/// The prodromes of a replica as a set (SPEC §7.2): one [`member`] for each
+/// prodrome that a `Genesis` begins, keyed by its genesis.
 ///
-/// The function reads each member from its own prodrome alone, so the
-/// objects of one member never move the reading of another (law 23, SPEC
-/// §3). The legacy prodrome, which no `Genesis` begins, is not a member.
+/// Each member reads from its own prodrome alone (law 23). The legacy
+/// prodrome, which no `Genesis` begins, is not a member.
 ///
 /// # Errors
 ///

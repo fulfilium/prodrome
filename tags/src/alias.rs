@@ -1,8 +1,8 @@
 //! The alias schema: `Aliased` makes a tag a name of another tag, and
 //! `Unaliased` makes it a name of its own again. Each writes the tag's one
 //! register, under the discrete order, so two different aliases written
-//! concurrently for one tag are a conflict, which the reading shows and the
-//! next rename settles.
+//! concurrently for one tag conflict. The reading shows the conflict and
+//! the next rename settles it.
 
 use crate::{Names, Tagging};
 use prodrome_data::event::Actor;
@@ -52,9 +52,8 @@ pub fn aliased<S: Tagging>(
 ///
 /// # Errors
 ///
-/// None, because the schema refuses only an alias of itself. The result has
-/// the type of [`Event::new`], which checks every event with
-/// [`Body::admits`].
+/// None: the schema refuses only an alias of itself. The `Result` is the
+/// type of [`Event::new`], which checks every event with [`Body::admits`].
 pub fn unaliased<S: Tagging>(
     tag: S::Tag,
     at: Datetime,

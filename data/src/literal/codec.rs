@@ -160,7 +160,7 @@ where
 }
 
 /// Implements [`Literal`] for each type whose literal is its text, printed
-/// by the given function and read by [`text()`]:
+/// by the given function and read by [`text()`].
 ///
 /// ```
 /// struct Tag(String);

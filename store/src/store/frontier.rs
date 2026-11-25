@@ -177,8 +177,8 @@ impl Frontiers {
     ///
     /// The recorded tips are checked against the token, so that a torn or
     /// misplaced record cannot widen what a token reaches, and against
-    /// `dag`, because a store can go back to an earlier state that holds
-    /// less, for example when it is restored from a copy.
+    /// `dag`, because a store restored from a copy can hold less than the
+    /// record names.
     ///
     /// # Errors
     ///

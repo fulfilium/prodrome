@@ -17,14 +17,15 @@ use prodrome_data::husk::{HuskObject, Husking};
 use prodrome_data::literal::ProdromeError;
 use prodrome_data::schema::Schema;
 
-/// The store of record under its lock, which [`EventStore::decide`] returns.
+/// The store of record under its lock, which [`EventStore::decide`] returns
+/// (SPEC §3, "A decision is the store of record's").
 ///
-/// While it lives, no writer of the store, in this process or another,
-/// finishes a write. An object that it appends is on disk, synced, when the
-/// append returns, so a host that appends the record of its decision before
-/// it performs the effect leaves, at a crash, either no record and no
-/// effect, or a record that a later decision reads. Dropping it writes the
-/// record of heads, once for the whole hold, and then lets the lock go.
+/// While it lives, no other writer, in this process or another, finishes a
+/// write. An appended object is synced to disk when `append` returns. A
+/// host that appends the record of its decision before it performs the
+/// effect therefore leaves, at a crash, either no record and no effect, or a
+/// record that a later decision reads. Dropping it writes the record of
+/// heads once, and then releases the lock.
 ///
 /// ```
 /// # use prodrome::event::{mk_completed, TodoEvent, TodoId};
@@ -134,10 +135,10 @@ impl<E: Schema, Pol: Policy<E>> Decision<'_, E, Pol> {
         Ok(name)
     }
 
-    /// Decide each event as [`Decision::append`] does, over the changes
-    /// decided before it, and answer each event's name: the change written,
-    /// or the twin that stands for it. Law 76: the run writes the objects
-    /// that one append after another writes.
+    /// Append each event as [`Decision::append`] does, over the changes
+    /// decided before it, and answer each event's name: the change written, or
+    /// the twin that stands for it. Law 76: the run writes the objects that one
+    /// append after another writes.
     ///
     /// # Errors
     ///

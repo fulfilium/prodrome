@@ -6,8 +6,7 @@
 //! A read hashes the stored bytes against the file name before it parses
 //! them, and never reprints and rehashes, so that a change of the printer
 //! cannot make an old object invalid. A handle verifies each object once,
-//! and reads it again only when its file no longer looks as it did. Every
-//! write is durable (SPEC §3, "A write is durable").
+//! and reads it again only when its file changes.
 
 mod decision;
 mod doors;
@@ -154,12 +153,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     }
 
     /// Take the store's lock, and then bring the memory level with
-    /// `objects/` (SPEC §3, "A decision is the store of record's"); only on
-    /// unix, because no other target has a store or a lock.
+    /// `objects/` (SPEC §3, "A decision is the store of record's"). Only on
+    /// unix, because no other target has a lock.
     ///
-    /// A decision refuses while any file is unread, because an unread file
-    /// may be a head or the write that settled its question (SPEC §3, "A read
-    /// is total; a write is not").
+    /// It refuses while any file is unread, because an unread file may be a
+    /// head or the write that settled the question (SPEC §3, "A read is
+    /// total; a write is not").
     ///
     /// # Errors
     ///
@@ -326,13 +325,12 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// from the record `root/.heads` and one `stat` for each recorded tip,
     /// without a listing of `objects/` (SPEC §3, "The record of heads").
     ///
-    /// Law 61: no stop of a write of the store leaves a served record that
-    /// is not the derived heads. After a change by another door, the record
-    /// can be older than the objects until the next hold of the lock that
-    /// lists `objects/`: every hold of a store opened as shared, and
-    /// [`EventStore::record_heads`] or `fsck` in any store (law 62). Where
-    /// the record is not served (SPEC §3, "The record of heads"), each call
-    /// lists `objects/` until the next hold of the lock.
+    /// Law 61: no stop of a write leaves a served record that is not the
+    /// derived heads. After a change by another door, the record can be older
+    /// than the objects until a hold of the lock lists `objects/`: every hold
+    /// of a shared store, and [`EventStore::record_heads`] or `fsck` in any
+    /// store (law 62). Where the record is not served, each call lists
+    /// `objects/`.
     ///
     /// # Errors
     ///
@@ -856,12 +854,10 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// Check the whole store, with no lock, and change nothing (SPEC §3,
     /// "`verify`"); an empty result means that the store is healthy.
     ///
-    /// It rehashes every file, whatever the memory holds, and asks the
-    /// store's policy at what it read ([`Policy::at`]). It reads the record
-    /// before and after its look and reports it stale only when both reads
-    /// found the same record, because it holds no lock and a write between
-    /// the reads would make the finding false (SPEC §3, "The record of
-    /// heads").
+    /// It rehashes every file, whatever the memory holds. It reports the
+    /// record stale only when the reads before and after its look found the
+    /// same record, because it holds no lock and a write between the reads
+    /// would make the finding false (SPEC §3, "The record of heads").
     pub fn verify(&self) -> Vec<Finding> {
         let (recorded, looked) = record::bracketed(&self.root, || {
             self.listing()

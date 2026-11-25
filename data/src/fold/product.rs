@@ -44,32 +44,28 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     fn reading(&self, register: <Self::Schema as Schema>::Register)
         -> Vec<&'a Stamp<Self::Schema>>;
 
-    /// The refusal of an append: where `event` writes an inflationary
-    /// register, its value must stand at or above the reading of that register
-    /// (law 70). A schema may refuse more than its order does (SPEC §3).
+    /// Refuses an append whose value in an inflationary register stands below
+    /// the reading of that register (law 70; SPEC §3).
     ///
     /// The refusal must read only the readings of inflationary registers,
-    /// because `verify` joins only the writes to those registers. A schema
-    /// with no inflationary register answers `Ok`.
+    /// because `verify` joins only the writes to those registers.
     ///
     /// # Errors
     ///
-    /// Returns an error where the value of a write falls below the reading
-    /// that it supersedes, is incomparable with it, or does not stand on it,
-    /// the empty reading included.
+    /// The value falls below the reading, is incomparable with it, or does not
+    /// stand on it, the empty reading included.
     fn grows(&self, event: &Self::Schema) -> Result<(), ProdromeError>;
 
-    /// Law 32 between two readings of one entity: in every inflationary
-    /// register, each value that `earlier` reads stands at or below a value
-    /// that `self` reads. A schema with no inflationary register answers `Ok`.
+    /// Law 32: in every inflationary register, each value that `earlier`
+    /// reads stands at or below a value that `self` reads.
     ///
-    /// Where the objects of `earlier` are a subset of those of `self` and both
-    /// are read under the policy where everything binds, the check passes for
-    /// any objects, because the reading of a union is the join of the readings.
+    /// The check passes where the objects of `earlier` are a subset of those of
+    /// `self` and both are read under the policy where everything binds,
+    /// because the reading of a union is the join of the readings.
     ///
     /// # Errors
     ///
-    /// Returns an error that names the first register whose reading fell.
+    /// The error names the first register whose reading fell.
     fn climbed(&self, earlier: &Self) -> Result<(), ProdromeError>;
 
     /// The inflationary registers, which the append holds to

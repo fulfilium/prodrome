@@ -16,10 +16,9 @@ use prodrome_data::schema::Schema;
 /// at its entity's key, and the nest that each of its pointers holds, at
 /// the pointer's path.
 ///
-/// A pointer's history is everything that any write to it in this level's
-/// history named, so [`Nest::flatten`] is a function of the object sets
-/// alone. The pointer's current value is its register's reading
-/// ([`super::pointer`]).
+/// A pointer's history is everything that any write to it named, so
+/// [`Nest::flatten`] depends on the object sets alone. The pointer's
+/// current value is its register's reading ([`super::pointer`]).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Nest {
     name: Hash,
@@ -39,9 +38,8 @@ pub trait Level {
     /// # Errors
     ///
     /// A head, or a parent of an object of the history, that this level
-    /// does not hold: an object rests only on objects of its own level, so
-    /// a name that the level lacks is missing. A key that is not a path
-    /// segment.
+    /// does not hold (an object rests only on objects of its own level). A
+    /// key that is not a path segment.
     fn nest(&self, heads: &BTreeSet<Hash>) -> Result<Nest, ProdromeError>;
 }
 
@@ -118,12 +116,11 @@ impl<E: Nests> Level for Holding<'_, E> {
 }
 
 /// A set of prodromes: a level whose nest holds each prodrome of a replica,
-/// as its member level reads it, at its genesis (design §6.3.1, law 41).
+/// as its member level reads it, at its genesis (law 41).
 ///
 /// The set has no objects of its own, so [`Nest::flatten`] puts each
-/// member's objects at `genesis/key`. No edge crosses geneses (SPEC §3), so
-/// no member's nest reaches another's objects. A genesis is a global name,
-/// so two sets join by union, and a prodrome in both is one member.
+/// member's objects at `genesis/key`. No edge crosses geneses (SPEC §3).
+/// Two sets join by union, and a prodrome in both is one member.
 pub struct Set<'l, E: Schema> {
     dag: Arc<Dag<E>>,
     member: &'l dyn Level,
@@ -308,10 +305,10 @@ impl Nest {
 
     /// Everything that happened before the object `name`, wherever it sits
     /// in the nest, or `None` where it is not in the nest. The past holds
-    /// the object's ancestors in its own level and, through every pointer
-    /// among the object and those ancestors, the inner history that the
-    /// pointer named. Causality crosses a level only where a write names the
-    /// inner heads that it saw, because an inner object's deps are inner.
+    /// the object's ancestors in its own level and the inner history that
+    /// each pointer among them named. Causality crosses a level only where
+    /// a write names the inner heads that it saw, because an inner object's
+    /// deps are inner.
     #[must_use]
     pub fn past(&self, name: &Hash) -> Option<BTreeSet<Hash>> {
         let Some(parents) = self.parents.get(name) else {
@@ -325,7 +322,7 @@ impl Nest {
     }
 }
 
-/// A NEST IS A TREE OF CONTENT-ADDRESSED HISTORIES, so the memoised fold
+/// A nest is a tree of content-addressed histories, so the memoised fold
 /// (design §6.2) folds it with no further mechanism: a node is one level's
 /// history, its children the nests its pointers hold in path order, and its
 /// name covers both. A write deep in the nest, once the pointers above it

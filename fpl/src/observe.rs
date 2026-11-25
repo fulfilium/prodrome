@@ -31,9 +31,8 @@ pub enum Rounding {
 ///
 /// `observe` is monotone on numbers, reads `0` as step 0 and `1` as step
 /// `levels`, and reads only `∅` as `∅` (`tests/all/observe.rs`).
-/// [`next_change`] depends on the monotonicity: bisection finds a step only
-/// because a monotone map of an interval is one step exactly when its two ends
-/// are.
+/// [`next_change`] depends on the monotonicity: a monotone map of an interval
+/// is one step exactly when its two ends are.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Observation {
     levels: NonZeroU32,
@@ -104,11 +103,10 @@ impl Observation {
 /// When a behaviour's observed value next changes after an instant (law 38:
 /// a next change is never late).
 ///
-/// `at` is `None` where the observed value never changes again. Where `exact`
-/// is `true`, `at` is the next step, or `None` as a proof that no step comes.
-/// Where `exact` is `false`, `at` is a bound that is never later than the next
-/// step and can be earlier. An early answer costs a redraw that changes
-/// nothing, and a late one would show a stale number, so no answer is late.
+/// Where `exact` is `true`, `at` is the next step, or `None` as a proof that
+/// no step comes. Where `exact` is `false`, `at` is a bound that is never
+/// later than the next step and can be earlier. An early answer costs a redraw
+/// that changes nothing, and a late one would show a stale number.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NextChange {
     pub at: Option<Instant>,
@@ -119,19 +117,14 @@ pub struct NextChange {
 /// differs from its observation at `now` (SPEC §7, "Next change"; law 38).
 /// Time is in microseconds, the grain of the evaluator.
 ///
-/// `env` is a snapshot, read as [`crate::fpl::fulfillment`] reads it: a
-/// binding or a tending dated after `now` comes into force at its instant.
-/// History that is not yet in `env` is a new input and not a change in time.
+/// `env` is a snapshot. History that is not yet in `env` is a new input and
+/// not a change in time.
 ///
-/// On the exact fragment the answer is [`Schedule::next_change`] of the
-/// [`observed`] schedule. The bisection runs against the evaluator itself,
-/// so the answer agrees with [`crate::fpl::fulfillment`] bit for bit.
-///
-/// Elsewhere the answer is the first instant at which an enclosure of the
-/// term over `[now, t]` stops being one observed value. The answer is early
-/// where the enclosure is loose, for example where members move in opposite
-/// directions. The search looks 2⁵⁵ µs (about a thousand years) ahead, and
-/// answers that horizon if nothing ends sooner, which is early and not late.
+/// On the exact fragment the bisection runs against the evaluator itself, so
+/// the answer agrees with [`crate::fpl::fulfillment`] bit for bit. Elsewhere
+/// the answer is early where the enclosure is loose, for example where members
+/// move in opposite directions. The search looks 2⁵⁵ µs (about a thousand
+/// years) ahead, and answers that horizon if nothing ends sooner.
 ///
 /// The enclosure applies the evaluator's own float operations to bounds, so
 /// it is sound only where those operations are monotone. `+`, `·`, `/`, `min`
@@ -157,12 +150,12 @@ pub fn next_change(term: &Closed, now: Instant, env: &Env, observation: Observat
 }
 
 /// The observed value of `term` from `from` on, as a step function:
-/// `observation ∘ ⟦term⟧(·, env)` on `[from, ∞)`, with its head the value at
-/// `from` and a knot at every later microsecond where the value changes.
+/// `observation ∘ ⟦term⟧(·, env)` on `[from, ∞)`, with a knot at every later
+/// microsecond where the value changes.
 ///
-/// `None` off the exact fragment, where only the conservative bound of
-/// [`next_change`] is known. The function reads each breakpoint on its own,
-/// because a jump or a crossing lands on it.
+/// `None` off the exact fragment, where only the bound of [`next_change`] is
+/// known. The function reads each breakpoint on its own, because a jump or a
+/// crossing lands on it.
 #[must_use]
 pub fn observed(
     term: &Closed,

@@ -224,7 +224,7 @@ fn lowered(candidates: &Candidates) -> String {
 /// An entity whose events are all dated after `t` is still a row. The value
 /// links against the functions of the entity's prodrome under the confirmed
 /// environment. A qualified reference links through the set of the DAG's
-/// prodromes that a `Genesis` begins (design §6.3.1).
+/// prodromes that a `Genesis` begins.
 ///
 /// # Errors
 ///

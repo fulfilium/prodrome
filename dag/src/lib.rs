@@ -3,21 +3,13 @@
 //! decide which events bind, and the proof of signatures (SPEC §3, §5, §6).
 //! It has no files and no evaluator.
 //!
-//! - Hold: collect `(Hash, Envelope)` pairs into a [`dag::Dag`], or read
-//!   named prints with [`dag::Dag::from_prints`] and the vocabulary of the
-//!   schema.
-//! - Fold: [`dag::Dag::nodes`] gives each object's place, and
-//!   [`registers::fold`] gives a [`registers::Folded`], whose `prodromes()`
-//!   hold each entity's stream of `Stamp`s.
+//! - Hold: [`dag::Dag`] collects `(Hash, Envelope)` pairs.
+//! - Fold: [`registers::fold`] gives a [`registers::Folded`] over
+//!   [`dag::Dag::nodes`].
 //! - Read: [`fold::read`] gives an entity's registers at an instant under a
-//!   [`policy::Policy`], such as `Untrusted` or `Everything`, which are
-//!   defined in `prodrome-data` and re-exported in [`policy`].
-//! - Prove and check: [`sign::Secret`] signs, [`sign::Proof`] reads which
-//!   objects a registered key signed, [`policy::Proven`] binds only those,
-//!   and [`dag::Dag::verify`] lists what is wrong with a history.
-//!
-//! `prodrome-core` re-exports each module at the same path under
-//! `prodrome::`.
+//!   [`policy::Policy`].
+//! - Prove and check: [`sign::Proof`] reads which objects a registered key
+//!   signed, and [`dag::Dag::verify`] lists what is wrong with a history.
 
 pub mod dag;
 pub mod fold;
