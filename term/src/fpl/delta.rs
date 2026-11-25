@@ -2,8 +2,6 @@
 
 use chrono::Duration;
 
-use prodrome_data::instant::Instant;
-
 /// A signed span, printed as `timedelta(...)` (SPEC §2).
 pub type Delta = Duration;
 
@@ -13,14 +11,6 @@ pub type Delta = Duration;
 pub fn us_of(d: Delta) -> i64 {
     d.num_microseconds()
         .expect("timedelta out of microsecond range")
-}
-
-/// For the evaluator; no promise. `now` moved by `us` microseconds.
-#[doc(hidden)]
-#[inline]
-pub fn after(now: Instant, us: i64) -> Instant {
-    now.checked_add_signed(Duration::microseconds(us))
-        .expect("datetime overflow")
 }
 
 /// Python's `_divide_and_round`: floor division with a round-half-to-even fix-up.
@@ -45,14 +35,6 @@ fn divide_and_round(a: i64, b: i64) -> i64 {
 #[inline]
 pub fn div_delta(d: Delta, n: i64) -> Delta {
     Duration::microseconds(divide_and_round(us_of(d), n))
-}
-
-/// For the evaluator; no promise. `timedelta / timedelta`, the float ratio
-/// that CPython computes from microseconds.
-#[doc(hidden)]
-#[inline]
-pub fn ratio(a: Delta, b: Delta) -> f64 {
-    us_of(a) as f64 / us_of(b) as f64
 }
 
 /// `timedelta.total_seconds()`: exact microseconds over 1e6.

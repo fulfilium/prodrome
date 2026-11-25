@@ -15,7 +15,7 @@ pub use construct::{
     mk_importance, mk_least, mk_offset, mk_offset_by, mk_periodic, mk_piecewise, mk_recur, mk_ref,
     mk_ref_in, mk_shift, mk_within, piecewise,
 };
-pub use delta::{after, delta_from_hours, div_delta, hours, ratio, total_seconds, us_of, Delta};
+pub use delta::{delta_from_hours, div_delta, hours, total_seconds, us_of, Delta};
 pub use env::{Candidates, Env, Outcome};
 pub use printed::{parse_term, print_term};
 pub use prodrome_data::instant::{datetime_of, instant_of, iso, parse_iso, FplError, Instant};

@@ -19,6 +19,10 @@ use prodrome_term::schedule::Schedule;
 use prodrome_term::term::schema::{self, Fields, Slot};
 use prodrome_term::term::{normalize, CurvePoint, Term, TermF};
 
+use span::{after, ratio};
+
+mod span;
+
 /// The number of intervals of a `Within` window, which `Within` samples at 65
 /// evenly spaced points (SPEC §7).
 pub const WITHIN_SAMPLES: i64 = 64;
