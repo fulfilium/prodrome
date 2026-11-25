@@ -20,7 +20,7 @@ static VOCABULARY: Table = Table(&[
 
 /// One of each of §3's Genesis, Change and Snapshot, ASCII so any byte offset is a cut.
 const OBJECTS: [&str; 3] = [
-    "Genesis(label='suzatary', nonce='9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c')",
+    "Genesis(label='home', nonce='9f2c9f2c9f2c9f2c9f2c9f2c9f2c9f2c')",
     "Change(genesis='0000000000000000000000000000000000000000000000000000000000000000', \
      deps=('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',), \
      event=Completed(todo='a', at=datetime(2026, 9, 1, 0, 0, 0), actor='bassel', note=''))",
