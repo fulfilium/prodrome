@@ -66,4 +66,5 @@ mod signatures;
 mod store_laws;
 mod tags;
 mod tips;
+mod total;
 mod verify_findings;

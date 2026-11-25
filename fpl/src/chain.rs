@@ -319,10 +319,13 @@ fn slid(slip: Delta, body: Term) -> Term {
     }
 }
 
-/// `Shift`, where the argument is one the compiler computed. `mk_shift` refuses
-/// nothing, so the `expect` is a proof and not a hope.
+/// `Shift`, where the argument is one the compiler computed: the difference of
+/// an instant of the environment, which is on the time axis, and the anchor of
+/// a term, which is in the years 1..=9999. That is under 273,000 years, and
+/// `mk_shift` refuses only a span of more than 292,000 years, so the `expect`
+/// is a proof and not a hope.
 fn mk_shift(delta: Delta, term: Term) -> Term {
-    fpl::mk_shift(delta, term).expect("Shift admits every span")
+    fpl::mk_shift(delta, term).expect("an axis instant minus a printable instant is under 292,000 years")
 }
 
 /// The MOOT CONSTANT as the graded offset it is: `offset(x, 1) = x·0 + 1 = 1`

@@ -19,7 +19,7 @@ use prodrome_term::schedule::Schedule;
 use prodrome_term::term::schema::{self, Fields, Slot};
 use prodrome_term::term::{normalize, CurvePoint, Term, TermF};
 
-use span::{after, ratio};
+use span::{ratio, within_instants};
 
 mod span;
 
@@ -48,6 +48,9 @@ impl Closed {
         self.0
     }
 
+    /// The term in normal form (SPEC §7), for evaluation and analysis. A shift
+    /// can move a knot outside the years that the grammar prints, and then
+    /// [`print_term`] cannot print the form.
     pub fn normalize(&self) -> Closed {
         Closed(normalize(&self.0))
     }
@@ -108,7 +111,7 @@ fn eval_decay(
             return 1.0;
         }
     }
-    let window_start = end_date - lead_up;
+    let window_start = retreat(end_date, lead_up);
     if window_start > now {
         return 0.98;
     }
@@ -159,7 +162,10 @@ pub fn last_tended(env: &Env, todo: &str, now: Instant) -> Option<Instant> {
 /// The instant at which a `Periodic` reads its body: `now` folded into
 /// `[anchor, anchor + period)` by a Euclidean remainder, also before `anchor`.
 pub fn phase(period: Delta, anchor: Instant, now: Instant) -> Instant {
-    after(anchor, us_of(now - anchor).rem_euclid(us_of(period)))
+    advance(
+        anchor,
+        delta_of_us(us_of(now - anchor).rem_euclid(us_of(period))),
+    )
 }
 
 /// A conjunction's reading: the power mean over the members that have a
@@ -212,11 +218,10 @@ pub(crate) fn eval(term: &Term, now: Instant, env: &Env) -> Option<f64> {
             let body = eval(body, now, env)?;
             Some(eval(gate, now, env).map_or(body, |gate| (1.0 - gate).max(body)))
         }
-        TermF::Shift { delta, term } => eval(term, after(now, us_of(*delta)), env),
+        TermF::Shift { delta, term } => eval(term, advance(now, *delta), env),
         TermF::Within { window, p, term } => {
-            let step = us_of(div_delta(*window, WITHIN_SAMPLES));
-            let vs: Vec<Option<f64>> = (0..=WITHIN_SAMPLES)
-                .map(|i| eval(term, after(now, step * i), env))
+            let vs: Vec<Option<f64>> = within_instants(now, *window)
+                .map(|at| eval(term, at, env))
                 .collect();
             conj(&vs, *p)
         }
@@ -232,9 +237,7 @@ pub(crate) fn eval(term: &Term, now: Instant, env: &Env) -> Option<f64> {
                 None => eval(pending, now, env),
                 // The body slides by the slippage: authored against `anchor`,
                 // re-anchored to the actual completion.
-                Some(Outcome::Completed(done)) => {
-                    eval(term, after(now, -us_of(done - *anchor)), env)
-                }
+                Some(Outcome::Completed(done)) => eval(term, retreat(now, done - *anchor), env),
                 // Moot AS PRICING — reporting must surface it (§7, After).
                 Some(Outcome::Cancelled(_)) => Some(1.0),
             })
@@ -248,7 +251,7 @@ pub(crate) fn eval(term: &Term, now: Instant, env: &Env) -> Option<f64> {
         } => match last_tended(env, todo, now) {
             None => eval(pending, now, env),
             // After's slide, from the last pass instead of the completion.
-            Some(tended) => eval(term, after(now, -us_of(tended - *anchor)), env),
+            Some(tended) => eval(term, retreat(now, tended - *anchor), env),
         },
         TermF::Periodic {
             period,
@@ -471,13 +474,11 @@ fn explain(term: &Term, now: Instant, env: &Env) -> Explanation {
         },
         TermF::Shift { delta, term } => TermF::Shift {
             delta: *delta,
-            term: explain(term, after(now, us_of(*delta)), env),
+            term: explain(term, advance(now, *delta), env),
         },
         TermF::Within { window, p, term } => {
-            let step = us_of(div_delta(*window, WITHIN_SAMPLES));
             // The peak is over the samples that have a value, as the mean is; with none, `now`.
-            let sampled: Vec<(Instant, f64)> = (0..=WITHIN_SAMPLES)
-                .map(|i| after(now, step * i))
+            let sampled: Vec<(Instant, f64)> = within_instants(now, *window)
                 .filter_map(|t| eval(term, t, env).map(|v| (t, v)))
                 .collect();
             let vs: Vec<f64> = sampled.iter().map(|(_, v)| *v).collect();
@@ -512,9 +513,7 @@ fn explain(term: &Term, now: Instant, env: &Env) -> Explanation {
         } => {
             let reading = |binding: &Option<Outcome>| match binding {
                 None => eval(pending, now, env),
-                Some(Outcome::Completed(done)) => {
-                    eval(term, after(now, -us_of(*done - *anchor)), env)
-                }
+                Some(Outcome::Completed(done)) => eval(term, retreat(now, *done - *anchor), env),
                 Some(Outcome::Cancelled(_)) => Some(1.0),
             };
             let urgent = bound(env, event, now)
@@ -527,7 +526,7 @@ fn explain(term: &Term, now: Instant, env: &Env) -> Explanation {
             let (label, at) = match urgent {
                 None => ("pending", now),
                 // The slippage the parent applied.
-                Some(Outcome::Completed(done)) => ("completed", after(now, -us_of(done - *anchor))),
+                Some(Outcome::Completed(done)) => ("completed", retreat(now, done - *anchor)),
                 Some(Outcome::Cancelled(_)) => ("cancelled", now),
             };
             notes.insert("bound".into(), Note::One(Scalar::Text(label.to_string())));
@@ -557,7 +556,7 @@ fn explain(term: &Term, now: Instant, env: &Env) -> Explanation {
                         "agoHours".into(),
                         Note::One(Scalar::Float(hours(now - tended))),
                     );
-                    after(now, -us_of(tended - *anchor))
+                    retreat(now, tended - *anchor)
                 }
             };
             TermF::Recur {
@@ -573,10 +572,7 @@ fn explain(term: &Term, now: Instant, env: &Env) -> Explanation {
             term,
         } => {
             let at = phase(*period, *anchor, now);
-            notes.insert(
-                "cycleStart".into(),
-                iso_note(after(now, -us_of(at - *anchor))),
-            );
+            notes.insert("cycleStart".into(), iso_note(retreat(now, at - *anchor)));
             TermF::Periodic {
                 period: *period,
                 anchor: *anchor,

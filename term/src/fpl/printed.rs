@@ -18,15 +18,17 @@ fn float_value(value: f64) -> literal::Value {
 
 fn instant_value(t: Instant) -> literal::Value {
     literal::Value::Datetime(
-        datetime_of(t)
-            .expect("a Term's instants came through the grammar, whose years are 1..=9999"),
+        datetime_of(t).expect(
+            "an instant of a term of the smart constructors is in the years 1..=9999; \
+             a normal form is for evaluation and is not printed",
+        ),
     )
 }
 
 fn delta_value(d: Delta) -> literal::Value {
     literal::Value::Timedelta(
-        literal::Timedelta::from_micros(i128::from(us_of(d)))
-            .expect("a Delta of i64 microseconds is inside timedelta's range"),
+        literal::Timedelta::from_micros(us_of(d))
+            .expect("a Term's spans passed admit_span, which is inside timedelta's range"),
     )
 }
 

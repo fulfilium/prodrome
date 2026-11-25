@@ -242,6 +242,20 @@ constructor's fields never change, in any release.
 
 ### Changed
 
+- **The smart constructors refuse a span that does not fit in 64 bits of
+  microseconds and an instant outside the years 1 to 9999 (SPEC §7, "The
+  time axis").** `mk_shift`, `mk_within`, `mk_decay`, `mk_after` and
+  `mk_periodic` refuse the span, and `mk_decay`, `mk_curve`, `mk_after`,
+  `mk_recur`, `mk_periodic` and `mk_piecewise` refuse the instant. The
+  literal reader already refused both, so no stored term changes. A term
+  that these constructors refuse could not be printed. `mk_shift`
+  already returned a `Result`, so no signature changes. `us_of` returns an
+  `i128` where it returned an `i64`, and `Schedule::shift` drops a knot
+  that falls after the last instant of the axis and turns a knot before
+  the first into the head. Both are hidden or have no use outside the
+  evaluator. New hidden items: `advance`, `retreat`, `delta_of_us`.
+  New public items: `FIRST`, `LAST`, `admit_span`.
+
 - **`digest::view` takes two waters and the cost of a line (issue #104,
   SPEC laws 88 to 91).** The signature is
   `view(tree, line, summarized, waters)`. `line(node)` gives what a line
@@ -722,6 +736,20 @@ constructor's fields never change, in any release.
   token's closure is every object.
 
 ### Fixed
+
+- **The evaluator no longer stops on a time shift past the calendar
+  (SPEC §7, "The time axis"; law 92).** Evaluation panicked where it added
+  a span to an instant and the sum left the range of the calendar type. A
+  `Shift` of 100 million days did this, and so did a long `Within` window,
+  a `Periodic` period, a `Decay` lead-up, and the search of `next_change`.
+  A program that folded a store that held such a term stopped. Now every
+  instant that evaluation computes is on the time axis, and a sum that
+  would leave the axis stops at the end that it passes. A reading inside
+  the axis keeps its value, its print and its vectors. The same change
+  removes three more panics: the count of microseconds of a span of more
+  than 292,000 years, the rounding of `div_delta` for a divisor of more
+  than 2⁶², and `delta_from_hours` for an hour count of more than 2⁶³
+  microseconds.
 
 - **A list shows a todo that content records alone make (SPEC §6.7, law
   87).** A todo whose first event is an `Authored` record, with no
