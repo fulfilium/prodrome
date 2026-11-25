@@ -119,8 +119,8 @@ Changed. The bytes of an answer do not change: `lacking()` lists the same
 objects in the same order, and each record records the same tips and the
 same count.
 
-The new types go in new files: the index in `core/src/dag/index.rs`, and
-`Reach` in `core/src/dag/reach.rs`. `Frontiers` stops calling
+The new types go in new files: the index in `dag/src/dag/index.rs`, and
+`Reach` in `dag/src/dag/reach.rs`. `Frontiers` stops calling
 `Dag::closure` and `tips_among`, which stay for their other users.
 
 ## 3. The law

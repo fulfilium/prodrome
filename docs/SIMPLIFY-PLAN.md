@@ -19,7 +19,7 @@ many times.
 - `TermF`'s fields are enumerated about twelve times: `map`, `transpose`,
   `children`, `kind`, `to_value`/`from_value`, `TERM_SIGNATURES`,
   `scalar_notes`, the wasm JSON codec and `explanation_json`, `Link::scalars`,
-  and a copy of the JSON codec in Suzatary (`app/core/src/wire.rs`).
+  and a copy of the JSON codec in an application.
 - `explain` repeats `eval`'s time routing and calls `eval` at every node.
 - The literal codec helpers exist three times (`fpl`, `payload`, `event` and
   `reference`).

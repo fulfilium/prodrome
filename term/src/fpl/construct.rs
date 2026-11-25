@@ -6,9 +6,21 @@ use chrono::Duration;
 use prodrome_data::event::TodoId;
 use prodrome_data::segment::Segment;
 
-use super::{err, iso, Delta, FplError, Instant, PRIORITY_POWER};
+use super::{admit_span, datetime_of, err, iso, Delta, FplError, Instant, PRIORITY_POWER};
 use crate::schedule::Schedule;
 use crate::term::{CurvePoint, Term, TermF};
+
+/// The instant, if the grammar can print it: a year in 1..=9999 (SPEC §2).
+/// The literal reader accepts an instant only under this rule, so a term never
+/// holds an instant that it cannot print.
+fn admit_instant(name: &str, at: Instant) -> Result<Instant, FplError> {
+    datetime_of(at).map(|_| at).map_err(|_| {
+        FplError(format!(
+            "{name} must be a year in 1..=9999, got {}",
+            iso(at)
+        ))
+    })
+}
 
 fn unit(name: &str, v: f64) -> Result<f64, FplError> {
     if !(0.0..=1.0).contains(&v) {
@@ -33,6 +45,11 @@ pub fn mk_decay(
     if lead_up <= Duration::zero() {
         return err("Decay.lead_up must be positive");
     }
+    let lead_up = admit_span("Decay.lead_up", lead_up)?;
+    let end_date = admit_instant("Decay.end_date", end_date)?;
+    let start_date = start_date
+        .map(|at| admit_instant("Decay.start_date", at))
+        .transpose()?;
     if start > 0.98 {
         // The pre-window value IS 0.98; a higher start would make urgency DROP
         // on window entry, breaking slippage-monotonicity.
@@ -60,6 +77,7 @@ pub fn mk_curve(points: Vec<CurvePoint>) -> Result<Term, FplError> {
             pt.label.clone()
         };
         unit(&format!("Curve point {name}"), pt.value)?;
+        admit_instant(&format!("Curve point {name}"), pt.at)?;
     }
     for pair in points.windows(2) {
         if pair[1].at <= pair[0].at {
@@ -112,7 +130,11 @@ pub fn mk_gate(gate: Term, body: Term) -> Result<Term, FplError> {
     Ok(Term::new(TermF::Gate { gate, body }))
 }
 
+/// `term` read `delta` later. It refuses a `delta` of more than 64 bits of
+/// microseconds, which the grammar cannot print. A shift that leaves the time
+/// axis when it is read stops at the axis's end (SPEC §7, "The time axis").
 pub fn mk_shift(delta: Delta, term: Term) -> Result<Term, FplError> {
+    let delta = admit_span("Shift.delta", delta)?;
     Ok(Term::new(TermF::Shift { delta, term }))
 }
 
@@ -120,6 +142,7 @@ pub fn mk_within(window: Delta, p: f64, term: Term) -> Result<Term, FplError> {
     if window <= Duration::zero() {
         return err("Within.window must be positive");
     }
+    let window = admit_span("Within.window", window)?;
     if !(-32.0..=32.0).contains(&p) {
         return err(format!(
             "Within.p must be in [-32, 32] (overflow guard), got {p}"
@@ -156,7 +179,9 @@ pub fn mk_after(
         if n <= Duration::zero() {
             return err("After.needs must be positive");
         }
+        admit_span("After.needs", n)?;
     }
+    let anchor = admit_instant("After.anchor", anchor)?;
     Ok(Term::new(TermF::After {
         event,
         anchor,
@@ -175,6 +200,7 @@ pub fn mk_recur(
     pending: Term,
 ) -> Result<Term, FplError> {
     TodoId::new(todo.as_str()).map_err(|e| FplError(format!("Recur.todo: {e}")))?;
+    let anchor = admit_instant("Recur.anchor", anchor)?;
     Ok(Term::new(TermF::Recur {
         todo,
         anchor,
@@ -189,6 +215,8 @@ pub fn mk_periodic(period: Delta, anchor: Instant, term: Term) -> Result<Term, F
     if period <= Duration::zero() {
         return err("Periodic.period must be positive");
     }
+    let period = admit_span("Periodic.period", period)?;
+    let anchor = admit_instant("Periodic.anchor", anchor)?;
     Ok(Term::new(TermF::Periodic {
         period,
         anchor,
@@ -256,8 +284,12 @@ pub fn checklist(own: Option<Term>, items: usize) -> Result<Option<Term>, FplErr
 ///
 /// # Errors
 ///
-/// It refuses two pieces whose instants do not strictly increase.
+/// It refuses two pieces whose instants do not strictly increase, and an
+/// instant that the grammar cannot print.
 pub fn mk_piecewise(head: Term, pieces: Vec<(Instant, Term)>) -> Result<Term, FplError> {
+    for (at, _) in &pieces {
+        admit_instant("Piecewise instant", *at)?;
+    }
     Schedule::new(head, pieces)
         .map(piecewise)
         .map_err(|unordered| {
