@@ -16,7 +16,7 @@ pub type Delta = Duration;
 ///
 /// It refuses a span of more than `i64::MAX` microseconds in either
 /// direction.
-pub fn admit_span(name: &str, span: Delta) -> Result<Delta, FplError> {
+pub(crate) fn admit_span(name: &str, span: Delta) -> Result<Delta, FplError> {
     match span.num_microseconds() {
         Some(_) => Ok(span),
         None => err(format!("{name} must fit in 64 bits of microseconds")),

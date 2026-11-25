@@ -248,13 +248,13 @@ constructor's fields never change, in any release.
   `mk_periodic` refuse the span, and `mk_decay`, `mk_curve`, `mk_after`,
   `mk_recur`, `mk_periodic` and `mk_piecewise` refuse the instant. The
   literal reader already refused both, so no stored term changes. A term
-  that these constructors refuse could not be printed. `mk_shift`
-  already returned a `Result`, so no signature changes. `us_of` returns an
-  `i128` where it returned an `i64`, and `Schedule::shift` drops a knot
-  that falls after the last instant of the axis and turns a knot before
-  the first into the head. Both are hidden or have no use outside the
-  evaluator. New hidden items: `advance`, `retreat`, `delta_of_us`.
-  New public items: `FIRST`, `LAST`, `admit_span`.
+  that these constructors refuse could not be printed. The constructors
+  already returned a `Result`, so no signature changes. `us_of`, a hidden
+  function, returns an `i128` where it returned an `i64`.
+  `Schedule::shift` drops a knot that falls after the last instant of the
+  axis, and turns a knot before the first instant into the head. The new
+  public items are the constants `FIRST` and `LAST`, and the new hidden
+  items are `advance`, `retreat` and `delta_of_us`.
 
 - **`digest::view` takes two waters and the cost of a line (issue #104,
   SPEC laws 88 to 91).** The signature is

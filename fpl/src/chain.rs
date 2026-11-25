@@ -325,7 +325,8 @@ fn slid(slip: Delta, body: Term) -> Term {
 /// `mk_shift` refuses only a span of more than 292,000 years, so the `expect`
 /// is a proof and not a hope.
 fn mk_shift(delta: Delta, term: Term) -> Term {
-    fpl::mk_shift(delta, term).expect("an axis instant minus a printable instant is under 292,000 years")
+    fpl::mk_shift(delta, term)
+        .expect("an axis instant minus a printable instant is under 292,000 years")
 }
 
 /// The MOOT CONSTANT as the graded offset it is: `offset(x, 1) = x·0 + 1 = 1`

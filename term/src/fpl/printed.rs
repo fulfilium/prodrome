@@ -17,12 +17,10 @@ fn float_value(value: f64) -> literal::Value {
 }
 
 fn instant_value(t: Instant) -> literal::Value {
-    literal::Value::Datetime(
-        datetime_of(t).expect(
-            "an instant of a term of the smart constructors is in the years 1..=9999; \
+    literal::Value::Datetime(datetime_of(t).expect(
+        "an instant of a term of the smart constructors is in the years 1..=9999; \
              a normal form is for evaluation and is not printed",
-        ),
-    )
+    ))
 }
 
 fn delta_value(d: Delta) -> literal::Value {

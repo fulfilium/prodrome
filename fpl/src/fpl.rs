@@ -19,7 +19,7 @@ use prodrome_term::schedule::Schedule;
 use prodrome_term::term::schema::{self, Fields, Slot};
 use prodrome_term::term::{normalize, CurvePoint, Term, TermF};
 
-use span::{ratio, within_instants};
+use span::{ratio, rem_euclid, within_instants};
 
 mod span;
 
@@ -162,10 +162,7 @@ pub fn last_tended(env: &Env, todo: &str, now: Instant) -> Option<Instant> {
 /// The instant at which a `Periodic` reads its body: `now` folded into
 /// `[anchor, anchor + period)` by a Euclidean remainder, also before `anchor`.
 pub fn phase(period: Delta, anchor: Instant, now: Instant) -> Instant {
-    advance(
-        anchor,
-        delta_of_us(us_of(now - anchor).rem_euclid(us_of(period))),
-    )
+    advance(anchor, rem_euclid(now - anchor, period))
 }
 
 /// A conjunction's reading: the power mean over the members that have a
