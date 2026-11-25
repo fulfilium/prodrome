@@ -24,6 +24,7 @@ pub fn after(now: Instant, us: i64) -> Instant {
 }
 
 /// Python's `_divide_and_round`: floor division with a round-half-to-even fix-up.
+#[inline]
 fn divide_and_round(a: i64, b: i64) -> i64 {
     // Python's divmod floors toward −∞ for either sign of `b`.
     let mut q = a.div_euclid(b);
