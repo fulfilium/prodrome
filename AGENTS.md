@@ -88,7 +88,7 @@ result of the check, so that later code does not check again:
 pub fn new(text: impl Into<String>) -> Result<TodoId, ProdromeError> // in impl TodoId
 ```
 
-The smart constructors in `core/src/fpl.rs`, such as `mk_decay`, follow the
+The smart constructors in `term/src/fpl/construct.rs`, such as `mk_decay`, follow the
 same rule for terms. `literal::Finite::new` follows it for numbers.
 
 **Exceptions.** `Term::new` is public, and the fields of `TermF` are
@@ -105,8 +105,9 @@ so that the state cannot occur, or return a `Result`.
 
 **Exception.** The production code has no `unwrap`, `panic!`, `todo!` or
 `unimplemented!`. It has about 45 calls to `expect` and 5 calls to
-`unreachable!`, mostly in `fpl.rs`, `chain.rs`, `literal.rs` and
-`declared/`. Each call has a message that names the invariant, for example:
+`unreachable!`, mostly in `data/src/literal.rs`, `fpl/src/chain.rs`,
+`fpl/src/observe.rs` and `declared/`. Each call has a message that names
+the invariant, for example:
 
 ```rust
 // `mk_shift` refuses nothing, so the `expect` is a proof and not a hope.
@@ -127,11 +128,11 @@ acceptable for a foreign type, such as `char`, `&str` or an integer.
 **Exception.** About 30 matches on our own enums have a `_ =>` arm. Some
 are single-variant projections, such as a function that returns `Some` for
 one variant of `Value` and `None` for the rest. Some are off-diagonal pairs
-in a match on a pair of enums, as in `declared/order.rs`. Others give a
-default behaviour, for example in `breaks.rs`, `chain.rs`,
-`term/normalize.rs`, and the matches on `Envelope` in `dag.rs`, `sign.rs`
-and `store/memory.rs`. Replace the default-behaviour arms when you change
-these functions.
+in a match on a pair of enums, as in `declared/src/order.rs`. Others give
+a default behaviour, for example in `fpl/src/breaks.rs`, `fpl/src/chain.rs`,
+`term/src/term/normalize.rs`, and the matches on `Envelope` in
+`dag/src/dag.rs`, `dag/src/sign.rs` and `store/src/store/memory.rs`.
+Replace the default-behaviour arms when you change these functions.
 
 ### 5. Defunctionalize
 
@@ -164,7 +165,7 @@ pub fn read<'a, E: Schema>(stream: &'a [Stamp<E>], at: Option<Instant>, policy: 
     -> E::Registers<'a> { scan(stream, at, policy, |_, _| {}) }
 ```
 
-**Exception.** `core/src/store.rs` does file input and output, and it calls
+**Exception.** `store/src/store.rs` does file input and output, and it calls
 `SystemTime::now()` to decide when to look at a file again. The time does
 not affect any value that a read returns. The store also draws random bits
 for the names of temporary files and for a genesis nonce. `spread::spread`
@@ -178,12 +179,12 @@ generic over that type. Write one combinator with stated laws, and use it
 everywhere. Do not write copies. Examples:
 
 - `TermF::traverse`, with `Term::cata` and `Term::try_cata` built on it, in
-  `core/src/term/functor.rs`;
-- `topo::linear`, the crate's one causal order, which `dag.rs` and
-  `digest.rs` use;
+  `term/src/term/functor.rs`;
+- `topo::linear`, the crate's one causal order, which
+  `dag/src/dag.rs` and `digest/src/lib.rs` use;
 - `memo::fold`, for every cached fold.
 
-**Exception.** `dag.rs` has its own Kahn walk to admit objects whose
+**Exception.** `dag/src/dag.rs` has its own Kahn walk to admit objects whose
 parents are missing.
 
 ### 8. Laws are tests
@@ -210,11 +211,11 @@ number when you change one of these tests.
 
 Name each file for its concept, and put the main type first.
 `data/src/topo.rs`, `data/src/fold/frontier.rs` and
-`core/src/dag/finding.rs` are good examples.
+`dag/src/dag/finding.rs` are good examples.
 
 **Exception.** Some large files contain several concepts:
-`core/src/fpl.rs` (about 1460 lines), `wasm/exports/src/lib.rs`,
-`data/src/literal.rs`, `core/src/store.rs` and `data/src/event.rs`. If you
+`fpl/src/fpl.rs` (about 800 lines), `wasm/exports/src/lib.rs`,
+`data/src/literal.rs`, `store/src/store.rs` and `data/src/event.rs`. If you
 add a new concept to one of these files, put it in a new file instead.
 
 ### 10. Do not program defensively
@@ -240,7 +241,7 @@ as a store from before version 0.9 that has a `HEAD` file, because the code
 still reads that data.
 
 **Exception.** A few comments still describe history, for example in
-`wasm/exports/src/wire.rs`, `core/src/policy.rs` and `core/src/store.rs`.
+`wasm/exports/src/wire.rs`, `dag/src/policy.rs` and `store/src/store.rs`.
 
 ## Write plain technical English
 
