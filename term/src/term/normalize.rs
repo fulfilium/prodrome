@@ -1,5 +1,5 @@
+use crate::fpl::piecewise;
 use crate::schedule::Schedule;
-use crate::syntax::piecewise;
 use crate::term::{Term, TermF};
 
 /// The term in Piecewise-outermost normal form (SPEC §7, "Normal form").

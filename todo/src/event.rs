@@ -11,9 +11,9 @@
 pub use prodrome_data::event::*;
 
 use crate::payload::{datetime_field, required, string_field, string_or_empty, Payload};
-use crate::term::Term;
 use prodrome_data::literal::codec::headed;
 use prodrome_data::literal::{Datetime, ProdromeError, Value};
+use prodrome_term::term::Term;
 
 // --- the spec a repricing carries -------------------------------------------
 //

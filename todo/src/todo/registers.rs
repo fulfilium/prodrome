@@ -9,8 +9,8 @@ use prodrome_data::stamp::Stamp;
 use super::{Content, Kind, Spec, State, Write};
 use crate::event::{Authored, TodoEvent};
 use crate::payload::Payload;
-use crate::syntax::{Candidates, Env};
-use crate::term::Term;
+use prodrome_term::fpl::{Candidates, Env};
+use prodrome_term::term::Term;
 
 /// One todo's registers at a moment (SPEC §6, "The todo schema's
 /// registers").

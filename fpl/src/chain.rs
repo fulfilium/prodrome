@@ -15,10 +15,10 @@ use thiserror::Error;
 use crate::fpl::{
     self, piecewise, scalars, Closed, Delta, Env, Explanation, Instant, Note, Outcome, Scalar,
 };
-use crate::schedule::Schedule;
-use crate::term::schema::{Fields, Slot};
-use crate::term::{normalize, Term, TermF};
 use prodrome_data::topo::Topo;
+use prodrome_term::schedule::Schedule;
+use prodrome_term::term::schema::{Fields, Slot};
+use prodrome_term::term::{normalize, Term, TermF};
 
 /// A refusal from [`compile_chain`] or [`chain_order`].
 ///
@@ -345,7 +345,8 @@ fn mk_moot(term: Term) -> Term {
 /// One [`Compiled`] for each todo of the chain, or the cycle (SPEC §7.1).
 ///
 /// `functions` maps each todo, by the name that the links use, to its
-/// function from [`crate::fold::flatten`], linked by [`fpl::link`]. The
+/// function from `fold::flatten` of `prodrome-core`, linked by
+/// [`fpl::link`]. The
 /// function checks the whole graph of the links first, because one link alone
 /// cannot show a loop.
 pub fn compile_chain(

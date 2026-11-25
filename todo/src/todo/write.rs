@@ -4,8 +4,8 @@ use prodrome_data::instant::{instant_of, Instant};
 
 use crate::event::{Authored, TodoEvent};
 use crate::payload::Payload;
-use crate::syntax::Outcome;
-use crate::term::Term;
+use prodrome_term::fpl::Outcome;
+use prodrome_term::term::Term;
 
 /// What one event writes, once for each register that it touches.
 #[derive(Debug, Clone, Copy, PartialEq)]

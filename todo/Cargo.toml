@@ -1,0 +1,29 @@
+[package]
+name = "prodrome-todo"
+description = "The todo schema as data: its events, its payload, its vocabulary and its registers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "content-addressed", "todo"]
+categories = ["data-structures"]
+
+[features]
+# The reference payload, on by default: the record shape with which
+# `conformance/*.py` was taken. `prodrome-core` turns it on with its own
+# feature `reference`.
+default = ["reference"]
+reference = []
+
+[lib]
+name = "prodrome_todo"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The envelopes, the names, the literal codec and the register algebra.
+prodrome-data.workspace = true
+# The spec that an event carries is a term.
+prodrome-term.workspace = true

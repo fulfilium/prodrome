@@ -62,6 +62,9 @@ jobs:
               python3 scripts/edges.py nest/src
               python3 scripts/edges.py tags/src
               python3 scripts/edges.py digest/src
+              python3 scripts/edges.py term/src
+              python3 scripts/edges.py fpl/src
+              python3 scripts/edges.py todo/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
               cargo test --locked --workspace --doc
           - check: test

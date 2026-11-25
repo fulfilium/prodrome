@@ -20,7 +20,7 @@ autotests = false
 # defines its own payload and wants none of these types compiles with
 # `default-features = false`.
 default = ["reference"]
-reference = []
+reference = ["prodrome-todo/reference"]
 # THE LAW KIT, off by default. `prodrome::laws` holds the laws of SPEC §9 that
 # ask nothing of a schema, as functions over a store's objects, an event or
 # replicas, with proptest strategies to drive them. A host enables it for its
@@ -39,7 +39,6 @@ path = "tests/all/main.rs"
 [dependencies]
 # The law kit's strategies, with the `laws` feature only.
 proptest = { version = "1", optional = true }
-chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 # The data of a store, which this crate re-exports at the paths that a
 # program names: `prodrome::event`, `prodrome::literal` and the others.
 prodrome-data.workspace = true
@@ -62,10 +61,21 @@ prodrome-nest.workspace = true
 prodrome-store.workspace = true
 # Mergeable tag sets, which this crate re-exports as `prodrome::tags`.
 prodrome-tags.workspace = true
+# The terms of FPL, which this crate re-exports at `prodrome::term`,
+# `prodrome::schedule` and `prodrome::fpl`.
+prodrome-term.workspace = true
+# The evaluator, which this crate re-exports at `prodrome::fpl`,
+# `prodrome::chain`, `prodrome::breaks` and `prodrome::observe`.
+prodrome-fpl.workspace = true
+# The todo schema's events and payload, which this crate re-exports at
+# `prodrome::event`, `prodrome::payload` and `prodrome::reference`.
+prodrome-todo.workspace = true
 sha2 = "0.10"
 thiserror = "2"
 
 [dev-dependencies]
+# The tests build instants and spans.
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 proptest = "1"
 # This crate with the law kit, so its own tests run the kit over the
 # reference schemas: a package may name itself as a dev-dependency to turn on

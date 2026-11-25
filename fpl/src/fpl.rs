@@ -11,13 +11,13 @@ use std::collections::BTreeMap;
 
 use thiserror::Error;
 
-use crate::schedule::Schedule;
-pub use crate::syntax::*;
-use crate::term::schema::{self, Fields, Slot};
-use crate::term::{normalize, CurvePoint, Term, TermF};
 use prodrome_data::event::Hash;
 use prodrome_data::literal::ProdromeError;
 use prodrome_data::topo::Topo;
+pub use prodrome_term::fpl::*;
+use prodrome_term::schedule::Schedule;
+use prodrome_term::term::schema::{self, Fields, Slot};
+use prodrome_term::term::{normalize, CurvePoint, Term, TermF};
 
 /// The number of intervals of a `Within` window, which `Within` samples at 65
 /// evenly spaced points (SPEC §7).

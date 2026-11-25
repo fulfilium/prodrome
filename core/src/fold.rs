@@ -6,8 +6,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-pub use crate::todo_schema::{Kind, Registers, Write};
 pub use prodrome_dag::fold::*;
+pub use prodrome_todo::todo::{Kind, Registers, Write};
 
 use crate::event::{Authored, TodoEvent, TodoId};
 use crate::fpl::{self, Env, FplError, Instant};

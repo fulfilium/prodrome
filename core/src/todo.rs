@@ -5,7 +5,7 @@
 
 use std::collections::BTreeSet;
 
-pub use crate::todo_schema::*;
+pub use prodrome_todo::todo::*;
 
 use crate::event::{Hash, TodoEvent, TodoId};
 use crate::fpl::{self, Candidates, Env, FplError, Outcome};

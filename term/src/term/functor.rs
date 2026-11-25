@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 
+use crate::fpl::{Delta, Instant};
 use crate::schedule::Schedule;
-use crate::syntax::{Delta, Instant};
 
 /// One layer of the term functor: every child position is an `A`.
 #[derive(Debug, Clone, PartialEq)]
@@ -254,14 +254,17 @@ pub struct Term(Box<TermF<Term>>);
 impl Term {
     /// A term of one layer, built without checks; use the `mk_*`
     /// constructors of `fpl` to build a checked term.
+    #[inline]
     pub fn new(layer: TermF<Term>) -> Self {
         Term(Box::new(layer))
     }
 
+    #[inline]
     pub fn out(&self) -> &TermF<Term> {
         &self.0
     }
 
+    #[inline]
     pub fn into_out(self) -> TermF<Term> {
         *self.0
     }

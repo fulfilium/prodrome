@@ -10,10 +10,10 @@
 
 use crate::event::{mk_record, Name, TodoEvent};
 use crate::payload::Payload;
-use crate::term::Term;
 use prodrome_data::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
 use prodrome_data::literal::{Datetime, ProdromeError};
 use prodrome_data::newtype_str;
+use prodrome_term::term::Term;
 
 newtype_str! {
     /// Typst markup source: the inside of a `[..]` block. The core stores and
@@ -21,6 +21,7 @@ newtype_str! {
     /// [`StringSource`], because `]` is structure in markup and `"` is
     /// structure in a string.
     #[derive(Default, Literal)]
+    #[literal(crate = prodrome_data)]
     MarkupSource
 }
 
@@ -28,6 +29,7 @@ newtype_str! {
     /// Typst string source: the inside of a `".."` literal. The core stores
     /// and prints it, and never interprets it.
     #[derive(Default, Literal)]
+    #[literal(crate = prodrome_data)]
     StringSource
 }
 
@@ -119,6 +121,7 @@ impl AsRef<str> for NoteSite {
 /// The message a todo came from. `date` is a day. The three identifiers are
 /// `""` where the writer of the todo did not record them.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(crate = prodrome_data)]
 pub struct Source {
     pub sender: StringSource,
     pub subject: StringSource,
@@ -133,6 +136,7 @@ pub struct Source {
 
 /// A comment run attached to one field of a record.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(crate = prodrome_data)]
 #[literal(new = mk_note)]
 pub struct Note {
     #[literal(with = text_field)]
@@ -142,6 +146,7 @@ pub struct Note {
 
 /// A checklist item inside a todo: no id, no history of its own.
 #[derive(Debug, Clone, PartialEq, Eq, Literal)]
+#[literal(crate = prodrome_data)]
 #[literal(new = mk_subtodo)]
 pub struct SubTodo {
     pub body: String,
@@ -151,6 +156,7 @@ pub struct SubTodo {
 /// The reference payload: the fields of a record beyond the core's `todo`,
 /// `at` and `actor`. Its record kind is `Authored`.
 #[derive(Debug, Clone, PartialEq, Literal)]
+#[literal(crate = prodrome_data)]
 #[literal(rename = "Authored", new = mk_todo)]
 pub struct Todo {
     #[literal(with = text_field)]
@@ -320,8 +326,8 @@ mod tests {
     use super::*;
     use crate::event::ENVELOPE_SIGNATURES;
     use crate::payload::record_signature;
-    use crate::term::schema::signatures;
     use crate::todo::TODO_SIGNATURES;
+    use prodrome_term::term::schema::signatures;
 
     #[test]
     fn the_smart_constructors_are_the_only_door() {

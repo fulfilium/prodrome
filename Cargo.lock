@@ -493,10 +493,13 @@ dependencies = [
  "prodrome-data",
  "prodrome-declared",
  "prodrome-digest",
+ "prodrome-fpl",
  "prodrome-memo",
  "prodrome-nest",
  "prodrome-store",
  "prodrome-tags",
+ "prodrome-term",
+ "prodrome-todo",
  "proptest",
  "sha2",
  "thiserror",
@@ -551,6 +554,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "prodrome-fpl"
+version = "0.9.0"
+dependencies = [
+ "chrono",
+ "prodrome-data",
+ "prodrome-term",
+ "thiserror",
+]
+
+[[package]]
 name = "prodrome-github"
 version = "0.9.0"
 dependencies = [
@@ -599,6 +612,23 @@ dependencies = [
  "prodrome-dag",
  "prodrome-data",
  "thiserror",
+]
+
+[[package]]
+name = "prodrome-term"
+version = "0.9.0"
+dependencies = [
+ "chrono",
+ "prodrome-data",
+ "thiserror",
+]
+
+[[package]]
+name = "prodrome-todo"
+version = "0.9.0"
+dependencies = [
+ "prodrome-data",
+ "prodrome-term",
 ]
 
 [[package]]

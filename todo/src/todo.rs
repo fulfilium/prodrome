@@ -17,7 +17,7 @@ use prodrome_data::schema::Schema;
 
 use crate::event::{event_from_value, TodoEvent};
 use crate::payload::{record_signature, Payload};
-use crate::term::schema::signatures;
+use prodrome_term::term::schema::signatures;
 
 pub use registers::Registers;
 pub use write::{Kind, Write};
@@ -180,7 +180,7 @@ mod tests {
             "todo",
             at(),
             "body",
-            Some(crate::syntax::mk_flat(0.5).expect("valid")),
+            Some(prodrome_term::fpl::mk_flat(0.5).expect("valid")),
             vec![],
             "",
             "",

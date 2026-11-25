@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["cli", "core", "dag", "data", "declared", "derive", "digest", "github", "memo", "nest", "store", "tags", "wasm", "wasm/exports"]
+members = ["cli", "core", "dag", "data", "declared", "derive", "digest", "fpl", "github", "memo", "nest", "store", "tags", "term", "todo", "wasm", "wasm/exports"]
 # Typst lives outside the core's workspace, with its own lock file: the
 # viewer's optional extra, never a dependency of `core/` or `cli/`.
 exclude = ["typst-wasm"]
@@ -65,3 +65,8 @@ prodrome-digest = { path = "digest", version = "=0.9.0" }
 prodrome-nest = { path = "nest", version = "=0.9.0" }
 prodrome-store = { path = "store", version = "=0.9.0" }
 prodrome-tags = { path = "tags", version = "=0.9.0" }
+prodrome-term = { path = "term", version = "=0.9.0" }
+prodrome-fpl = { path = "fpl", version = "=0.9.0" }
+# Without the default feature `reference`, which `prodrome-core` turns on
+# with its own.
+prodrome-todo = { path = "todo", version = "=0.9.0", default-features = false }

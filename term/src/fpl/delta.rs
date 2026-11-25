@@ -41,6 +41,7 @@ fn divide_and_round(a: i64, b: i64) -> i64 {
 }
 
 /// `timedelta / int` — exact microseconds, rounded half to even, as CPython.
+#[inline]
 pub fn div_delta(d: Delta, n: i64) -> Delta {
     Duration::microseconds(divide_and_round(us_of(d), n))
 }
@@ -54,6 +55,7 @@ pub fn ratio(a: Delta, b: Delta) -> f64 {
 }
 
 /// `timedelta.total_seconds()`: exact microseconds over 1e6.
+#[inline]
 pub fn total_seconds(d: Delta) -> f64 {
     us_of(d) as f64 / 1e6
 }

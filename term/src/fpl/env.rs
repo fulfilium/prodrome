@@ -12,6 +12,7 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    #[inline]
     pub fn at(&self) -> Instant {
         match self {
             Outcome::Completed(at) | Outcome::Cancelled(at) => *at,
