@@ -6,6 +6,7 @@
 ///
 /// An arrival that puts the view over the high water makes closings until the
 /// view costs at most the low water or no closing is admissible (design §6.5).
+/// Between two merges, an arrival adds one part and changes no other part.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Waters {
     high: u64,

@@ -43,7 +43,8 @@ pub struct Prints<E> {
 /// In a DAG from [`Dag::interior`] or from a store, the objects outside the
 /// history wait, each resting on a name that no object of the history has.
 /// In any other DAG, no object waits. [`Dag::excluded`] depends on every
-/// print held, waiting or not. For a husk, see SPEC §3, "A husk".
+/// print held, waiting or not. A husk (SPEC §3, "A husk") reads as the object
+/// that it holds, and no print under its name hashes to the name.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dag<E> {
     history: History<E>,
@@ -365,7 +366,8 @@ impl<E> Dag<E> {
     /// object here, with the objects that rest on it.
     ///
     /// A name is either an [`Unread`] print or a parent that no print has.
-    /// The answer depends only on the prints (law 40), so a DAG and its
+    /// Apart from a cycle, [`Dag::interior`] is exactly the objects that no
+    /// `resting` set names. The answer depends only on the prints (law 40), so a DAG and its
     /// interior give the same answer. [`Dag::verify`] reports these names,
     /// and every reading of a replica leaves them out (laws 44 and 45).
     #[must_use]

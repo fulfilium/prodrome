@@ -133,7 +133,7 @@ enum Frame<'t, T> {
 ///
 /// The value equals the plain fold's (law 51) whatever entries were
 /// dropped, provided that the folds of a pure algebra made every entry of
-/// the cache. A single value that an untrusted writer put at a key that
+/// the cache, here or in a cache joined into this one. A single value that an untrusted writer put at a key that
 /// nothing else filled is a claim, and only a recomputation checks it. A key
 /// that holds two values is computed and reported, and the fold uses neither
 /// value. The fold is iterative, so the depth of a tree costs heap and not

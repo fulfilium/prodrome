@@ -20,7 +20,8 @@ use prodrome_data::stamp::Stamp;
 /// declares that a register holds histories of `I`. The object carries only
 /// the names, as a sorted tuple.
 ///
-/// The order is inclusion of the heads. When the order cannot compare the
+/// The order is inclusion of the heads. It is sound because one set of
+/// heads within another names a history within the other's. When the order cannot compare the
 /// maximal writes of a pointer, the pointer reads as the union of their
 /// histories ([`fn@pointer`]), which needs the inner objects and so is not
 /// the order's join. The order is not inflationary: a write moves the

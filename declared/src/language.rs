@@ -75,7 +75,8 @@ pub enum Poset {
     /// The order of the integers; the reading is the greatest value.
     Total,
     /// A finite state machine over an enum's alternatives, given by its
-    /// covering relation as `(lower, upper)` pairs.
+    /// covering relation as `(lower, upper)` pairs; `≤` is the reflexive and
+    /// transitive closure of the relation.
     Machine(Vec<(String, String)>),
     /// Lists read as sets, under inclusion.
     Inclusion,

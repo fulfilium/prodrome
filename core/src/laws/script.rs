@@ -25,7 +25,8 @@
 //!   leaves every replica holding the same objects.
 //!
 //! An application runs the machine over its own schema with [`a_script`]
-//! and a strategy of the writes of each actor (`docs/script-law.md`).
+//! and a strategy of the writes of each actor (`docs/script-law.md`). A failure names the law, the step and what
+//! differs, and proptest shrinks the script.
 
 mod kept;
 mod keys;

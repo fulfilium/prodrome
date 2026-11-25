@@ -142,7 +142,8 @@ impl<E: Schema> Folded<E> {
     }
 
     /// For this library's own code; no promise.
-    /// Replaces the event of the stamp of `name` with the husk `event`.
+    /// Replaces the event of the stamp of `name` with the husk `event`. A name
+    /// with no stamp, or with a stamp of another key or instant, is passed over.
     #[doc(hidden)]
     pub fn rewrite(&mut self, name: &Hash, event: &E) {
         for prodrome in self.prodromes.values_mut() {
@@ -160,8 +161,8 @@ impl<E: Schema> Folded<E> {
     /// Whether every object folded rests only on objects of its own scope and
     /// on its genesis.
     ///
-    /// Where it does, [`Folded::insert`] can place an object without the
-    /// rest. Every store that appends wrote is local: a change's deps never
+    /// Where it does, each scope's order is decided within the scope, and
+    /// [`Folded::insert`] can place an object without the rest. Every store that appends wrote is local: a change's deps never
     /// leave its entity, and a legacy object's parents are legacy.
     pub fn local(&self) -> bool {
         self.local
@@ -406,7 +407,8 @@ pub fn since<'a, E: Schema>(state: &Folded<E>, nodes: &'a [Node<E>]) -> Vec<&'a 
 /// Returns the refusal of the append, before any object exists, where
 /// `event` does not stand on the reading that it supersedes
 /// ([`Product::grows`]). For the first write to an entity, that reading is
-/// the empty product's.
+/// the empty product's, so the append asks every write the question that
+/// `verify` asks.
 pub fn deps_for<E: Schema>(
     state: &Folded<E>,
     genesis: &Genesis,

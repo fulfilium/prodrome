@@ -209,7 +209,8 @@ impl Schema for Declared {
 /// An entity's registers under a declared schema, each read under its
 /// declared order.
 ///
-/// The value learns the declaration from the first write that it joins.
+/// The value learns the declaration from the first write that it joins; before
+/// that write, every register is unwritten.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Registers<'a> {
     held: Vec<Held<'a>>,

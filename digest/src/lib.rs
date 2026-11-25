@@ -387,6 +387,11 @@ pub fn zoom<M>(tree: &Tree<M>, name: &Hash) -> Option<Vec<Part>> {
 /// The view is greedy: it can stop over its waters although a fit with a
 /// coarser node to the left exists.
 ///
+/// The most due node closes first, where the due of a node is its age over its
+/// size in lines, and a tie goes to the older node. An arrival that makes no
+/// merge adds one part at the end of the view and changes no other part (law
+/// 89). With [`Waters::at`], the view closes only until it fits (law 88).
+///
 /// # Cost
 ///
 /// For a tree of `n` nodes and depth `d`, a line's arrival and each closing

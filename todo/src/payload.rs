@@ -19,7 +19,7 @@ use prodrome_term::term::Term;
 /// The fields of a record (SPEC §4) beyond `todo`, `at` and `actor`.
 ///
 /// A store holds one payload type, because the vocabulary that a stored
-/// object is parsed against is closed (SPEC §2).
+/// object is parsed against is closed (SPEC §2). So a payload is a type parameter and never a `dyn`.
 ///
 /// # The contract
 ///
@@ -41,7 +41,8 @@ pub trait Payload: Record + Clone + PartialEq + Debug + Send + Sync + 'static {
     /// The spec that prices the todo (SPEC §6.2, §6.4).
     fn spec(&self) -> Option<&Term>;
 
-    /// The number of checklist items in the record (SPEC §6.4).
+    /// The number of checklist items in the record (SPEC §6.4). A payload without a checklist returns zero and prices by its
+    /// spec alone.
     fn checklist_len(&self) -> usize;
 }
 

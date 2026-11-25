@@ -48,7 +48,9 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     /// the reading of that register (law 70; SPEC §3).
     ///
     /// The refusal must read only the readings of inflationary registers,
-    /// because `verify` joins only the writes to those registers.
+    /// because `verify` joins only the writes to those registers. A schema with
+    /// no inflationary register answers `Ok`, and a schema may refuse more than
+    /// its order does.
     ///
     /// # Errors
     ///
@@ -57,7 +59,8 @@ pub trait Product<'a>: Default + Clone + Debug + PartialEq {
     fn grows(&self, event: &Self::Schema) -> Result<(), ProdromeError>;
 
     /// Law 32: in every inflationary register, each value that `earlier`
-    /// reads stands at or below a value that `self` reads.
+    /// reads stands at or below a value that `self` reads. A schema with no
+    /// inflationary register answers `Ok`.
     ///
     /// The check passes where the objects of `earlier` are a subset of those of
     /// `self` and both are read under the policy where everything binds,

@@ -20,7 +20,8 @@
 //! a stop at any point leaves a file that holds a subset of the pairs that
 //! were written (law 54).
 //!
-//! A holder reads a record without a lock and checks it instead. When a
+//! Two processes that write one file each take the lock for each write, and a
+//! holder reads a record without a lock and checks it instead. When a
 //! record that its index names does not check, the holder reads the file
 //! again under a shared lock. A removal kills every record of the key that
 //! the file holds when the holder writes, a copy that another holder wrote

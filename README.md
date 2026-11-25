@@ -49,7 +49,8 @@ library or the law kit:
 | opens a store, appends to it and reads it under a policy | the three crates above, and `prodrome-store` (the store on disk and in memory, replicas, doors, frontiers) |
 | adds a second backend for a replica | the same four crates; the backend implements `store::Replica` |
 | admits schemas declared as text | `prodrome-data` and `prodrome-declared` |
-| keeps tag sets, histories held in registers, or a summary tree over a log | `prodrome-tags`, `prodrome-nest` or `prodrome-digest`, each with the crates that its row above names |
+| keeps tag sets or histories held in registers | `prodrome-tags` or `prodrome-nest`, each with `prodrome-data`, `prodrome-memo` and `prodrome-dag` |
+| keeps a summary tree over a log | `prodrome-digest`, with `prodrome-data` and `prodrome-memo` |
 | builds, prints and parses FPL terms | `prodrome-data` and `prodrome-term` |
 | also writes the todo schema's events | the same two, and `prodrome-todo` |
 | evaluates a term | `prodrome-data`, `prodrome-term` and `prodrome-fpl` |

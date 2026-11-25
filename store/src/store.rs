@@ -6,7 +6,8 @@
 //! A read hashes the stored bytes against the file name before it parses
 //! them, and never reprints and rehashes, so that a change of the printer
 //! cannot make an old object invalid. A handle verifies each object once,
-//! and reads it again only when its file changes.
+//! and reads it again only when its file no longer looks as it did (the store
+//! compares stat data, not content). Every write is durable.
 
 mod decision;
 mod doors;
@@ -854,7 +855,8 @@ impl<E: Schema, Pol: Policy<E>> EventStore<E, Pol> {
     /// Check the whole store, with no lock, and change nothing (SPEC §3,
     /// "`verify`"); an empty result means that the store is healthy.
     ///
-    /// It rehashes every file, whatever the memory holds. It reports the
+    /// It rehashes every file, whatever the memory holds, and asks the store's
+    /// policy at what it read ([`Policy::at`]). It reports the
     /// record stale only when the reads before and after its look found the
     /// same record, because it holds no lock and a write between the reads
     /// would make the finding false (SPEC §3, "The record of heads").

@@ -1,8 +1,8 @@
 //! A holder read through a cache in memory, such as memory in front of a
 //! file (design §6.2).
 //!
-//! A [`Front`] writes every pair to the back only, and the memory holds only
-//! what the back answered. In front of a holder that drops nothing by
+//! A [`Front`] writes every pair to the back only and drops the key from the
+//! memory, so the memory holds only what the back answered. In front of a holder that drops nothing by
 //! itself, every answer of the front is the back's answer (law 57). In front
 //! of any holder, every value that the front answers is one that the back
 //! held at that key. Unlike [`super::Cache::join`], a front adds no pair.

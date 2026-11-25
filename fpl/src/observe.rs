@@ -117,7 +117,8 @@ pub struct NextChange {
 /// differs from its observation at `now` (SPEC §7, "Next change"; law 38).
 /// Time is in microseconds, the grain of the evaluator.
 ///
-/// `env` is a snapshot. History that is not yet in `env` is a new input and
+/// `env` is a snapshot, and a binding or tending dated after `now` comes into
+/// force at its instant. History that is not yet in `env` is a new input and
 /// not a change in time.
 ///
 /// On the exact fragment the bisection runs against the evaluator itself, so

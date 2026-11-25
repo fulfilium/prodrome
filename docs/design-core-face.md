@@ -2017,7 +2017,9 @@ a crate of the library. The evidence of a need is one of these:
 - A program of this repository names the item: the command line (`cli/`),
   the GitHub program (`github/`), the wasm crates (`wasm/`, `wasm/exports/`)
   or an example (`core/examples/`).
-- The specification, the guide or a doc test names it.
+- The specification, the guide or a doc test names it. The release notes
+  in `CHANGELOG.md` are history: they name items that no longer exist, so
+  they are not a caller.
 - The author of another schema, or of another backend for a replica, needs
   it to do that work.
 
@@ -2115,12 +2117,15 @@ from the type, a clause names the classes: P is named by a program of this
 repository, L by another crate, the derive or the law kit, T by tests only,
 and N by nobody outside the crate. A member that is hidden or narrowed has
 its own row. The column "Who names them" lists the programs, crates and
-tests that the script found. "core tests" is `core/tests/`. A program
+tests that the script found. Where a kept item has no caller, the column
+says "none" and names the outside author for whom it is kept. "core tests" is `core/tests/`. A program
 `wasm` or `wasm exports` is `wasm/` or `wasm/exports/`.
 
 A module is public when one of its items is, so the tables list no module.
-The macros `text_literal!` and `word_literal!` of `prodrome-data` are kept:
-`CHANGELOG.md` names both, and tests and examples call them. The hidden
+The macro `text_literal!` of `prodrome-data` is kept because the wasm
+exports call it. The macro `word_literal!` is kept for the author of a
+schema whose type prints as one word of a closed set, the pair of
+`text_literal!`; only tests call it. The hidden
 macro `newtype_str!` crosses to `prodrome-todo`.
 
 
@@ -2177,7 +2182,7 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `literal/codec` | `Fields` (+5: 3 L, 2 T) | keep | core tests, prodrome-tags, tests of prodrome-data | The hand-written part of the codec; a schema of one's own uses it when it does not derive. Its members complete the type. |
 | `literal/codec` | `arm` | keep | core tests | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
 | `literal/codec` | `word` | keep | core tests | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
-| `literal/codec` | `tuple` | keep | none | A read helper of the hand-written codec; the derive's output does not call it. |
+| `literal/codec` | `tuple` | keep | none; kept for the author of a hand-written codec: reads a tuple | A read helper of the hand-written codec; the derive's output does not call it. |
 | `literal/codec/blank_field` | `to_value` | keep | none | The derive's option `with` names it. |
 | `literal/codec/pinned` | `assert_pinned` | keep | core tests, wasm tests | A test helper that pins a type's constructors. |
 | `literal/codec/record` | `call` | keep | examples | Named by a program of this repository. |
@@ -2203,9 +2208,9 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `payload` | `as_string` | keep | core tests | A field read for the author of a payload (SPEC §4). |
 | `payload` | `string_or_empty` | keep | prodrome-todo | A field read for the author of a payload (SPEC §4). |
 | `payload` | `bool_field` | keep | prodrome-declared | A field read for the author of a payload (SPEC §4). |
-| `payload` | `tuple_or_empty` | keep | none | A read helper for the author of a payload. |
+| `payload` | `tuple_or_empty` | keep | none; kept for the author of another payload: reads a tuple field | A read helper for the author of a payload. |
 | `payload` | `strings` | keep | core tests, wasm tests | A field read for the author of a payload (SPEC §4). |
-| `payload` | `expect_call` | keep | none | A read helper for the author of a payload. |
+| `payload` | `expect_call` | keep | none; kept for the author of another payload: reads a nested call | A read helper for the author of a payload. |
 | `policy` | `Standing` (+5), `Everything`, `Untrusted` (+3) | keep | cli, examples, github program, wasm exports | Named by a program of this repository. |
 | `schema` | `Schema` | keep | examples, wasm exports | Named by a program of this repository. |
 | `schema/headed` | `Event` (+3: 2 L, 1 P) | keep | core tests, prodrome-tags, tests of prodrome-data | The headed schema: an author of a schema of one's own builds events with it. |
@@ -2285,8 +2290,8 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `admit` | `Law` (+9: 1 N) | keep | core tests, tests of prodrome-declared | The laws that a declaration must keep (design §6.0). Its members complete the type. |
 | `admit` | `Refusal` | keep | none | Appears in the signature of `Form::parse` and `Declaration::admit`. |
 | `event` | `Datum` (+6), `Declared` (+4) | keep | wasm, wasm exports | Named by a program of this repository. |
-| `event` | `Key` | keep | none | The events of a declared schema. |
-| `event` | `Registers` | keep | none | The events of a declared schema. |
+| `event` | `Key` | keep | none; kept for the second program that reads a declared schema: names a declared key | The events of a declared schema. |
+| `event` | `Registers` | keep | none; kept for the second program that reads a declared schema: names its registers | The events of a declared schema. |
 | `language` | `Form` (+5: 2 T) | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. Its members complete the type. |
 | `language` | `Event` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
 | `language` | `Field` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
@@ -2373,7 +2378,7 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `fpl/delta` | `Delta`, `delta_from_hours` | keep | cli, examples, wasm exports | Named by a program of this repository. |
 | `fpl/delta` | `us_of` | cross-crate only | prodrome-fpl | Another crate of the library calls it; no outside program should. |
 | `fpl/delta` | `div_delta` | keep | prodrome-fpl | The spans of terms (SPEC §2). |
-| `fpl/delta` | `total_seconds` | keep | none | The span in seconds, as `timedelta.total_seconds` gives it, for a program that prints a span. |
+| `fpl/delta` | `total_seconds` | keep | none; kept for the second evaluator: reads a span as seconds | The span in seconds, as `timedelta.total_seconds` gives it, for a program that prints a span. |
 | `fpl/delta` | `hours` | keep | prodrome-fpl | The spans of terms (SPEC §2). |
 | `fpl/env` | `Outcome` (+4), `Candidates`, `Env` (+4) | keep | cli, examples, wasm, wasm exports | Named by a program of this repository. |
 | `fpl/printed` | `print_term`, `parse_term` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
@@ -2406,11 +2411,11 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `fpl` | `WITHIN_SAMPLES` | keep | core tests | The evaluation of a term (SPEC §7). |
 | `fpl` | `power_mean` | keep | none | SPEC §7 defines the power mean of `Conj`; a second evaluator checks its results against it. |
 | `fpl` | `offset` | keep | none | SPEC §7 defines `Offset`; a second evaluator checks its results against it. |
-| `fpl` | `bound` | keep | none | The events that a link binds, which a program that builds its own environment calls. |
+| `fpl` | `bound` | keep | none; kept for the second evaluator: reads the events that a link binds | The events that a link binds, which a program that builds its own environment calls. |
 | `fpl` | `last_tended` | keep | core tests | The evaluation of a term (SPEC §7). |
 | `fpl` | `phase` | keep | none | SPEC §7 defines the instant that a `Periodic` reads; a second evaluator checks its results against it. |
-| `fpl` | `min_fulfillment` | keep | none | The bound of Theorem IV.1, which a program that explains a price calls. |
-| `fpl` | `member_shares` | keep | none | The shares of a conjunction's members, which a program that explains a price calls. |
+| `fpl` | `min_fulfillment` | keep | none; kept for the second evaluator: checks the bound of Theorem IV.1 | The bound of Theorem IV.1, which a program that explains a price calls. |
+| `fpl` | `member_shares` | keep | none; kept for the second evaluator: reports each member's share | The shares of a conjunction's members, which a program that explains a price calls. |
 | `fpl` | `LinkError` | keep | core tests, prodrome-reading | The evaluation of a term (SPEC §7). |
 | `observe` | `Rounding` (+3), `Observation` (+5), `NextChange` (+2), `next_change` | keep | wasm, wasm exports | Named by a program of this repository. |
 | `observe` | `observed` | keep | core tests | The precision of a view (SPEC §7). |
@@ -2422,18 +2427,18 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | `event` | `Authored` (+5), `TodoEvent` (+12), `mk_created`, `mk_completed`, `mk_cancelled`, `mk_reopened`, `mk_tended`, `mk_spec_revised` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
 | `event` | `Created` | keep | none | The record of a `Created` event, a variant of `TodoEvent` (SPEC §4). |
 | `event` | `SpecRevised` | keep | none | The record of a `SpecRevised` event, a variant of `TodoEvent` (SPEC §4). |
-| `event` | `mk_record` | keep | none | The constructor of an `Authored` event, beside the other `mk_*` of the todo schema. |
+| `event` | `mk_record` | keep | none; kept for the second todo program: builds a record event | The constructor of an `Authored` event, beside the other `mk_*` of the todo schema. |
 | `payload` | `Payload` | keep | wasm exports | Named by a program of this repository. |
-| `payload` | `RECORD_PREFIX` | keep | none | The fields that every record kind starts with; the author of a payload checks a signature against it. |
-| `payload` | `record_signature` | keep | none | The signature of a record kind; the author of a payload pins it in a test. |
-| `payload` | `spec_field` | keep | none | A read helper for the author of a payload. |
+| `payload` | `RECORD_PREFIX` | keep | none; kept for the author of another payload: pins the record's first fields | The fields that every record kind starts with; the author of a payload checks a signature against it. |
+| `payload` | `record_signature` | keep | none; kept for the author of another payload: pins the record's signature | The signature of a record kind; the author of a payload pins it in a test. |
+| `payload` | `spec_field` | keep | none; kept for the author of another payload: reads the spec field | A read helper for the author of a payload. |
 | `reference` | `Todo` (+12), `mk_source`, `mk_note`, `mk_subtodo`, `mk_authored` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
 | `reference` | `MarkupSource` (+1: 1 N) | keep | none | Appears in the signature of `Todo::body` and `Todo::detail`. Its members complete the type. |
 | `reference` | `NoteSite` (+12: 3 N) | keep | none | Appears in the signature of `Note::on`. Its members complete the type. |
 | `reference` | `Source` | keep | core tests | The reference payload (feature `reference`). |
 | `reference` | `Note` | keep | core tests | The reference payload (feature `reference`). |
 | `reference` | `SubTodo` | keep | core tests | The reference payload (feature `reference`). |
-| `reference` | `mk_todo` | keep | none | The constructor of the reference payload's record, beside `mk_note` and `mk_subtodo`. |
+| `reference` | `mk_todo` | keep | none; kept for the second todo program: builds the reference record | The constructor of the reference payload's record, beside `mk_note` and `mk_subtodo`. |
 | `todo` | `TodoVocabulary` | keep | examples, wasm exports | Named by a program of this repository. |
 | `todo` | `TODO_SIGNATURES` | keep | core tests | The todo schema's registers (SPEC §4, §6). |
 | `todo` | `State` | keep | core tests | The todo schema's registers (SPEC §4, §6). |
@@ -2607,12 +2612,17 @@ For each crate, the ten longest docs of the rustdoc face, and each doc of an
 item that this stage touched, were read against the rule of section 2. A doc
 keeps what a caller cannot read from the type. The cuts delete narration,
 the restatement of a signature or a name, and paragraphs that repeat
-`SPEC.md`, which the doc cites instead. The deleted lines were read against the
-sentences that earlier stages restored, and two sentences that the review of stage 1 had restored, one of them the
-reason on `Climb`, were put back. Three more were put back because no other
-text states them: the twin of an event in `Decision::append_all`, the
-single prodrome of a store in `TagSet::of`, and the reading of each
-breakpoint in `observed`. The doc tests did not change. With each blank
+`SPEC.md`, which the doc cites instead. A first pass cut more than the rule allows: about thirty cuts removed a
+law, a precondition, a no-op case, a cost or a reason that a caller cannot
+read from the type. A review listed them, and each is back in one sentence:
+the laws 77, 88 and 89, the husk reading of `Dag`, the closure of `≤` in a
+declaration, the `Ok` of a schema with no inflationary register, the
+lock and the memory of the cache file, and the rest of the list. The
+twin of an event in `Decision::append_all`, the single prodrome of a store
+in `TagSet::of` and the reading of each breakpoint in `observed` are also
+in place. The rule keeps a law, an inverse, a precondition, an error or
+no-op case, a cost, and determinism across replicas, as well as the items
+of section 2. The doc tests did not change. With each blank
 line and each comment line removed, each file that the pass changed equals
 the file before it, apart from the lines of the narrowing and of the hidden
 marks above.
@@ -2643,27 +2653,27 @@ docs, before this stage.
 
 | Crate | Doc chars before | after | Ten longest before | after | Rustdoc tokens before | after | Line tokens before | after |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
-| `prodrome-data` | 31,434 | 30,271 | 8,234 | 7,914 | 12,143 | 11,475 | 19,913 | 19,994 |
-| `prodrome-memo` | 14,618 | 13,057 | 8,973 | 7,412 | 4,304 | 3,913 | 7,697 | 7,296 |
-| `prodrome-dag` | 17,641 | 16,285 | 6,030 | 4,795 | 5,664 | 5,316 | 14,424 | 14,118 |
-| `prodrome-declared` | 5,361 | 4,711 | 2,778 | 2,128 | 1,747 | 1,585 | 4,151 | 3,973 |
-| `prodrome-store` | 20,179 | 19,476 | 7,254 | 6,551 | 6,394 | 6,219 | 21,214 | 21,027 |
-| `prodrome-tags` | 5,517 | 5,305 | 3,445 | 3,233 | 1,890 | 1,837 | 4,036 | 3,979 |
-| `prodrome-nest` | 6,437 | 6,027 | 3,938 | 3,528 | 2,149 | 2,046 | 4,011 | 3,903 |
-| `prodrome-digest` | 5,735 | 4,917 | 3,735 | 2,917 | 1,794 | 1,590 | 4,319 | 4,099 |
-| `prodrome-term` | 8,531 | 7,754 | 3,935 | 3,183 | 3,649 | 3,455 | 6,861 | 6,574 |
-| `prodrome-fpl` | 13,435 | 12,207 | 5,455 | 4,352 | 4,290 | 3,976 | 5,793 | 5,500 |
-| `prodrome-todo` | 8,609 | 7,268 | 5,112 | 3,793 | 3,436 | 3,101 | 5,043 | 4,686 |
+| `prodrome-data` | 31,434 | 30,427 | 8,234 | 8,070 | 12,143 | 11,514 | 19,913 | 20,039 |
+| `prodrome-memo` | 14,618 | 13,357 | 8,973 | 7,712 | 4,304 | 3,988 | 7,697 | 7,363 |
+| `prodrome-dag` | 17,641 | 16,663 | 6,030 | 5,173 | 5,664 | 5,410 | 14,424 | 14,239 |
+| `prodrome-declared` | 5,361 | 4,820 | 2,778 | 2,237 | 1,747 | 1,612 | 4,151 | 4,003 |
+| `prodrome-store` | 20,179 | 19,624 | 7,254 | 6,699 | 6,394 | 6,256 | 21,214 | 21,067 |
+| `prodrome-tags` | 5,517 | 5,345 | 3,445 | 3,273 | 1,890 | 1,847 | 4,036 | 3,990 |
+| `prodrome-nest` | 6,437 | 6,115 | 3,938 | 3,616 | 2,149 | 2,068 | 4,011 | 3,926 |
+| `prodrome-digest` | 5,735 | 5,285 | 3,735 | 3,285 | 1,794 | 1,682 | 4,319 | 4,196 |
+| `prodrome-term` | 8,531 | 7,867 | 3,935 | 3,271 | 3,649 | 3,483 | 6,861 | 6,606 |
+| `prodrome-fpl` | 13,435 | 12,376 | 5,455 | 4,521 | 4,290 | 4,018 | 5,793 | 5,546 |
+| `prodrome-todo` | 8,609 | 7,452 | 5,112 | 4,020 | 3,436 | 3,147 | 5,043 | 4,735 |
 | `prodrome-reading` | 9,847 | 9,364 | 4,240 | 3,757 | 3,211 | 3,090 | 4,077 | 3,949 |
-| `prodrome-core` | 7,641 | 7,582 | 13,506 | 13,295 | 1,989 | 1,975 | 13,391 | 13,333 |
-| all thirteen | 154,985 | 144,224 | 76,635 | 66,858 | 52,660 | 49,578 | 114,930 | 112,431 |
+| `prodrome-core` | 7,641 | 7,582 | 13,506 | 13,380 | 1,989 | 1,975 | 13,391 | 13,356 |
+| all thirteen | 154,985 | 146,277 | 76,635 | 69,014 | 52,660 | 50,090 | 114,930 | 113,015 |
 
 With the feature `laws`, `prodrome-core` is 5,811 tokens by the rustdoc
-measure before and 5,759 after. The line measure falls less than the
+measure before and 5,780 after. The line measure falls less than the
 rustdoc measure for two reasons. It counts `pub(crate)` items, so a
 narrowing removes no line of it, and each `#[doc(hidden)]` mark and the
 longer sentence "For this library's own code; no promise." add lines. The
-data crate is 81 tokens larger by the line measure, 19,994 against 19,913,
+data crate is 126 tokens larger by the line measure, 20,039 against 19,913,
 and under the 21,400 of "The targets".
 
 **Which crates a unit reads.** The sums use the line measure. The sets are
@@ -2672,15 +2682,15 @@ faces at `ed70e10`.
 
 | A program that | Crates | Tokens before | Tokens after |
 |---|---|--:|--:|
-| writes events with a store and reads them under a policy | data, memo, dag, store | 63,248 | 62,435 |
-| reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 63,808 | 62,117 |
-| has its own schema and folds it under a policy | data, memo, dag | 42,034 | 41,408 |
-| has its own schema and prints and parses events | data | 19,913 | 19,994 |
-| uses the whole library | all thirteen | 114,930 | 112,431 |
+| writes events with a store and reads them under a policy | data, memo, dag, store | 63,248 | 62,708 |
+| reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 63,808 | 62,477 |
+| has its own schema and folds it under a policy | data, memo, dag | 42,034 | 41,641 |
+| has its own schema and prints and parses events | data | 19,913 | 20,039 |
+| uses the whole library | all thirteen | 114,930 | 113,015 |
 
 Section 13 gave 63,808 tokens for the second row. Each sum falls by the
 cuts of this stage, except the sums that hold the data crate alone, which
-rises by 81 tokens, and no program changes its set of crates.
+rises by 126 tokens, and no program changes its set of crates.
 
 ### The checks
 

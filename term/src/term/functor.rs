@@ -100,7 +100,8 @@ pub struct CurvePoint {
 impl<A> TermF<A> {
     /// The layer with `f` applied to every child in declaration order; it
     /// stops at the first error. It takes the children by reference, so that
-    /// `map`, `as_ref` and `children` derive from it.
+    /// `map`, `as_ref` and `children` derive from it, and it clones the
+    /// layer's own fields.
     pub fn traverse<'a, B, E>(
         &'a self,
         mut f: impl FnMut(&'a A) -> Result<B, E>,

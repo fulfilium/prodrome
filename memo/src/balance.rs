@@ -6,8 +6,9 @@
 //! entry. A run of nodes closes after a node whose name ends a chunk (one in
 //! four, decided by the name's bytes) once the run holds two nodes, or at
 //! [`WIDEST`] nodes. The last run of a level closes as it is. So every
-//! chunk holds between two and [`WIDEST`] children, except the last chunk of
-//! a level, which can hold one. An appended element renames at most one
+//! element is at the same depth, and every chunk holds between two and
+//! [`WIDEST`] children, except the last chunk of a level, which can hold one.
+//! An appended element renames at most one
 //! chunk per level. An insertion or a deletion moves only the chunk
 //! boundaries up to the next boundary, or up to the end of a run of more
 //! than [`WIDEST`] nodes that has no boundary.

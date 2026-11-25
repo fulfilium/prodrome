@@ -9,7 +9,7 @@
 //! of nodes.
 //!
 //! The crate depends only on `prodrome-data`, for the hash type and the
-//! literal codec.
+//! literal codec. It uses no schema, no store and no FPL.
 
 #![warn(clippy::pedantic)]
 
@@ -32,7 +32,8 @@ pub use holder::{Holder, Memory};
 use prodrome_data::event::Hash;
 
 /// The content name of a node, over its own bytes and its children's names
-/// in order.
+/// in order, so that a change anywhere below renames exactly the path up to
+/// the node.
 ///
 /// The own bytes are length-prefixed and a name is fixed-width, so no two
 /// nodes print alike. The same function names an algebra: its code's bytes,

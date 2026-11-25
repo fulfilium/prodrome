@@ -1,5 +1,6 @@
 //! The tag set of one membership prodrome and one alias prodrome read
-//! together. It depends on the objects of the two prodromes alone. Where
+//! together. Every replica that holds the same objects reads the same tags.
+//! Where
 //! concurrent renames disagree, it chooses one tag for every name by a rule
 //! that every replica applies alike, and lists each [`Disagreement`].
 
@@ -252,8 +253,8 @@ impl<S: Tagging> TagSet<S> {
     /// The events after which every name of `from`'s tag and of `to`'s tag
     /// stands for `to`. A rename to a name of another tag merges the two
     /// tags. Each event supersedes what this set holds for its name, so it
-    /// settles the disagreements on those names. A rename that changes
-    /// nothing writes nothing.
+    /// settles the disagreements on those names. Renaming back undoes a
+    /// rename. A rename that changes nothing writes nothing.
     #[must_use]
     pub fn rename(
         &self,

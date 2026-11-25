@@ -246,7 +246,8 @@ pub fn checklist(own: Option<Term>, items: usize) -> Result<Option<Term>, FplErr
     }))
 }
 
-/// A schedule of terms in normal form (SPEC §7, "Normal form").
+/// A schedule of terms in normal form (SPEC §7, "Normal form"), which reads
+/// as the raw schedule at every instant.
 ///
 /// Law 5: the normal form is a unit (no pieces is the head) and a join (no
 /// `Piecewise` nests), it is idempotent, and it has no two adjacent equal

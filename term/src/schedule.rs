@@ -26,7 +26,7 @@ use thiserror::Error;
 use crate::fpl::{Delta, Instant};
 
 /// A step function of time: `head` until the first knot, then each knot's
-/// value from its instant until the next.
+/// value from its instant until the next. Knots strictly increase.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Schedule<A> {
     head: A,
