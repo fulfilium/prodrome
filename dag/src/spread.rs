@@ -8,7 +8,7 @@ use std::thread;
 /// items costs less than a thread does.
 const SHARE: usize = 64;
 
-/// For the core; no promise.
+/// For this library's own code; no promise.
 /// `items.into_iter().map(work).collect()`, with the items shared among the
 /// cores that [`thread::available_parallelism`] reports: item `i` goes to
 /// thread `i % threads`, so a run of large items is shared too, and the

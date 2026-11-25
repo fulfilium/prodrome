@@ -27,7 +27,7 @@ pub use lifecycle::Lifecycle;
 
 // --- the names, as types ----------------------------------------------------
 
-/// For the core; no promise. Declares a string newtype with a private field.
+/// For this library's own code; no promise. Declares a string newtype with a private field.
 #[doc(hidden)]
 #[macro_export]
 macro_rules! newtype_str {
@@ -213,13 +213,13 @@ impl Hash {
         }
     }
 
-    /// For the core; no promise. The name of `bytes`: their sha256.
+    /// For this library's own code; no promise. The name of `bytes`: their sha256.
     #[doc(hidden)]
     pub fn of_bytes(bytes: &[u8]) -> Hash {
         Hash::of_digest(Sha256::digest(bytes).into())
     }
 
-    /// For the core; no promise. The name that `digest` spells; any 32 bytes are a name.
+    /// For this library's own code; no promise. The name that `digest` spells; any 32 bytes are a name.
     #[doc(hidden)]
     pub fn of_digest(digest: [u8; 32]) -> Hash {
         const HEX: &[u8; 16] = b"0123456789abcdef";
@@ -233,7 +233,7 @@ impl Hash {
         Hash { words, text }
     }
 
-    /// For the core; no promise. The digest, as a cache file (unix only) holds it.
+    /// For this library's own code; no promise. The digest, as a cache file (unix only) holds it.
     #[cfg(unix)]
     #[doc(hidden)]
     pub fn digest(&self) -> [u8; 32] {
@@ -388,7 +388,7 @@ pub fn parents_of<E>(envelope: &Envelope<E>) -> Vec<Hash> {
     rests_on(envelope).into_iter().cloned().collect()
 }
 
-/// For the core; no promise. [`parents_of`], borrowed, so a walk copies no name.
+/// For this library's own code; no promise. [`parents_of`], borrowed, so a walk copies no name.
 #[doc(hidden)]
 pub fn rests_on<E>(envelope: &Envelope<E>) -> Vec<&Hash> {
     let mut names: Vec<&Hash> = match envelope {
@@ -412,7 +412,7 @@ pub fn mk_sealed<E: Schema>(prev: Option<Hash>, event: E) -> Envelope<E> {
     Envelope::Sealed { prev, event }
 }
 
-/// For the core; no promise. Sorts `names` and refuses a duplicate, so a set has one print.
+/// For this library's own code; no promise. Sorts `names` and refuses a duplicate, so a set has one print.
 #[doc(hidden)]
 pub fn sorted_distinct(
     field: &str,
@@ -483,19 +483,19 @@ impl<E: Schema> Vocabulary for EventVocabulary<'_, E> {
 
 // --- the literal round trip --------------------------------------------------
 
-/// For the core; no promise. A keyword field of a call.
+/// For this library's own code; no promise. A keyword field of a call.
 #[doc(hidden)]
 pub fn field(name: &str, value: Value) -> (String, Value) {
     (name.to_owned(), value)
 }
 
-/// For the core; no promise. The tuple of `names`, as stored.
+/// For this library's own code; no promise. The tuple of `names`, as stored.
 #[doc(hidden)]
 pub fn hashes_value(names: &[Hash]) -> Value {
     Value::Tuple(names.iter().map(|name| Value::str(name.as_str())).collect())
 }
 
-/// For the core; no promise. Reads the tuple of names in the field `name`.
+/// For this library's own code; no promise. Reads the tuple of names in the field `name`.
 #[doc(hidden)]
 pub fn hashes(call: &Call, name: &str) -> Result<Vec<Hash>, ProdromeError> {
     let context = format!("{}.{name}", call.name);

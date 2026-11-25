@@ -21,7 +21,7 @@ pub fn mk_change<E>(genesis: Hash, deps: Vec<Hash>, event: E) -> Result<Change<E
 }
 
 impl<E: Schema> Change<E> {
-    pub fn to_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         Value::call(
             "Change",
             vec![
@@ -33,7 +33,10 @@ impl<E: Schema> Change<E> {
     }
 
     /// Parses the event at the vocabulary `schema`.
-    pub fn from_call(schema: &E::Vocabulary, call: &Call) -> Result<Change<E>, ProdromeError> {
+    pub(crate) fn from_call(
+        schema: &E::Vocabulary,
+        call: &Call,
+    ) -> Result<Change<E>, ProdromeError> {
         mk_change(
             Hash::new(string_field(call, "genesis")?)?,
             hashes(call, "deps")?,

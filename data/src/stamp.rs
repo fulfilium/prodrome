@@ -21,32 +21,32 @@ impl<E: Schema> Stamp<E> {
         self.place.ancestry.contains(earlier.place.position)
     }
 
-    /// For the core; no promise. The position in the scope's linear order.
+    /// For this library's own code; no promise. The position in the scope's linear order.
     #[doc(hidden)]
     pub fn position(&self) -> usize {
         self.place.position
     }
 
-    /// For the core; no promise. The positions in its scope that the write rests on.
+    /// For this library's own code; no promise. The positions in its scope that the write rests on.
     #[doc(hidden)]
     pub fn ancestry(&self) -> &BitSet {
         &self.place.ancestry
     }
 
-    /// For the core; no promise. Only the fold of the DAG places a write.
+    /// For this library's own code; no promise. Only the fold of the DAG places a write.
     #[doc(hidden)]
     pub fn placed(name: Hash, event: Arc<E>, place: Place<E::Key>) -> Stamp<E> {
         Stamp { name, event, place }
     }
 
-    /// For the core; no promise. Makes room at `slot` of the write's scope.
+    /// For this library's own code; no promise. Makes room at `slot` of the write's scope.
     #[doc(hidden)]
     pub fn open(&mut self, slot: usize) {
         self.place.open(slot);
     }
 }
 
-/// For the core; no promise. A position in an index, and its ancestors' positions.
+/// For this library's own code; no promise. A position in an index, and its ancestors' positions.
 #[derive(Debug, Clone, PartialEq)]
 #[doc(hidden)]
 pub struct Place<K> {
@@ -65,6 +65,6 @@ impl<K> Place<K> {
     }
 }
 
-/// For the core; no promise. The legacy scope (`None`), or one prodrome's entity.
+/// For this library's own code; no promise. The legacy scope (`None`), or one prodrome's entity.
 #[doc(hidden)]
 pub type Scope<K> = Option<(Hash, K)>;

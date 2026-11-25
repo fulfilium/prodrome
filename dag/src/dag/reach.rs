@@ -63,7 +63,7 @@ impl<'d> Reach<'d> {
         (0..self.order.len()).filter(move |&at| self.has(at) == held)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The positions of the order that the set does not hold, in order,
     /// each with its name.
     #[doc(hidden)]
@@ -76,7 +76,7 @@ impl<'d> Reach<'d> {
         self.bits[at / 64] & (1 << (at % 64)) != 0
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Put the position `at` in the set. A position past the order is
     /// passed over.
     #[doc(hidden)]
@@ -88,7 +88,7 @@ impl<'d> Reach<'d> {
         }
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Put `seeds` in the set, and everything they rest on. A name that
     /// the DAG does not hold is passed over.
     #[doc(hidden)]
@@ -105,7 +105,7 @@ impl<'d> Reach<'d> {
         }
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The members that no member names as a parent.
     #[doc(hidden)]
     pub fn tips(&self) -> BTreeSet<Hash> {

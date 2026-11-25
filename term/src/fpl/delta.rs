@@ -5,7 +5,7 @@ use chrono::Duration;
 /// A signed span, printed as `timedelta(...)` (SPEC §2).
 pub type Delta = Duration;
 
-/// For the evaluator; no promise. The span in whole microseconds.
+/// For this library's own code; no promise. The span in whole microseconds.
 #[doc(hidden)]
 #[inline]
 pub fn us_of(d: Delta) -> i64 {

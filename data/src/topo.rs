@@ -42,7 +42,7 @@ pub fn linear<'k, K: Ord + ?Sized>(
     }
 }
 
-/// For the core; no promise. A depth-first walk; each key settles after its expansion.
+/// For this library's own code; no promise. A depth-first walk; each key settles after its expansion.
 #[doc(hidden)]
 pub struct Topo<K, V> {
     path: Vec<K>,

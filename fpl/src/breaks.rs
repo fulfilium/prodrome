@@ -170,7 +170,7 @@ fn crossings(terms: &[&Term], from: Instant, to: Instant) -> Vec<Instant> {
 
 /// The number of evaluations for a term that is not piecewise-linear: one
 /// every ~1.9 h over a week, one every ~9 h over a month.
-pub const SAMPLES: i64 = 96;
+pub(crate) const SAMPLES: i64 = 96;
 
 /// One point of a drawn curve. The value is `∅` where the term has no value,
 /// and a reader must draw no line to or from that point.

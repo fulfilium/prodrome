@@ -142,7 +142,7 @@ impl<E: Schema> Folded<E> {
         self.index.contains_key(name) || self.attestations.contains(name)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The stamp of `name` reads `event` in place of its event: the husk of
     /// the object it was (SPEC §3), whose key and instant are the same, so
     /// it stays in its entity's stream where it was. A name with no stamp,
@@ -210,7 +210,7 @@ impl<E: Schema> Folded<E> {
     /// action.
     ///
     /// The caller must give the nodes parents first.
-    pub fn push(&mut self, node: &Node<E>) {
+    pub(crate) fn push(&mut self, node: &Node<E>) {
         if self.holds(&node.name) {
             return;
         }

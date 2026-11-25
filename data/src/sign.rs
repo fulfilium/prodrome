@@ -52,7 +52,7 @@ impl Signature {
     }
 }
 
-/// For the core; no promise. `text` as `N` bytes, where it is `2N` lowercase hex.
+/// For this library's own code; no promise. `text` as `N` bytes, where it is `2N` lowercase hex.
 #[doc(hidden)]
 pub fn bytes<const N: usize>(text: &str) -> Option<[u8; N]> {
     if !lower_hex(text, 2 * N) {
@@ -117,7 +117,7 @@ impl Signed {
         )
     }
 
-    pub fn from_call(call: &Call) -> Result<Signed, ProdromeError> {
+    pub(crate) fn from_call(call: &Call) -> Result<Signed, ProdromeError> {
         Ok(Signed {
             object: Hash::new(string_field(call, "object")?)?,
             key: PublicKey::new(string_field(call, "key")?)?,
@@ -137,7 +137,7 @@ pub struct KeyAdded {
 
 impl KeyAdded {
     #[must_use]
-    pub fn to_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         Value::call(
             "KeyAdded",
             vec![
@@ -148,7 +148,7 @@ impl KeyAdded {
         )
     }
 
-    pub fn from_call(call: &Call) -> Result<KeyAdded, ProdromeError> {
+    pub(crate) fn from_call(call: &Call) -> Result<KeyAdded, ProdromeError> {
         Ok(KeyAdded {
             genesis: Hash::new(string_field(call, "genesis")?)?,
             actor: Actor::new(string_field(call, "actor")?)?,
@@ -187,7 +187,7 @@ pub fn mk_key_revoked(
 
 impl KeyRevoked {
     #[must_use]
-    pub fn to_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         Value::call(
             "KeyRevoked",
             vec![
@@ -199,7 +199,7 @@ impl KeyRevoked {
         )
     }
 
-    pub fn from_call(call: &Call) -> Result<KeyRevoked, ProdromeError> {
+    pub(crate) fn from_call(call: &Call) -> Result<KeyRevoked, ProdromeError> {
         mk_key_revoked(
             Hash::new(string_field(call, "genesis")?)?,
             hashes(call, "deps")?,
@@ -209,13 +209,13 @@ impl KeyRevoked {
     }
 }
 
-/// For the core; no promise. The public key of the signing key `secret`.
+/// For this library's own code; no promise. The public key of the signing key `secret`.
 #[doc(hidden)]
 pub fn public_of(secret: &SigningKey) -> PublicKey {
     PublicKey(hex(secret.verifying_key().as_bytes()))
 }
 
-/// For the core; no promise. The signature by `secret` of the object `object`.
+/// For this library's own code; no promise. The signature by `secret` of the object `object`.
 #[doc(hidden)]
 pub fn signed_by(secret: &SigningKey, object: &Hash) -> Signed {
     Signed {

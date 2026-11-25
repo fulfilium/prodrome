@@ -269,12 +269,9 @@ pub fn mk_piecewise(head: Term, pieces: Vec<(Instant, Term)>) -> Result<Term, Fp
         })
 }
 
-/// For the evaluator and the readings; no promise. `prodrome-fpl` calls
-/// it in `chain` and `link`, and `prodrome-reading` in `fold::flatten`. A
-/// schedule of terms in normal form: each term
-/// opened into its own schedule, the schedule of schedules joined (its diagonal, which is
-/// splicing), and a piece that repeats the one before it dropped. A schedule
-/// with no piece left is its head.
+/// For this library's own code; no promise. The term of a schedule of terms,
+/// in normal form: each term is opened into its own schedule, the schedule of
+/// schedules is joined, and a piece that repeats the one before it is dropped.
 #[doc(hidden)]
 pub fn piecewise(schedule: Schedule<Term>) -> Term {
     let normal = schedule.map(opened).join().normal();

@@ -22,7 +22,8 @@ pub mod text_field;
 
 pub use pinned::assert_pinned;
 pub use prodrome_derive::Literal;
-pub use record::{call, call_of, read, read_or_default, required, Reader, Record, Site};
+pub(crate) use record::required;
+pub use record::{call, call_of, read, read_or_default, Reader, Record, Site};
 pub use sum::{distinct, headed_len, headed_names, headed_table, names_field, Sum};
 
 /// A constructor's name and its fields in printed order.

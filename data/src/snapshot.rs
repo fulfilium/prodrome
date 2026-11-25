@@ -27,7 +27,7 @@ pub fn mk_snapshot(
 }
 
 impl Snapshot {
-    pub fn to_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         Value::call(
             "Snapshot",
             vec![
@@ -41,7 +41,7 @@ impl Snapshot {
         )
     }
 
-    pub fn from_call(call: &Call) -> Result<Snapshot, ProdromeError> {
+    pub(crate) fn from_call(call: &Call) -> Result<Snapshot, ProdromeError> {
         mk_snapshot(
             Hash::new(string_field(call, "genesis")?)?,
             hashes(call, "tips")?,

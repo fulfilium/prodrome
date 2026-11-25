@@ -20,7 +20,7 @@ pub struct Heads {
 }
 
 impl Heads {
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The heads of a history whose tips are `tips` and which holds
     /// `count` objects.
     #[doc(hidden)]
