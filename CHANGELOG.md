@@ -303,7 +303,19 @@ constructor's fields never change, in any release.
     re-exports it.
 
   The core no longer uses `chrono` in its library, so `chrono` is a
-  dev-dependency of `prodrome-core`.
+  dev-dependency of `prodrome-core`. So `prodrome-core` no longer turns on
+  chrono's feature `clock` for a program that depends on it. A program
+  that calls `chrono::Utc::now` or `chrono::Local::now`, and got the
+  feature only through the core, turns it on in its own dependency on
+  `chrono`.
+
+  Two items that were private to the core are public and
+  `#[doc(hidden)]` in `prodrome-term`, because `prodrome-fpl` and the
+  readings call them and `pub(crate)` does not reach across crates:
+  `prodrome_term::fpl::piecewise`, which puts a schedule of terms in normal
+  form, and `prodrome_term::fpl::us_of`, a span in whole microseconds.
+  Their docs start with "For the evaluator" and carry no promise between
+  versions.
 
 - **The store, the tag sets, the nests and the digest are crates of their
   own: `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
