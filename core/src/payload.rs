@@ -17,9 +17,9 @@ pub use prodrome_data::payload::*;
 
 use std::fmt::Debug;
 
-use crate::literal::codec::{self, Constructor, Literal, Record};
-use crate::literal::{Call, ProdromeError};
 use crate::term::Term;
+use prodrome_data::literal::codec::{self, Constructor, Literal, Record};
+use prodrome_data::literal::{Call, ProdromeError};
 
 /// The fields of a record (SPEC §4) beyond `todo`, `at` and `actor`.
 ///

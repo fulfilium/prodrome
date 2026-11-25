@@ -10,10 +10,10 @@
 
 pub use prodrome_data::event::*;
 
-use crate::literal::codec::headed;
-use crate::literal::{Datetime, ProdromeError, Value};
 use crate::payload::{datetime_field, required, string_field, string_or_empty, Payload};
 use crate::term::Term;
+use prodrome_data::literal::codec::headed;
+use prodrome_data::literal::{Datetime, ProdromeError, Value};
 
 // --- the spec a repricing carries -------------------------------------------
 //
@@ -339,8 +339,8 @@ pub(crate) fn event_from_value<P: Payload>(value: &Value) -> Result<TodoEvent<P>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::literal::parse_literal;
     use crate::reference::Todo;
+    use prodrome_data::literal::parse_literal;
 
     type Event = TodoEvent<Todo>;
 

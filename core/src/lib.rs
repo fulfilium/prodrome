@@ -153,8 +153,13 @@ pub mod payload;
 pub mod reference;
 pub mod schedule;
 pub mod schema;
+// FPL as data: the module that `fpl` re-exports with the evaluator.
+mod syntax;
 pub mod term;
 pub mod todo;
+// The todo schema as data: the module that `todo` re-exports with its
+// readings.
+mod todo_schema;
 pub mod view;
 
 // The modules of `prodrome-data` that the core does not extend, at the

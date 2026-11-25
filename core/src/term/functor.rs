@@ -1,7 +1,7 @@
 use std::convert::Infallible;
 
-use crate::fpl::{Delta, Instant};
 use crate::schedule::Schedule;
+use crate::syntax::{Delta, Instant};
 
 /// One layer of the term functor: every child position is an `A`.
 #[derive(Debug, Clone, PartialEq)]

@@ -2,34 +2,7 @@
 
 use std::fmt;
 
-use prodrome_data::literal::ProdromeError;
-
-/// One step of a path: an entity's key, or a register's name. A segment is
-/// not empty and holds no `/`, so a path prints as its segments joined by
-/// `/` and parses back to them.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct Segment(String);
-
-impl Segment {
-    /// # Errors
-    ///
-    /// An empty segment, or one holding a `/`.
-    pub fn new(text: impl Into<String>) -> Result<Segment, ProdromeError> {
-        let text = text.into();
-        if text.is_empty() || text.contains('/') {
-            Err(ProdromeError::invalid(format!(
-                "a path segment is not empty and holds no '/', got {text:?}"
-            )))
-        } else {
-            Ok(Segment(text))
-        }
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
+pub use prodrome_data::segment::Segment;
 
 /// A key in a nest: the path of the register that held an object's
 /// history, and then the object's entity key. [`Path::then`] is
@@ -88,7 +61,7 @@ impl fmt::Display for Path {
             if n > 0 {
                 f.write_str("/")?;
             }
-            f.write_str(&segment.0)?;
+            f.write_str(segment.as_str())?;
         }
         Ok(())
     }

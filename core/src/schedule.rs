@@ -26,7 +26,7 @@ use std::ops::Add;
 
 use thiserror::Error;
 
-use crate::fpl::{Delta, Instant};
+use crate::syntax::{Delta, Instant};
 
 /// A step function of time: `head` until the first knot, then each knot's
 /// value from its instant until the next. Knots strictly increase.

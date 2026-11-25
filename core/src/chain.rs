@@ -18,7 +18,7 @@ use crate::fpl::{
 use crate::schedule::Schedule;
 use crate::term::schema::{Fields, Slot};
 use crate::term::{normalize, Term, TermF};
-use crate::topo::Topo;
+use prodrome_data::topo::Topo;
 
 /// A refusal from [`compile_chain`] or [`chain_order`].
 ///

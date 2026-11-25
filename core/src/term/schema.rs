@@ -1,11 +1,11 @@
 use std::sync::OnceLock;
 
-use crate::fpl::{
+use crate::syntax::{
     mk_absent, mk_after, mk_conj, mk_curve, mk_decay, mk_flat, mk_gate, mk_importance, mk_least,
     mk_offset, mk_offset_by, mk_periodic, mk_piecewise, mk_recur, mk_ref, mk_ref_in, mk_shift,
     mk_within, Delta, FplError, Instant, PRIORITY_POWER,
 };
-use crate::literal::{Signature, Vocabulary};
+use prodrome_data::literal::{Signature, Vocabulary};
 
 use super::{CurvePoint, Term, TermF};
 

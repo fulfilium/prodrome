@@ -9,10 +9,10 @@
 //! `reference` enables the module.
 
 use crate::event::{mk_record, Name, TodoEvent};
-use crate::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
-use crate::literal::{Datetime, ProdromeError};
 use crate::payload::Payload;
 use crate::term::Term;
+use prodrome_data::literal::codec::{blank_field, text_field, Constructor, Literal, Record};
+use prodrome_data::literal::{Datetime, ProdromeError};
 use prodrome_data::newtype_str;
 
 newtype_str! {
