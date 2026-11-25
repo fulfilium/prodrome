@@ -7,7 +7,7 @@ use prodrome_data::instant::Instant;
 /// A signed span, printed as `timedelta(...)` (SPEC §2).
 pub type Delta = Duration;
 
-/// For the core; no promise. The span in whole microseconds.
+/// For the evaluator; no promise. The span in whole microseconds.
 #[doc(hidden)]
 #[inline]
 pub fn us_of(d: Delta) -> i64 {
@@ -15,7 +15,7 @@ pub fn us_of(d: Delta) -> i64 {
         .expect("timedelta out of microsecond range")
 }
 
-/// For the core; no promise. `now` moved by `us` microseconds.
+/// For the evaluator; no promise. `now` moved by `us` microseconds.
 #[doc(hidden)]
 #[inline]
 pub fn after(now: Instant, us: i64) -> Instant {
@@ -47,8 +47,8 @@ pub fn div_delta(d: Delta, n: i64) -> Delta {
     Duration::microseconds(divide_and_round(us_of(d), n))
 }
 
-/// For the core; no promise. `timedelta / timedelta`, the float ratio that
-/// CPython computes from microseconds.
+/// For the evaluator; no promise. `timedelta / timedelta`, the float ratio
+/// that CPython computes from microseconds.
 #[doc(hidden)]
 #[inline]
 pub fn ratio(a: Delta, b: Delta) -> f64 {

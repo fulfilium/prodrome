@@ -96,7 +96,7 @@
         # edit. Everything native below starts from its target directory.
         cargoArtifacts = craneLib.buildDepsOnly (common // {
           pname = "prodrome";
-          src = rustSrc [ ./cli ./core ./dag ./data ./declared ./derive ./digest ./memo ./nest ./store ./tags ./github ./wasm ];
+          src = rustSrc [ ./cli ./core ./dag ./data ./declared ./derive ./digest ./memo ./nest ./store ./tags ./term ./fpl ./todo ./github ./wasm ];
           doCheck = false;
           # One cargo invocation per consumer below: features unify across
           # the packages an invocation selects, so each needs its own build.
@@ -443,7 +443,7 @@
           # and they run no slower.
           prodrome-workspace = craneLib.mkCargoDerivation (common // {
             pname = "prodrome-workspace";
-            src = rustSrc [ ./cli ./core ./dag ./data ./declared ./derive ./digest ./memo ./nest ./store ./tags ./github ./wasm ./conformance ];
+            src = rustSrc [ ./cli ./core ./dag ./data ./declared ./derive ./digest ./memo ./nest ./store ./tags ./term ./fpl ./todo ./github ./wasm ./conformance ];
             inherit cargoArtifacts;
             nativeBuildInputs = [ pkgs.rustfmt pkgs.clippy ];
             buildPhaseCargoCommand = ''

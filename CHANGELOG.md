@@ -261,10 +261,10 @@ constructor's fields never change, in any release.
   their own: `prodrome-term`, `prodrome-fpl` and `prodrome-todo` (issue
   #92, section 12 of `docs/design-core-face.md`).** A program that builds,
   prints and parses a term can depend on `prodrome-data` and
-  `prodrome-term` alone: 26,823 tokens by `scripts/face.py --lines`, in
+  `prodrome-term` alone: 26,827 tokens by `scripts/face.py --lines`, in
   place of the 113,095 tokens of `prodrome-core` and the crates below it.
-  A program that also writes a todo's events adds `prodrome-todo` (31,866
-  tokens), and a program that evaluates a term adds `prodrome-fpl` (32,528
+  A program that also writes a todo's events adds `prodrome-todo` (31,870
+  tokens), and a program that evaluates a term adds `prodrome-fpl` (32,532
   tokens with the data and term crates). Neither `prodrome-term` nor
   `prodrome-todo` depends on the evaluator. `prodrome-core` depends on the
   three crates and re-exports each moved item at its old path, so a

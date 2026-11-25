@@ -1400,6 +1400,7 @@ builds and passes the three commands of `AGENTS.md`:
    The CI's lint check runs `scripts/edges.py` over the source directory
    of each new crate.
 3. The test `todo/tests/alone.rs`, below.
+4. The mark `#[inline]` on `divide_and_round` (see "The timings").
 
 Another commit records the stage in this note, in `CHANGELOG.md`, in
 `README.md` and in `docs/development.md`. `prodrome-core` re-exports every
@@ -1423,11 +1424,11 @@ constructors stand on the data crate alone.
 
 The terms could be part of the data crate, or a crate of their own. The
 data crate is 19,913 tokens by `scripts/face.py --lines` after this
-stage, and the terms are 6,910. Together they would be 26,823 tokens,
+stage, and the terms are 6,914. Together they would be 26,827 tokens,
 which is over the budget by this note's measure and about 30,500 to
 31,400 by the application's tool. So the terms are the crate
 `prodrome-term`, on the data crate. A program that builds a term and
-stores it reads 26,823 tokens in place of the 113,095 of `prodrome-core`
+stores it reads 26,827 tokens in place of the 113,095 of `prodrome-core`
 and the crates below it.
 
 `prodrome-term` holds these items. Each keeps its path through the core.
@@ -1454,11 +1455,12 @@ layer, so a second evaluator reads a term's shape from `prodrome-term`
 alone, and the print of SPEC §2 is its format.
 
 Four items became public and `#[doc(hidden)]`, because the evaluator or
-the core calls them and `pub(crate)` does not reach across crates. Each
-doc starts with "For the core; no promise.": `piecewise`, which `chain`
-and `fold::flatten` call, and `us_of`, `after` and `ratio`, the
-arithmetic of spans in microseconds that the evaluator calls for each
-node. None of them changes a value that a later call trusts.
+the core calls them and `pub(crate)` does not reach across crates. The
+doc of `piecewise`, which `chain` and `fold::flatten` call, starts with
+"For the core; no promise.". The docs of `us_of`, `after` and `ratio`,
+the arithmetic of spans in microseconds that the evaluator calls for each
+node, start with "For the evaluator; no promise.". None of them changes a
+value that a later call trusts.
 
 **The evaluator.** `fpl` (the rest: `Closed`, `fulfillment`, `explained`,
 `Explanation`, `Note`, `Scalar`, `link`, `link_in`, `LinkError`, `Stores`,
@@ -1479,7 +1481,7 @@ and 4,290 by the rustdoc measure, far under the budget, so this stage
 does not divide it. A program that asks what changes next
 (`observe`), a program that explains a price (`explained`, `Note`,
 `Explanation`) and a program that only calls `fulfillment` each read the
-data crate, `prodrome-term` and `prodrome-fpl`: 32,528 tokens. A division
+data crate, `prodrome-term` and `prodrome-fpl`: 32,532 tokens. A division
 would save each of them at most the 5,705 tokens of the crate.
 
 **The todo schema.** `TodoEvent`, its records, its `mk_*` and `Payload`
@@ -1518,7 +1520,7 @@ which the core's feature of the same name turns on), and `todo`. The
 derived types of `reference` name the data crate with
 `#[literal(crate = prodrome_data)]`. A program that writes a todo with a
 decaying price reads the data crate, `prodrome-term` and
-`prodrome-todo`: 31,866 tokens, and nothing of how a price is computed.
+`prodrome-todo`: 31,870 tokens, and nothing of how a price is computed.
 The test `todo/tests/alone.rs` is that program: it builds a decaying
 spec, writes three events and an object that holds one, prints them,
 parses them back, and checks the object's name against `sha256sum`. Its
@@ -1544,12 +1546,12 @@ keep their faces: `prodrome-memo` 7,697, `prodrome-declared` 4,151,
 | `prodrome-core`, without the crates below | 33,374 | 17,038 | 15,141 | 4,802 |
 | `prodrome-data` | 19,756 | 19,913 | 12,030 | 12,143 |
 | `prodrome-nest` | 4,124 | 4,011 | 2,234 | 2,149 |
-| `prodrome-term` | | 6,910 | | 3,649 |
+| `prodrome-term` | | 6,914 | | 3,649 |
 | `prodrome-fpl` | | 5,705 | | 4,290 |
 | `prodrome-todo` | | 5,043 | | 3,436 |
-| all twelve crates | 113,095 | 114,461 | | |
+| all twelve crates | 113,095 | 114,465 | | |
 
-The crates together are 1,366 tokens more than before by the line
+The crates together are 1,370 tokens more than before by the line
 measure: the root docs and module heads of the three new crates and of
 `segment`, the lines of the core that re-export, and the marks of the
 hidden items. Every crate is under the budget by both measures.
@@ -1558,31 +1560,31 @@ hidden items. Every crate is under the budget by both measures.
 count at the start of this section. Before this stage, each of these
 units read `prodrome-core` and the eight crates below it, 113,095
 tokens. "All twelve" is `prodrome-core` with the eleven crates below it,
-114,461 tokens. A unit that names a constructor at `prodrome::fpl` names
+114,465 tokens. A unit that names a constructor at `prodrome::fpl` names
 it at `prodrome_term::fpl` instead, and so on for the other paths of
 `CHANGELOG.md`.
 
 | Unit | Held by | Crates after | Tokens after |
 |---|---|---|--:|
-| a chains unit | `event::TodoEvent` | data, term, todo | 31,866 |
-| an API unit | `observe::Observation`, `observe::NextChange` | data, term, fpl; its tests also read the core, for `view::entries` | 32,528 |
-| a release unit | `TodoEvent`, `mk_completed`, `Term`, `TermF` | data, term, todo | 31,866 |
-| a base unit | the evaluator and the terms alone | data, term, fpl | 32,528 |
-| a command line | the events, `mk_absent`, `mk_decay`, `mk_flat`, `Term` | data, term, todo | 31,866 |
-| an assistant unit | `fulfillment`, `link`, `Payload`, `view::entries` | all twelve | 114,461 |
-| a records unit | the events, `todo::TodoVocabulary`, the terms, `view::Entry` | all twelve | 114,461 |
-| an inbox unit | `fold::price`, `schema::Price`, the events, the terms | all twelve | 114,461 |
-| a signatures unit | the readings of `fold`, the evaluator, `view::entries` | all twelve | 114,461 |
-| a todo unit | the evaluator, the events, `view::{Confidence, Provisional, list_order}` | all twelve | 114,461 |
-| a browser module | the readings of `fold`, the evaluator, the events | all twelve | 114,461 |
+| a chains unit | `event::TodoEvent` | data, term, todo | 31,870 |
+| an API unit | `observe::Observation`, `observe::NextChange` | data, term, fpl; its tests also read the core, for `view::entries` | 32,532 |
+| a release unit | `TodoEvent`, `mk_completed`, `Term`, `TermF` | data, term, todo | 31,870 |
+| a base unit | the evaluator and the terms alone | data, term, fpl | 32,532 |
+| a command line | the events, `mk_absent`, `mk_decay`, `mk_flat`, `Term` | data, term, todo | 31,870 |
+| an assistant unit | `fulfillment`, `link`, `Payload`, `view::entries` | all twelve | 114,465 |
+| a records unit | the events, `todo::TodoVocabulary`, the terms, `view::Entry` | all twelve | 114,465 |
+| an inbox unit | `fold::price`, `schema::Price`, the events, the terms | all twelve | 114,465 |
+| a signatures unit | the readings of `fold`, the evaluator, `view::entries` | all twelve | 114,465 |
+| a todo unit | the evaluator, the events, `view::{Confidence, Provisional, list_order}` | all twelve | 114,465 |
+| a browser module | the readings of `fold`, the evaluator, the events | all twelve | 114,465 |
 
-So five units leave the core in this stage, and each reads at most 32,528
-tokens in place of 113,095. The eleven units together read 847,420
+So five units leave the core in this stage, and each reads at most 32,532
+tokens in place of 113,095. The eleven units together read 847,464
 tokens in place of 1,244,045. Each of the six units that still read the
 core names `view` or a reading of `fold` or `schema`, which the next
 stage moves. Without its name of `view::entries`, the assistant unit
 would read the data crate, `prodrome-term`, `prodrome-fpl` and
-`prodrome-todo`: 37,571 tokens.
+`prodrome-todo`: 37,575 tokens.
 
 **The timings.** The benchmark of section 9, in the release profile with
 no link-time optimisation, on a generated store of 15,009 objects over
