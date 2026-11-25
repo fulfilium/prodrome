@@ -13,8 +13,9 @@ the crates `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
 `prodrome-digest`. Section 12 records the stage after that, which made
 the crates `prodrome-term`, `prodrome-fpl` and `prodrome-todo`. Section 13
 records the stage after that, which made the crate `prodrome-reading` and
-left `prodrome-core` as a facade, and says what remains of the issue. For
-what is implemented, see `SPEC.md` and `CHANGELOG.md`.
+left `prodrome-core` as a facade, and says what remains of the issue.
+Section 14 reviews every public item of the crates and completes the
+issue. For what is implemented, see `SPEC.md` and `CHANGELOG.md`.
 
 Terms used below:
 
@@ -1999,3 +2000,712 @@ nothing that a program must read. Two things remain:
 2. The release that publishes the crates, which is its own decision.
 
 So this stage advances the issue and does not complete it.
+
+## 14. What is public, crate by crate
+
+Section 3 listed, before the crates existed, the public items that no
+outside program needs, and stage 3 narrowed four of them. Each later stage
+moved items whole, so every public item of the one crate became a public
+item of twelve, and the crates above made some items `pub` and
+`#[doc(hidden)]` to cross a boundary. This section reviews every public
+item of the thirteen crates, one by one, and narrows what no outside program
+needs. It is the second item of the list at the end of section 13.
+
+**Which program is an outside program.** A program is outside when it is not
+a crate of the library. The evidence of a need is one of these:
+
+- A program of this repository names the item: the command line (`cli/`),
+  the GitHub program (`github/`), the wasm crates (`wasm/`, `wasm/exports/`)
+  or an example (`core/examples/`).
+- The specification, the guide or a doc test names it.
+- The author of another schema, or of another backend for a replica, needs
+  it to do that work.
+
+The crates of the library, the law kit (`core/src/laws`) and the tests of
+this repository are not evidence. A test of this repository can still need
+an item, and no change of this section removes an item that a test names.
+
+### The method
+
+`scripts/outside.py` finds who names each item. It lists the items that
+rustdoc reports for each crate (with `--document-hidden-items`), copies the
+tracked files to a new directory, and puts
+`#[deprecated(note = "@@N")]` before each item. It then compiles every
+target of the workspace in the copy, with every feature. The compiler warns
+at every place that names a deprecated item, and the note of the warning
+gives the item. The script sorts each place by its file. A use inside the
+item's own crate does not count. Run it from the root of the repository:
+
+```console
+$ python3 scripts/outside.py --summary
+$ python3 scripts/outside.py
+```
+
+The first form prints a count for each crate, and the second prints one
+line for each item. The compiler does not warn at a use in code that
+`#[derive(Literal)]` writes, so the script adds the names that the derive's
+source writes under `literal::codec`. The script does not read documents. A
+first run, in which the script narrowed each item to `pub(crate)` and the
+compiler listed the errors, agreed on the narrowed items, and showed one case that the deprecation form
+handles better:
+`Decision::dag` is shadowed by a trait method of the same name when it is
+narrowed, so a narrowing alone does not show a use. The deprecation form
+does not have this fault, because it does not change which method a call
+reaches. A search of `SPEC.md`, `docs/guide.md` and `README.md` for the name of
+each narrowed and each new hidden item found none; the type `KeyAdded` is
+named, and its two conversions are not.
+
+### The rules
+
+Each item has one decision:
+
+- **Keep.** The item is part of the face. The reason is one of: a program
+  of this repository names it; a document names it; it completes a type
+  that a program uses (an accessor, a constructor or a conversion of a
+  public type); the author of a schema or a backend implements or calls it;
+  or it appears in the signature of a public item, so that a caller can
+  name it.
+- **Narrow.** No code outside the crate names the item, tests included, the
+  crate itself calls it, and no outside program needs it. It becomes
+  `pub(crate)`. An item that nothing calls at all is not narrowed, because
+  an unused `pub(crate)` item is dead code. These items are functions of
+  the language that SPEC §7 defines (`fpl::power_mean`, `fpl::offset`,
+  `fpl::phase`, `fpl::min_fulfillment`, `fpl::member_shares`), or helpers
+  that a payload author calls, and each stays public with that reason.
+- **Cross-crate only.** Another crate of the library, the derive or a test
+  must name the item, and no outside program should. It stays `pub`, and it
+  carries the rule below.
+
+**The rule for an item that crosses a crate boundary.** The item is `pub`
+and `#[doc(hidden)]`, and its doc starts with "For this library's own code;
+no promise." The sentence replaces "For the core" and "For the evaluator",
+which named crates that are no longer the callers. The rule is one rule for
+every crate. A hidden item is not part of the face of rustdoc, and it may
+change in any release of the library. The crates release together with
+exact version requirements, so no program that follows the rule sees a
+change. 56 items are hidden, 27 of them methods and
+29 functions, types and aliases. Ten of them are new in this stage.
+They are the helpers that `#[derive(Literal)]` calls (`codec::read`,
+`read_or_default`, `call_of`, `headed_len`, `headed_names`,
+`headed_table`, `names_field`, `distinct`, `Site` and `Reader`), which
+section 9 had kept public and documented "For the derive".
+
+**Would a private shared crate remove the need?** No. A crate that only the
+library depends on would hold the free functions and the types of the list
+below (29 items) with no hidden mark, but crates.io requires every
+dependency of a published crate to be published, so the shared crate is
+public too. Its items stay `pub`, and its name and its documentation would
+carry the "no promise" instead of an attribute. It cannot hold the
+27 methods, because an inherent method must be in the crate of its
+type, so the types would have to move into it, or their private fields
+would become public. `Stamp::placed` and the methods of `Dag`, `Reach`,
+`Folded`, `Heads` and `BitSet` are such methods. The cost is a fourteenth
+crate that every crate depends on, a move of the types that the methods
+belong to, and a face that a reader of the moved types reads in the shared
+crate and not in the crate that names them. The review does not recommend
+it. The rule above costs one attribute and one sentence for each item.
+
+### What is public, by crate
+
+The tables list every item of each crate. A row names an item, or several
+items that have the same decision and the same reason. A number in
+parentheses, as in `Hash` (+6), counts the members of a type: its
+methods, associated constants, fields and variants. Where members differ
+from the type, a clause names the classes: P is named by a program of this
+repository, L by another crate, the derive or the law kit, T by tests only,
+and N by nobody outside the crate. A member that is hidden or narrowed has
+its own row. The column "Who names them" lists the programs, crates and
+tests that the script found. "core tests" is `core/tests/`. A program
+`wasm` or `wasm exports` is `wasm/` or `wasm/exports/`.
+
+A module is public when one of its items is, so the tables list no module.
+The macros `text_literal!` and `word_literal!` of `prodrome-data` are kept:
+`CHANGELOG.md` names both, and tests and examples call them. The hidden
+macro `newtype_str!` crosses to `prodrome-todo`.
+
+
+### `prodrome-data`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `bitset` | `BitSet` (+5: 5 L) | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `change` | `mk_change` | keep | examples, wasm, wasm exports | Named by a program of this repository. |
+| `change` | `Change` | keep | core tests, prodrome-dag, prodrome-store | The change object (SPEC §3). |
+| `event` | `Hash` (+6), `Envelope` (+14), `parents_of`, `mk_sealed`, `mk_woven`, `EventVocabulary` (+1), `canonical`, `canonical_envelope`, `seal_hash`, `parse_envelope`, `parse_event` | keep | examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `event` | `rests_on` | cross-crate only | prodrome-dag, prodrome-store | Another crate of the library calls it; no outside program should. |
+| `event` | `sorted_distinct` | cross-crate only | prodrome-nest | Another crate of the library calls it; no outside program should. |
+| `event` | `ENVELOPE_SIGNATURES` | keep | core tests, prodrome-declared, prodrome-todo | The constructors of an envelope with their fields (SPEC §3); a test pins them. |
+| `event` | `field` | cross-crate only | prodrome-todo | Another crate of the library calls it; no outside program should. |
+| `event` | `hashes_value` | cross-crate only | prodrome-nest | Another crate of the library calls it; no outside program should. |
+| `event` | `hashes` | cross-crate only | prodrome-nest | Another crate of the library calls it; no outside program should. |
+| `event` | `event_id` | keep | core tests | A stored format or a name (SPEC §3, §4). |
+| `event/lifecycle` | `Lifecycle` | keep | prodrome-todo | A record of the todo's lifecycle events (SPEC §4). |
+| `fold/climb` | `Climb` (+8: 4 L, 4 T) | keep | core tests, prodrome-declared, wasm tests | The register algebra (SPEC §6): the author of a schema of one's own calls it. Its members complete the type. |
+| `fold/frontier` | `Frontier` (+6) | keep | examples | Named by a program of this repository. |
+| `fold/order` | `Discrete` (+1) | keep | examples | Named by a program of this repository. |
+| `fold/order` | `Order` | keep | core tests, prodrome-declared, prodrome-nest, prodrome-tags, wasm tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/order` | `Total` | keep | core tests, prodrome-declared, wasm tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/order` | `Inflationary` | keep | core tests, prodrome-declared, wasm tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/order` | `grows` | keep | core tests, prodrome-declared | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/order` | `maximal` | keep | core tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/product` | `Product` | keep | examples, wasm, wasm exports | Named by a program of this repository. |
+| `fold/register` | `Register`, `RegisterType` | keep | examples | Named by a program of this repository. |
+| `fold/register` | `GrowSet` | keep | prodrome-todo | The register algebra (SPEC §6). |
+| `fold/sole` | `Only` | keep | wasm exports | Named by a program of this repository. |
+| `fold/sole` | `Sole` | keep | core tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/sole` | `Hold` | keep | core tests | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/sole` | `One` | keep | core tests, prodrome-tags, tests of prodrome-data | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/sole` | `Whole` | keep | core tests, tests of prodrome-data | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `fold/sole` | `Bodies` | keep | core tests, prodrome-tags | The register algebra (SPEC §6): the author of a schema of one's own implements it. |
+| `genesis` | `mk_genesis` | keep | examples, wasm, wasm exports | Named by a program of this repository. |
+| `genesis` | `Genesis` | keep | none | Appears in the signature of `mk_genesis`. |
+| `husk` | `Husking`, `HuskObject` (+6), `Other` (+1), `Sender` (+2) | keep | examples, wasm, wasm exports | Named by a program of this repository. |
+| `husk` | `Husk` (+5: 1 L, 4 N) | keep | prodrome-store | The husk format (SPEC §3): a second backend reads and writes husks. Its members complete the type. |
+| `husk` | `NotAHusk` | keep | prodrome-store | The husk format (SPEC §3): a second backend reads and writes husks. |
+| `husk` | `Stored` (+4: 1 L, 1 N) | keep | core tests, prodrome-dag, prodrome-store | The husk format (SPEC §3): a second backend reads and writes husks. Its members complete the type. |
+| `husk` | `Hashed` (+3: 1 L) | keep | prodrome-dag, prodrome-store | The husk format (SPEC §3): a second backend reads and writes husks. |
+| `instant` | `Instant`, `FplError` (+1), `instant_of`, `datetime_of`, `iso`, `parse_iso` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `literal` | `ProdromeError` (+8), `Datetime` (+9), `Call` (+4), `Value` (+16), `Signature` (+4), `Vocabulary`, `Table` (+2), `Open`, `print_literal`, `parse_literal` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `literal` | `Int` (+5: 1 N, 1 P, 3 T) | keep | core tests | The values of SPEC §2. Its members complete the type. |
+| `literal` | `Finite` (+2: 1 L, 1 P) | keep | core tests, prodrome-term | The values of SPEC §2. |
+| `literal` | `Timedelta` (+7: 2 L, 1 N, 3 P, 1 T) | keep | core tests, prodrome-term | The values of SPEC §2. Its members complete the type. |
+| `literal` | `print_str` | keep | core tests | The values of SPEC §2. |
+| `literal/codec` | `Literal`, `no_arm`, `text` | keep | examples, wasm exports | Named by a program of this repository. |
+| `literal/codec` | `Constructor` | keep | core tests, prodrome-tags, prodrome-todo, tests of prodrome-data, the derive | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
+| `literal/codec` | `record` | keep | core tests, the derive | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
+| `literal/codec` | `headed` | keep | core tests, prodrome-todo, the derive | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
+| `literal/codec` | `Fields` (+5: 3 L, 2 T) | keep | core tests, prodrome-tags, tests of prodrome-data | The hand-written part of the codec; a schema of one's own uses it when it does not derive. Its members complete the type. |
+| `literal/codec` | `arm` | keep | core tests | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
+| `literal/codec` | `word` | keep | core tests | The hand-written part of the codec; a schema of one's own uses it when it does not derive. |
+| `literal/codec` | `tuple` | keep | none | A read helper of the hand-written codec; the derive's output does not call it. |
+| `literal/codec/blank_field` | `to_value` | keep | none | The derive's option `with` names it. |
+| `literal/codec/pinned` | `assert_pinned` | keep | core tests, wasm tests | A test helper that pins a type's constructors. |
+| `literal/codec/record` | `call` | keep | examples | Named by a program of this repository. |
+| `literal/codec/record` | `Record` | keep | core tests, prodrome-dag, prodrome-todo, the derive | The trait that the derive implements for a record. |
+| `literal/codec/record` | `Site` | cross-crate only | none | A parameter or result type of the derive's helpers. |
+| `literal/codec/record` | `Reader` | cross-crate only | none | A parameter or result type of the derive's helpers. |
+| `literal/codec/record` | `required` | narrow | none | Only its own crate names it, and the crate calls it; no outside program needs it. |
+| `literal/codec/record` | `read` | cross-crate only | prodrome-todo, the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/record` | `read_or_default` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/record` | `call_of` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/sum` | `Sum` | keep | the derive | The trait that the derive implements for a sum. |
+| `literal/codec/sum` | `headed_len` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/sum` | `headed_names` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/sum` | `headed_table` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/sum` | `names_field` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/sum` | `distinct` | cross-crate only | the derive | `#[derive(Literal)]` writes calls of it; no other program should. |
+| `literal/codec/text_field` | `to_value` | keep | none | The derive's option `with` names it. |
+| `literal/codec/text_field` | `from_field` | keep | none | The derive's option `with` names it. |
+| `literal/printable` | `UNICODE_VERSION`, `digest` | keep | wasm exports | Named by a program of this repository. |
+| `literal/printable` | `is_printable` | keep | core tests | The printable set of SPEC §2. |
+| `payload` | `string_field`, `datetime_field`, `tuple_field` | keep | examples | Named by a program of this repository. |
+| `payload` | `required` | keep | core tests, prodrome-declared, prodrome-todo, wasm tests | A field read for the author of a payload (SPEC §4). |
+| `payload` | `as_string` | keep | core tests | A field read for the author of a payload (SPEC §4). |
+| `payload` | `string_or_empty` | keep | prodrome-todo | A field read for the author of a payload (SPEC §4). |
+| `payload` | `bool_field` | keep | prodrome-declared | A field read for the author of a payload (SPEC §4). |
+| `payload` | `tuple_or_empty` | keep | none | A read helper for the author of a payload. |
+| `payload` | `strings` | keep | core tests, wasm tests | A field read for the author of a payload (SPEC §4). |
+| `payload` | `expect_call` | keep | none | A read helper for the author of a payload. |
+| `policy` | `Standing` (+5), `Everything`, `Untrusted` (+3) | keep | cli, examples, github program, wasm exports | Named by a program of this repository. |
+| `schema` | `Schema` | keep | examples, wasm exports | Named by a program of this repository. |
+| `schema/headed` | `Event` (+3: 2 L, 1 P) | keep | core tests, prodrome-tags, tests of prodrome-data | The headed schema: an author of a schema of one's own builds events with it. |
+| `schema/headed` | `Body` | keep | core tests, prodrome-tags, tests of prodrome-data | The headed schema: an author of a schema of one's own builds events with it. |
+| `schema/headed` | `KeyFields` | keep | prodrome-tags | The headed schema: an author of a schema of one's own builds events with it. |
+| `schema/headed` | `Constructors` | keep | core tests, prodrome-tags, tests of prodrome-data | The headed schema: an author of a schema of one's own builds events with it. |
+| `segment` | `Segment` (+2: 2 L) | keep | core tests, prodrome-nest, prodrome-term | A path segment, with its rule for valid text; `prodrome-nest` and `prodrome-term` name it. |
+| `sign` | `KeyAdded` (+5) | keep | wasm exports | Named by a program of this repository. |
+| `sign` | `bytes` | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `sign` | `Signed` (+5: 2 L) | keep | core tests, law kit, prodrome-dag | The signature objects (SPEC §3, §5). |
+| `sign` | `KeyRevoked` | keep | none | Appears in the signature of `mk_key_revoked`. |
+| `sign` | `mk_key_revoked` | keep | core tests, law kit | The signature objects (SPEC §3, §5). |
+| `sign` | `public_of` | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `sign` | `signed_by` | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `snapshot` | `Snapshot` | keep | prodrome-store | The snapshot object (SPEC §3). |
+| `snapshot` | `mk_snapshot` | keep | core tests, law kit, prodrome-store | The snapshot object (SPEC §3). |
+| `stamp` | `Stamp` (+7) | keep | examples | Named by a program of this repository. |
+| `stamp` | `Place` (+4: 1 L) | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `stamp` | `Scope` | cross-crate only | prodrome-dag | Another crate of the library calls it; no outside program should. |
+| `topo` | `linear` | keep | law kit, prodrome-dag, prodrome-digest | The one causal order (SPEC §3). |
+| `topo` | `Topo` (+2: 2 L) | cross-crate only | prodrome-fpl | Another crate of the library calls it; no outside program should. |
+
+### `prodrome-memo`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `balance` | `WIDEST` | keep | core tests | The balance of a tree (design §6.2); the digest calls it. |
+| `balance` | `balance` | keep | core tests, prodrome-digest | The balance of a tree (design §6.2); the digest calls it. |
+| `cache` | `Keep`, `Lru` (+1), `Cache` (+13) | keep | examples | Named by a program of this repository. |
+| `cache` | `Key` | keep | core tests, law kit, prodrome-dag | The caches (design §6.2). |
+| `cache` | `Finding` | keep | core tests | The caches (design §6.2). |
+| `cache` | `Lookup` (+4: 1 T) | keep | core tests, law kit, prodrome-dag | The caches (design §6.2). Its members complete the type. |
+| `cache` | `Evict` | keep | core tests | The caches (design §6.2). |
+| `file` | `File` (+1) | keep | examples | Named by a program of this repository. |
+| `file` | `SLACK` | keep | core tests | The cache file (SPEC §6). |
+| `file` | `BATCH` | keep | core tests | The cache file (SPEC §6). |
+| `fold` | `Report` (+3), `fold` | keep | examples | Named by a program of this repository. |
+| `fold` | `Tree` | keep | core tests, prodrome-digest, prodrome-nest | The cached fold (design §6.2). |
+| `fold` | `Algebra` | keep | core tests, prodrome-digest | The cached fold (design §6.2). |
+| `fold` | `Outcome` | keep | core tests | The cached fold (design §6.2). |
+| `fold` | `Visit` | keep | none | Appears in the signature of `Report::visits`. |
+| `fold` | `Counts` | keep | none | Appears in the signature of `Report::by_depth`. |
+| `front` | `Front` (+1) | keep | examples | Named by a program of this repository. |
+| `holder` | `Holder` | keep | core tests | The interface of a cache holder (law 57). |
+| `holder` | `Memory` | keep | core tests | The interface of a cache holder (law 57). |
+| `lib` | `name` | keep | examples | Named by a program of this repository. |
+
+### `prodrome-dag`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `dag` | `Dag` (+33) | keep | examples, github program, wasm exports | Named by a program of this repository. |
+| `dag` | `Prints` | cross-crate only | prodrome-store | Another crate of the library calls it; no outside program should. |
+| `dag` | `decode` | keep | core tests, prodrome-store | A second backend decodes a stored object with it (SPEC §3). |
+| `dag` | `lacked_among` | cross-crate only | prodrome-store | Another crate of the library calls it; no outside program should. |
+| `dag/finding` | `Finding` (+18), `Excluded` (+3), `Unread` (+5) | keep | cli, wasm exports | Named by a program of this repository. |
+| `dag/heads` | `Heads` (+4: 2 L, 2 P) | keep | core tests, law kit, prodrome-store | The record of heads that a store keeps (SPEC §3). |
+| `dag/reach` | `Reach` (+4: 1 L, 1 N, 2 T) | keep | prodrome-store | The reach set of a frontier; a second backend answers frontiers with it. Its members complete the type. |
+| `fold` | `read` | keep | wasm, wasm exports | Named by a program of this repository. |
+| `fold` | `scan` | cross-crate only | prodrome-reading | Another crate of the library calls it; no outside program should. |
+| `fold` | `admits` | cross-crate only | prodrome-reading | Another crate of the library calls it; no outside program should. |
+| `policy` | `Policy`, `Proven` (+4) | keep | examples, wasm, wasm exports | Named by a program of this repository. |
+| `registers` | `Folded` (+10), `Genesis`, `Prodrome`, `Node` (+5), `fold`, `deps_for` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `registers` | `Elsewhere` | keep | none | Appears in the signature of `Folded::insert`. |
+| `registers` | `extend` | keep | core tests, law kit | The fold of the DAG (SPEC §6.6), which a program that reads registers calls. |
+| `registers` | `since` | keep | core tests | The fold of the DAG (SPEC §6.6), which a program that reads registers calls. |
+| `registers` | `heads` | keep | core tests, law kit | The fold of the DAG (SPEC §6.6), which a program that reads registers calls. |
+| `sign` | `Secret` (+4), `Registrar` (+2), `Proof` (+5) | keep | wasm exports | Named by a program of this repository. |
+| `sign` | `Proved` | keep | core tests | The proof of signatures (SPEC §5). |
+| `sign/checks` | `Checks` (+2: 1 L, 1 T) | keep | core tests, law kit | The cache of signature checks; a host that proves signatures passes one. Its members complete the type. |
+| `spread` | `spread` | cross-crate only | prodrome-store | Another crate of the library calls it; no outside program should. |
+
+### `prodrome-declared`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `admit` | `Law` (+9: 1 N) | keep | core tests, tests of prodrome-declared | The laws that a declaration must keep (design §6.0). Its members complete the type. |
+| `admit` | `Refusal` | keep | none | Appears in the signature of `Form::parse` and `Declaration::admit`. |
+| `event` | `Datum` (+6), `Declared` (+4) | keep | wasm, wasm exports | Named by a program of this repository. |
+| `event` | `Key` | keep | none | The events of a declared schema. |
+| `event` | `Registers` | keep | none | The events of a declared schema. |
+| `language` | `Form` (+5: 2 T) | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. Its members complete the type. |
+| `language` | `Event` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `language` | `Field` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `language` | `Type` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `language` | `Poset` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `language` | `Register` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `language` | `Write` | keep | core tests | The syntax tree of a declaration; a program that reads a declaration walks it. |
+| `lib` | `Declaration` (+9), `Slot` (+1) | keep | wasm exports | Named by a program of this repository. |
+| `order` | `Valued` (+1: 1 P) | keep | none | Appears in the signature of `Declaration::value`. |
+
+### `prodrome-store`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `snapshot` | `Attestation` | keep | law kit | The attestation of a snapshot (SPEC §3). |
+| `snapshot` | `attest` | keep | law kit | The attestation of a snapshot (SPEC §3). |
+| `store` | `EventStore` (+27) | keep | cli, examples, wasm exports | Named by a program of this repository. |
+| `store/decision` | `Decision` (+5: 2 N, 3 T) | keep | core tests | The decision of an append (SPEC §3). Its members complete the type. |
+| `store/decision` | `Stopped` | keep | core tests | The decision of an append (SPEC §3). |
+| `store/doors` | `Doors` (+2) | keep | examples | Named by a program of this repository. |
+| `store/frontier` | `Since` (+2), `KEPT`, `Frontiers` (+3), `Lacking` (+4) | keep | examples | Named by a program of this repository. |
+| `store/frontier` | `Token` (+3: 2 N, 1 T) | keep | core tests | The frontier tokens of a door (SPEC §3). Its members complete the type. |
+| `store/frontier` | `NotAToken` | keep | none | Appears in the signature of `Token::parse`. |
+| `store/frontier` | `Reached` | keep | core tests | The frontier tokens of a door (SPEC §3). |
+| `store/frontier` | `Unrecorded` | keep | core tests | The frontier tokens of a door (SPEC §3). |
+| `store/frontier` | `Unanswered` | keep | none | Appears in the signature of `Frontiers::answer`. |
+| `store/frontier` | `Records` | keep | core tests | The frontier tokens of a door (SPEC §3). |
+| `store/frontier` | `Recorded` | keep | core tests | The frontier tokens of a door (SPEC §3). |
+| `store/memory_store` | `MemoryStore` (+2) | keep | examples, wasm exports | Named by a program of this repository. |
+| `store/overlay` | `Overlay` (+5: 3 L, 1 N, 1 T) | keep | core tests, law kit | The overlay of a store (SPEC §3). Its members complete the type. |
+| `store/replica` | `Replica` | keep | examples, wasm exports | Named by a program of this repository. |
+| `store/replica` | `Held` | keep | core tests, law kit | The replica interface of a store (SPEC §3). |
+| `store/replica` | `accept` | keep | core tests, law kit | The replica interface of a store (SPEC §3). |
+| `store/replica` | `sync` | keep | core tests, law kit | The replica interface of a store (SPEC §3). |
+
+### `prodrome-tags`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `alias` | `Alias` (+2), `AliasEvent`, `AliasVocabulary` | keep | wasm exports | Named by a program of this repository. |
+| `alias` | `OfItself` | keep | core tests | The aliases of a tag (law 48). |
+| `alias` | `aliased` | keep | core tests | The aliases of a tag (law 48). |
+| `alias` | `unaliased` | keep | core tests | The aliases of a tag (law 48). |
+| `lib` | `Tagging` | keep | wasm exports | Named by a program of this repository. |
+| `membership` | `Presence` (+2), `Pair` (+2), `MembershipEvent`, `MembershipVocabulary`, `added`, `removed` | keep | wasm exports | Named by a program of this repository. |
+| `membership` | `Membership` (+1: 1 P) | keep | core tests | The membership events of a tag (law 48). |
+| `set` | `TagSet` (+10: 10 T) | keep | core tests | The tag set (law 48). Its members complete the type. |
+| `set` | `Disagreement` | keep | core tests | The tag set (law 48). |
+
+### `prodrome-nest`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `heads` | `Heads` (+4: 4 T) | keep | core tests | The heads of a nest (design §6.3). Its members complete the type. |
+| `heads` | `Nests` | keep | core tests | The heads of a nest (design §6.3). |
+| `heads` | `pointer` | keep | core tests | The heads of a nest (design §6.3). |
+| `history` | `History` (+12: 12 T) | keep | core tests | The history monad of a nest (design §6.3). Its members complete the type. |
+| `level` | `Nest` (+6: 1 N, 5 T) | keep | core tests | The levels of a nest (design §6.3). Its members complete the type. |
+| `level` | `Level` | keep | core tests | The levels of a nest (design §6.3). |
+| `level` | `Leaf` (+1: 1 T) | keep | core tests | The levels of a nest (design §6.3). Its members complete the type. |
+| `level` | `Holding` (+2: 2 T) | keep | core tests | The levels of a nest (design §6.3). Its members complete the type. |
+| `level` | `Set` (+1: 1 T) | keep | core tests | The levels of a nest (design §6.3). Its members complete the type. |
+| `path` | `Path` (+6: 3 N, 3 T) | keep | core tests | The path of a nest (design §6.3). Its members complete the type. |
+
+### `prodrome-digest`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `lib` | `Measure`, `Leaf` (+4), `Node` (+7), `Tree` (+5), `tree`, `Measured`, `Part` (+3), `View` (+3), `pending`, `view` | keep | examples | Named by a program of this repository. |
+| `lib` | `Cycle` | keep | core tests | The summary tree (design §6.5). |
+| `lib` | `read` | keep | core tests | The summary tree (design §6.5). |
+| `lib` | `zoom` | keep | core tests | The summary tree (design §6.5). |
+| `waters` | `Waters` (+4) | keep | examples | Named by a program of this repository. |
+
+### `prodrome-term`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `fpl` | `PRIORITY_POWER` | keep | examples | Named by a program of this repository. |
+| `fpl/construct` | `mk_flat`, `mk_decay`, `mk_curve`, `mk_conj`, `mk_least`, `mk_offset`, `mk_gate`, `mk_shift`, `mk_within`, `mk_importance`, `mk_offset_by`, `mk_after`, `mk_recur`, `mk_periodic`, `mk_ref`, `mk_ref_in`, `mk_absent`, `mk_piecewise` | keep | cli, examples, github program, wasm exports | Named by a program of this repository. |
+| `fpl/construct` | `least_of` | keep | prodrome-fpl, prodrome-reading | The smart constructors of terms (SPEC §7). |
+| `fpl/construct` | `checklist` | keep | prodrome-reading | The smart constructors of terms (SPEC §7). |
+| `fpl/construct` | `piecewise` | cross-crate only | prodrome-fpl, prodrome-reading | Another crate of the library calls it; no outside program should. |
+| `fpl/delta` | `Delta`, `delta_from_hours` | keep | cli, examples, wasm exports | Named by a program of this repository. |
+| `fpl/delta` | `us_of` | cross-crate only | prodrome-fpl | Another crate of the library calls it; no outside program should. |
+| `fpl/delta` | `div_delta` | keep | prodrome-fpl | The spans of terms (SPEC §2). |
+| `fpl/delta` | `total_seconds` | keep | none | The span in seconds, as `timedelta.total_seconds` gives it, for a program that prints a span. |
+| `fpl/delta` | `hours` | keep | prodrome-fpl | The spans of terms (SPEC §2). |
+| `fpl/env` | `Outcome` (+4), `Candidates`, `Env` (+4) | keep | cli, examples, wasm, wasm exports | Named by a program of this repository. |
+| `fpl/printed` | `print_term`, `parse_term` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `schedule` | `Schedule` (+17) | keep | wasm exports | Named by a program of this repository. |
+| `schedule` | `Unordered` | keep | none | Appears in the signature of `Schedule::new`. |
+| `term/functor` | `CurvePoint` (+3), `Term` (+7) | keep | cli, examples, github program, wasm exports | Named by a program of this repository. |
+| `term/functor` | `TermF` (+22: 1 L, 2 N, 2 P) | keep | core tests, prodrome-fpl | The term functor (SPEC §7). Its members complete the type. |
+| `term/normalize` | `normalize` | keep | examples | Named by a program of this repository. |
+| `term/schema` | `Slot` (+9), `Fields`, `fields`, `FieldSource`, `Field` (+2), `build` | keep | wasm exports | Named by a program of this repository. |
+| `term/schema` | `Signatures` (+1: 1 L) | keep | none | Appears in the signature of `signatures`. |
+| `term/schema` | `signatures` | keep | core tests, prodrome-todo | The shape of each term layer (SPEC §2). |
+
+### `prodrome-fpl`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `breaks` | `series_knots` | keep | examples, wasm | Named by a program of this repository. |
+| `breaks` | `Breaks` | keep | none | Appears in the signature of `breakpoints`. |
+| `breaks` | `breakpoints` | keep | core tests | The breakpoints of a term (SPEC §7). |
+| `breaks` | `SAMPLES` | narrow | none | Only its own crate names it, and the crate calls it; no outside program needs it. |
+| `breaks` | `Knot` | keep | none | Appears in the signature of `Series::knots`. |
+| `breaks` | `Series` | keep | none | Appears in the signature of `series_knots`. |
+| `chain` | `compile` | keep | wasm | Named by a program of this repository. |
+| `chain` | `ChainError` | keep | core tests | The chain compiler (SPEC §7.1). |
+| `chain` | `Link` (+7: 1 N, 1 P, 2 T) | keep | core tests | The chain compiler (SPEC §7.1). Its members complete the type. |
+| `chain` | `Compiled` (+7: 1 N, 2 P, 4 T) | keep | core tests | The chain compiler (SPEC §7.1). Its members complete the type. |
+| `chain` | `compile_chain` | keep | core tests | The chain compiler (SPEC §7.1). |
+| `chain` | `chain_order` | keep | core tests | The chain compiler (SPEC §7.1). |
+| `fpl` | `Closed` (+4), `holds_absent`, `fulfillment`, `Scalar` (+4), `Note` (+3), `Explanation` (+3), `wire_key`, `scalar`, `scalars`, `explained`, `Member` (+2), `Stores` (+4), `link`, `link_in` | keep | cli, examples, wasm, wasm exports | Named by a program of this repository. |
+| `fpl` | `WITHIN_SAMPLES` | keep | core tests | The evaluation of a term (SPEC §7). |
+| `fpl` | `power_mean` | keep | none | SPEC §7 defines the power mean of `Conj`; a second evaluator checks its results against it. |
+| `fpl` | `offset` | keep | none | SPEC §7 defines `Offset`; a second evaluator checks its results against it. |
+| `fpl` | `bound` | keep | none | The events that a link binds, which a program that builds its own environment calls. |
+| `fpl` | `last_tended` | keep | core tests | The evaluation of a term (SPEC §7). |
+| `fpl` | `phase` | keep | none | SPEC §7 defines the instant that a `Periodic` reads; a second evaluator checks its results against it. |
+| `fpl` | `min_fulfillment` | keep | none | The bound of Theorem IV.1, which a program that explains a price calls. |
+| `fpl` | `member_shares` | keep | none | The shares of a conjunction's members, which a program that explains a price calls. |
+| `fpl` | `LinkError` | keep | core tests, prodrome-reading | The evaluation of a term (SPEC §7). |
+| `observe` | `Rounding` (+3), `Observation` (+5), `NextChange` (+2), `next_change` | keep | wasm, wasm exports | Named by a program of this repository. |
+| `observe` | `observed` | keep | core tests | The precision of a view (SPEC §7). |
+
+### `prodrome-todo`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `event` | `Authored` (+5), `TodoEvent` (+12), `mk_created`, `mk_completed`, `mk_cancelled`, `mk_reopened`, `mk_tended`, `mk_spec_revised` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `event` | `Created` | keep | none | The record of a `Created` event, a variant of `TodoEvent` (SPEC §4). |
+| `event` | `SpecRevised` | keep | none | The record of a `SpecRevised` event, a variant of `TodoEvent` (SPEC §4). |
+| `event` | `mk_record` | keep | none | The constructor of an `Authored` event, beside the other `mk_*` of the todo schema. |
+| `payload` | `Payload` | keep | wasm exports | Named by a program of this repository. |
+| `payload` | `RECORD_PREFIX` | keep | none | The fields that every record kind starts with; the author of a payload checks a signature against it. |
+| `payload` | `record_signature` | keep | none | The signature of a record kind; the author of a payload pins it in a test. |
+| `payload` | `spec_field` | keep | none | A read helper for the author of a payload. |
+| `reference` | `Todo` (+12), `mk_source`, `mk_note`, `mk_subtodo`, `mk_authored` | keep | cli, examples, github program, wasm, wasm exports | Named by a program of this repository. |
+| `reference` | `MarkupSource` (+1: 1 N) | keep | none | Appears in the signature of `Todo::body` and `Todo::detail`. Its members complete the type. |
+| `reference` | `NoteSite` (+12: 3 N) | keep | none | Appears in the signature of `Note::on`. Its members complete the type. |
+| `reference` | `Source` | keep | core tests | The reference payload (feature `reference`). |
+| `reference` | `Note` | keep | core tests | The reference payload (feature `reference`). |
+| `reference` | `SubTodo` | keep | core tests | The reference payload (feature `reference`). |
+| `reference` | `mk_todo` | keep | none | The constructor of the reference payload's record, beside `mk_note` and `mk_subtodo`. |
+| `todo` | `TodoVocabulary` | keep | examples, wasm exports | Named by a program of this repository. |
+| `todo` | `TODO_SIGNATURES` | keep | core tests | The todo schema's registers (SPEC §4, §6). |
+| `todo` | `State` | keep | core tests | The todo schema's registers (SPEC §4, §6). |
+| `todo` | `Spec` | keep | core tests | The todo schema's registers (SPEC §4, §6). |
+| `todo` | `Content` | keep | core tests, prodrome-reading | The todo schema's registers (SPEC §4, §6). |
+| `todo/registers` | `Registers` (+8: 3 L, 1 P) | keep | prodrome-reading | The registers of a todo (SPEC §6). |
+| `todo/write` | `Write` (+6), `Kind` (+5) | keep | cli, wasm, wasm exports | Named by a program of this repository. |
+
+### `prodrome-reading`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `fold` | `readings`, `env`, `specs`, `content`, `flatten`, `link_specs` | keep | cli, examples, wasm, wasm exports | Named by a program of this repository. |
+| `fold` | `price` | keep | core tests | The readings of a todo (SPEC §6.1 to §6.5). |
+| `fold` | `member` | keep | none | The member that a store's readings group (SPEC §6.4); `view::entries` calls it. |
+| `fold` | `stores` | keep | core tests | The readings of a todo (SPEC §6.1 to §6.5). |
+| `schema` | `History`, `Bind`, `Row` | keep | wasm exports | Named by a program of this repository. |
+| `schema` | `Price` | keep | core tests, wasm tests | The traits of a priced schema (SPEC §6). |
+| `todo` | `Reading` (+2) | keep | wasm exports | Named by a program of this repository. |
+| `view` | `Price` (+3), `Provisional` (+3), `Confidence` (+4), `Entry` (+20), `list_order`, `entries` | keep | cli, examples, wasm, wasm exports | Named by a program of this repository. |
+
+### `prodrome-core`
+
+| Module | Items | Decision | Who names them outside the crate | Reason |
+|---|---|---|---|---|
+| `laws` | `Broken` | keep | core tests | The law kit (SPEC §9): a host runs it in its own tests. |
+| `laws/history` | `history` | keep | examples | Named by a program of this repository. |
+| `laws/holding` | `holding` | keep | core tests | The law kit (SPEC §9). |
+| `laws/printed` | `printed` | keep | core tests | The law kit (SPEC §9). |
+| `laws/reading` | `Registers` (+3: 2 N, 1 T) | keep | core tests | The law kit compares readings. Its members complete the type. |
+| `laws/schema` | `free` | keep | core tests | The law kit (SPEC §9). |
+| `laws/schema` | `routed` | keep | core tests | The law kit (SPEC §9). |
+| `laws/schema` | `valued` | keep | core tests | The law kit (SPEC §9). |
+| `laws/script` | `Script` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script` | `Ran` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script` | `run` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script` | `run_with` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script` | `Rate` (+5: 2 N) | keep | none | Appears in the signature of `long_run`. Its members complete the type. |
+| `laws/script` | `long_run` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `Who` (+7: 1 N, 3 T) | keep | core tests | The law kit's script machine (law 68). Its members complete the type. |
+| `laws/script/step` | `Kind` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `Writing` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `Refusal` | keep | none | Appears in the signature of `refusal`. |
+| `laws/script/step` | `Root` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `Through` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `Step` (+13: 1 N) | keep | core tests | The law kit's script machine (law 68). Its members complete the type. |
+| `laws/script/step` | `a_script` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/script/step` | `an_honest_script` | keep | core tests | The law kit's script machine (law 68). |
+| `laws/shuffle` | `Shuffle` (+3), `a_shuffle` | keep | examples, wasm exports | Named by a program of this repository. |
+| `laws/synced` | `synced` | keep | core tests | The law kit (SPEC §9). |
+
+
+No row has the reason "unknown". The count of items by who names them,
+before and after this stage, from `scripts/outside.py --summary` (each
+field and each variant is an item):
+
+| Crate | Programs | Other crates | Tests only | Nobody | All | Programs | Other crates | Tests only | Nobody | All |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| `prodrome-data` | 108 | 167 | 40 | 64 | 379 | 108 | 167 | 40 | 51 | 366 |
+| `prodrome-memo` | 18 | 16 | 30 | 10 | 74 | 18 | 16 | 30 | 10 | 74 |
+| `prodrome-dag` | 55 | 59 | 20 | 9 | 143 | 55 | 59 | 20 | 8 | 142 |
+| `prodrome-declared` | 20 | 0 | 44 | 9 | 73 | 20 | 0 | 44 | 9 | 73 |
+| `prodrome-store` | 43 | 17 | 29 | 15 | 104 | 43 | 17 | 29 | 15 | 104 |
+| `prodrome-tags` | 19 | 0 | 18 | 1 | 38 | 19 | 0 | 18 | 1 | 38 |
+| `prodrome-nest` | 0 | 0 | 39 | 7 | 46 | 0 | 0 | 39 | 7 | 46 |
+| `prodrome-digest` | 25 | 0 | 16 | 2 | 43 | 25 | 0 | 16 | 2 | 43 |
+| `prodrome-term` | 41 | 52 | 18 | 16 | 127 | 41 | 52 | 18 | 16 | 127 |
+| `prodrome-fpl` | 48 | 2 | 30 | 14 | 94 | 48 | 2 | 30 | 13 | 93 |
+| `prodrome-todo` | 41 | 8 | 16 | 53 | 118 | 41 | 8 | 16 | 53 | 118 |
+| `prodrome-reading` | 45 | 0 | 6 | 7 | 58 | 45 | 0 | 6 | 7 | 58 |
+| `prodrome-core` | 1 | 0 | 54 | 23 | 78 | 1 | 0 | 54 | 23 | 78 |
+| all | 464 | 321 | 360 | 230 | 1375 | 464 | 321 | 360 | 215 | 1360 |
+
+The first five columns are before and the last five are after. The only
+change of the count is that the 15 narrowed items left it, all from
+"nobody". Of the items that nobody names, the
+public fields and variants are the bulk. They are the shape of a type that
+a program constructs or matches, so each stays with its type.
+
+### What was narrowed
+
+| Crate | Item |
+|---|---|
+| `prodrome-dag` | `Folded::push` |
+| `prodrome-data` | `BitSet::open` |
+| `prodrome-data` | `Change::to_value` |
+| `prodrome-data` | `Change::from_call` |
+| `prodrome-data` | `Genesis::to_value` |
+| `prodrome-data` | `Genesis::from_call` |
+| `prodrome-data` | `required` |
+| `prodrome-data` | `Signed::from_call` |
+| `prodrome-data` | `KeyAdded::to_value` |
+| `prodrome-data` | `KeyAdded::from_call` |
+| `prodrome-data` | `KeyRevoked::to_value` |
+| `prodrome-data` | `KeyRevoked::from_call` |
+| `prodrome-data` | `Snapshot::to_value` |
+| `prodrome-data` | `Snapshot::from_call` |
+| `prodrome-fpl` | `SAMPLES` |
+
+The objects of a change, a genesis, a snapshot and a key are read and
+printed through `Envelope`, so no outside program calls the conversions of
+the object types. `BitSet::open` belongs to a hidden type. `Folded::push`
+folds a node without the checks of `Folded::insert`. `breaks::SAMPLES` is a
+tuning constant that only the drawing of a curve uses. `codec::required` is
+the body of `payload::required`, which stays public.
+
+### Every item that crosses a boundary
+
+| Crate | Module | Item | Who names it | New in this stage |
+|---|---|---|---|---|
+| `prodrome-dag` | `dag` | `Prints` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::held` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::holds` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::forget` | core tests, prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::set_unread` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::hold_husks` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::husk` | core tests, prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::into_prints` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::settle` | core tests, prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::grow` | core tests, prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::order_among` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::is_root` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::read_prints` | prodrome-store | before |
+| `prodrome-dag` | `dag` | `Dag::node` | law kit, prodrome-store | before |
+| `prodrome-dag` | `dag` | `lacked_among` | prodrome-store | before |
+| `prodrome-dag` | `dag/heads` | `Heads::new` | prodrome-store | before |
+| `prodrome-dag` | `dag/reach` | `Reach::outside` | prodrome-store | before |
+| `prodrome-dag` | `dag/reach` | `Reach::insert` | prodrome-store | before |
+| `prodrome-dag` | `dag/reach` | `Reach::close` | prodrome-store | before |
+| `prodrome-dag` | `dag/reach` | `Reach::tips` | prodrome-store | before |
+| `prodrome-dag` | `fold` | `scan` | prodrome-reading | before |
+| `prodrome-dag` | `fold` | `admits` | prodrome-reading | before |
+| `prodrome-dag` | `registers` | `Folded::rewrite` | prodrome-store | before |
+| `prodrome-dag` | `spread` | `spread` | prodrome-store | before |
+| `prodrome-data` | `bitset` | `BitSet` | prodrome-dag | before |
+| `prodrome-data` | `event` | `Hash::of_bytes` | core tests, law kit, prodrome-dag, prodrome-declared, prodrome-memo, prodrome-store | before |
+| `prodrome-data` | `event` | `Hash::of_digest` | prodrome-memo | before |
+| `prodrome-data` | `event` | `Hash::digest` | prodrome-memo | before |
+| `prodrome-data` | `event` | `rests_on` | prodrome-dag, prodrome-store | before |
+| `prodrome-data` | `event` | `sorted_distinct` | prodrome-nest | before |
+| `prodrome-data` | `event` | `field` | prodrome-todo | before |
+| `prodrome-data` | `event` | `hashes_value` | prodrome-nest | before |
+| `prodrome-data` | `event` | `hashes` | prodrome-nest | before |
+| `prodrome-data` | `literal` | `ProdromeError::io` | prodrome-memo, prodrome-store | before |
+| `prodrome-data` | `literal/codec/record` | `Site` | the derive's helpers | new |
+| `prodrome-data` | `literal/codec/record` | `Reader` | the derive's helpers | new |
+| `prodrome-data` | `literal/codec/record` | `read` | prodrome-todo, the derive | new |
+| `prodrome-data` | `literal/codec/record` | `read_or_default` | the derive | new |
+| `prodrome-data` | `literal/codec/record` | `call_of` | the derive | new |
+| `prodrome-data` | `literal/codec/sum` | `headed_len` | the derive | new |
+| `prodrome-data` | `literal/codec/sum` | `headed_names` | the derive | new |
+| `prodrome-data` | `literal/codec/sum` | `headed_table` | the derive | new |
+| `prodrome-data` | `literal/codec/sum` | `names_field` | the derive | new |
+| `prodrome-data` | `literal/codec/sum` | `distinct` | the derive | new |
+| `prodrome-data` | `sign` | `bytes` | prodrome-dag | before |
+| `prodrome-data` | `sign` | `public_of` | prodrome-dag | before |
+| `prodrome-data` | `sign` | `signed_by` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Stamp::position` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Stamp::ancestry` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Stamp::placed` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Stamp::open` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Place` | prodrome-dag | before |
+| `prodrome-data` | `stamp` | `Scope` | prodrome-dag | before |
+| `prodrome-data` | `topo` | `Topo` | prodrome-fpl | before |
+| `prodrome-term` | `fpl/construct` | `piecewise` | prodrome-fpl, prodrome-reading | before |
+| `prodrome-term` | `fpl/delta` | `us_of` | prodrome-fpl | before |
+
+### What repeats
+
+For each crate, the ten longest docs of the rustdoc face, and each doc of an
+item that this stage touched, were read against the rule of section 2. A doc
+keeps what a caller cannot read from the type. The cuts delete narration,
+the restatement of a signature or a name, and paragraphs that repeat
+`SPEC.md`, which the doc cites instead. The deleted lines were read against the
+sentences that earlier stages restored, and two sentences that the review of stage 1 had restored, one of them the
+reason on `Climb`, were put back. Three more were put back because no other
+text states them: the twin of an event in `Decision::append_all`, the
+single prodrome of a store in `TagSet::of`, and the reading of each
+breakpoint in `observed`. The doc tests did not change. With each blank
+line and each comment line removed, each file that the pass changed equals
+the file before it, apart from the lines of the narrowing and of the hidden
+marks above.
+
+### The facade
+
+The root doc of `prodrome-core` has a new first section, "Which crate to
+depend on". Its first table gives, for each crate, what it holds and its
+size in tokens. Its second table gives, for each kind of program, the
+crates to depend on and the sum of their sizes: a program that writes
+events with a store, one that reads a todo's price, one with a schema of
+its own and no todos (three sizes, by how much it does), one that adds a
+second backend, and one that uses the whole library. The paragraphs that
+named each crate in prose were removed, because the tables say the same
+with the cost. `README.md` has a table of the same kinds of program and
+their crates, and says that a program depends on the facade only when it
+uses most of the library or the law kit. `docs/guide.md` names the crate
+of each item it describes, and says that the law kit needs a dependency on
+`prodrome-core`.
+
+### The face
+
+The columns "before" are the merge base `ed70e10`. The rustdoc measure is
+with the default features. The line measure is `scripts/face.py --lines`.
+"Doc chars" are the doc characters of the rustdoc face. "Ten longest" are
+the doc characters of the ten items of each crate that have the longest
+docs, before this stage.
+
+| Crate | Doc chars before | after | Ten longest before | after | Rustdoc tokens before | after | Line tokens before | after |
+|---|--:|--:|--:|--:|--:|--:|--:|--:|
+| `prodrome-data` | 31,434 | 30,271 | 8,234 | 7,914 | 12,143 | 11,475 | 19,913 | 19,994 |
+| `prodrome-memo` | 14,618 | 13,057 | 8,973 | 7,412 | 4,304 | 3,913 | 7,697 | 7,296 |
+| `prodrome-dag` | 17,641 | 16,285 | 6,030 | 4,795 | 5,664 | 5,316 | 14,424 | 14,118 |
+| `prodrome-declared` | 5,361 | 4,711 | 2,778 | 2,128 | 1,747 | 1,585 | 4,151 | 3,973 |
+| `prodrome-store` | 20,179 | 19,476 | 7,254 | 6,551 | 6,394 | 6,219 | 21,214 | 21,027 |
+| `prodrome-tags` | 5,517 | 5,305 | 3,445 | 3,233 | 1,890 | 1,837 | 4,036 | 3,979 |
+| `prodrome-nest` | 6,437 | 6,027 | 3,938 | 3,528 | 2,149 | 2,046 | 4,011 | 3,903 |
+| `prodrome-digest` | 5,735 | 4,917 | 3,735 | 2,917 | 1,794 | 1,590 | 4,319 | 4,099 |
+| `prodrome-term` | 8,531 | 7,754 | 3,935 | 3,183 | 3,649 | 3,455 | 6,861 | 6,574 |
+| `prodrome-fpl` | 13,435 | 12,207 | 5,455 | 4,352 | 4,290 | 3,976 | 5,793 | 5,500 |
+| `prodrome-todo` | 8,609 | 7,268 | 5,112 | 3,793 | 3,436 | 3,101 | 5,043 | 4,686 |
+| `prodrome-reading` | 9,847 | 9,364 | 4,240 | 3,757 | 3,211 | 3,090 | 4,077 | 3,949 |
+| `prodrome-core` | 7,641 | 7,582 | 13,506 | 13,295 | 1,989 | 1,975 | 13,391 | 13,333 |
+| all thirteen | 154,985 | 144,224 | 76,635 | 66,858 | 52,660 | 49,578 | 114,930 | 112,431 |
+
+With the feature `laws`, `prodrome-core` is 5,811 tokens by the rustdoc
+measure before and 5,759 after. The line measure falls less than the
+rustdoc measure for two reasons. It counts `pub(crate)` items, so a
+narrowing removes no line of it, and each `#[doc(hidden)]` mark and the
+longer sentence "For this library's own code; no promise." add lines. The
+data crate is 81 tokens larger by the line measure, 19,994 against 19,913,
+and under the 21,400 of "The targets".
+
+**Which crates a unit reads.** The sums use the line measure. The sets are
+the sets of the root doc of `prodrome-core`. "Before" is the sum of the
+faces at `ed70e10`.
+
+| A program that | Crates | Tokens before | Tokens after |
+|---|---|--:|--:|
+| writes events with a store and reads them under a policy | data, memo, dag, store | 63,248 | 62,435 |
+| reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 63,808 | 62,117 |
+| has its own schema and folds it under a policy | data, memo, dag | 42,034 | 41,408 |
+| has its own schema and prints and parses events | data | 19,913 | 19,994 |
+| uses the whole library | all thirteen | 114,930 | 112,431 |
+
+Section 13 gave 63,808 tokens for the second row. Each sum falls by the
+cuts of this stage, except the sums that hold the data crate alone, which
+rises by 81 tokens, and no program changes its set of crates.
+
+### The checks
+
+- The three commands of `AGENTS.md` pass on the merged tree.
+- `cargo doc --locked --workspace --no-deps --lib` with warnings denied
+  passes with the default features, with `--all-features` and with
+  `--no-default-features`.
+- No test, example, bench, wasm export or CLI of this repository lost an
+  item that it names: every target compiles, and the tests pass. No test
+  changed, and no conformance vector or vector of `wasm/conformance/`
+  changed, so the conformance run is untouched.
+- `nix flake check` did not run: the environment cannot fetch the flake's
+  input `crane` (HTTP 403). This stage changes no file of the wasm, the
+  viewer, `typst/` or `flake.nix`, so `AGENTS.md` does not require it. The
+  CI runs it.
+
+### What remains of issue #92
+
+The issue asks for three things, in this order: shorten the doc comments to
+what the code and `SPEC.md` do not say, narrow what is public, and divide
+the core into crates in the dependency order of its modules. Stage 1 and
+this stage shortened the docs, this stage reviewed every public item and
+narrowed 15, and stages 3 to 13 made the crates. Every crate is under the
+budget of 25,000 tokens, and the table above has no item whose decision is
+unknown. So the text of the issue is done, and the pull request names it
+with `Completes: gh-92` (the id of the roadmap item for the issue). The
+release that publishes the crates is a separate step and is not part of
+the issue.
