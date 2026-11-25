@@ -254,14 +254,17 @@ pub struct Term(Box<TermF<Term>>);
 impl Term {
     /// A term of one layer, built without checks; use the `mk_*`
     /// constructors of `fpl` to build a checked term.
+    #[inline]
     pub fn new(layer: TermF<Term>) -> Self {
         Term(Box::new(layer))
     }
 
+    #[inline]
     pub fn out(&self) -> &TermF<Term> {
         &self.0
     }
 
+    #[inline]
     pub fn into_out(self) -> TermF<Term> {
         *self.0
     }

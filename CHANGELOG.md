@@ -257,6 +257,54 @@ constructor's fields never change, in any release.
   answers what `view(tree, summarized, budget)` answered, and
   `read(tree, Node::bytes, summarized)` the same name as
   `read(tree, summarized)`. No stored byte changes.
+- **The terms, the evaluator and the todo schema's events are crates of
+  their own: `prodrome-term`, `prodrome-fpl` and `prodrome-todo` (issue
+  #92, section 12 of `docs/design-core-face.md`).** A program that builds,
+  prints and parses a term can depend on `prodrome-data` and
+  `prodrome-term` alone: 26,827 tokens by `scripts/face.py --lines`, in
+  place of the 113,095 tokens of `prodrome-core` and the crates below it.
+  A program that also writes a todo's events adds `prodrome-todo` (31,870
+  tokens), and a program that evaluates a term adds `prodrome-fpl` (32,532
+  tokens with the data and term crates). Neither `prodrome-term` nor
+  `prodrome-todo` depends on the evaluator. `prodrome-core` depends on the
+  three crates and re-exports each moved item at its old path, so a
+  program that depends on `prodrome-core` changes nothing. No behaviour,
+  stored byte, canonical print, conformance vector or law changes, and no
+  item is renamed or narrowed. A program that moves to the new crates
+  changes these paths:
+  - `prodrome::term` becomes `prodrome_term::term`, and
+    `prodrome::schedule` becomes `prodrome_term::schedule`;
+  - the smart constructors (`mk_flat`, `mk_decay`, `mk_curve`, `mk_conj`
+    and the other `mk_*`, `least_of`, `checklist`), the spans (`Delta`,
+    `div_delta`, `total_seconds`, `delta_from_hours`, `hours`),
+    `print_term`, `parse_term`, `PRIORITY_POWER`, and `Env`, `Outcome` and
+    `Candidates` move from `prodrome::fpl` to `prodrome_term::fpl`, which
+    also re-exports `Instant`, `instant_of`, `datetime_of`, `iso`,
+    `parse_iso` and `FplError` of `prodrome_data::instant`;
+  - the rest of `prodrome::fpl` (the evaluator: `Closed`, `fulfillment`,
+    `explained`, `link`, `link_in`, `Stores` and the others),
+    `prodrome::chain`, `prodrome::breaks` and `prodrome::observe` become
+    `prodrome_fpl::fpl`, `prodrome_fpl::chain`, `prodrome_fpl::breaks` and
+    `prodrome_fpl::observe`. `prodrome_fpl::fpl` re-exports
+    `prodrome_term::fpl`, so it holds every item of `prodrome::fpl`;
+  - `prodrome::event`, `prodrome::payload` and `prodrome::reference`
+    become `prodrome_todo::event`, `prodrome_todo::payload` and
+    `prodrome_todo::reference`. The feature `reference` of `prodrome-todo`
+    is on by default, and the feature `reference` of `prodrome-core` turns
+    it on;
+  - `TodoVocabulary`, `TODO_SIGNATURES`, `State`, `Spec` and `Content` of
+    `prodrome::todo`, and `Registers`, `Kind` and `Write` of
+    `prodrome::fold`, become items of `prodrome_todo::todo`, because the
+    impl of `Schema` for `TodoEvent` must be in the crate of `TodoEvent`.
+    `todo::Reading`, the readings of a todo and the impls of `Price`,
+    `History`, `Row` and `Bind` stay in `prodrome-core`;
+  - `prodrome::nest::Segment` is also `prodrome_data::segment::Segment`,
+    because `mk_ref_in` checks a name by its rule. `prodrome_nest`
+    re-exports it.
+
+  The core no longer uses `chrono` in its library, so `chrono` is a
+  dev-dependency of `prodrome-core`.
+
 - **The store, the tag sets, the nests and the digest are crates of their
   own: `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
   `prodrome-digest` (issue #92, section 11 of

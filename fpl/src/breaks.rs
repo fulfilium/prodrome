@@ -5,7 +5,7 @@ use std::ops::Add;
 use chrono::Duration;
 
 use crate::fpl::{div_delta, eval, fulfillment, Closed, Env, Instant};
-use crate::term::{Term, TermF};
+use prodrome_term::term::{Term, TermF};
 
 /// Where a term changes slope, where it jumps, and whether knots there are the
 /// whole curve (SPEC §7, "Breakpoints"; law 7).

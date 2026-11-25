@@ -4,23 +4,19 @@
 //! `prodrome-dag`, and the register algebra, such as [`Product`] and
 //! [`Frontier`], in `prodrome-data`. This module re-exports both.
 
-mod write;
-
 use std::collections::{BTreeMap, BTreeSet};
 
 pub use prodrome_dag::fold::*;
-pub use write::{Kind, Write};
+pub use prodrome_todo::todo::{Kind, Registers, Write};
 
 use crate::event::{Authored, TodoEvent, TodoId};
-use crate::fpl::{self, Candidates, Env, FplError, Instant};
-use crate::literal::ProdromeError;
+use crate::fpl::{self, Env, FplError, Instant};
 use crate::payload::Payload;
 use crate::policy::{Everything, Policy};
 use crate::registers::{Folded, Prodrome, Stamp};
 use crate::schedule::Schedule;
 use crate::schema::{Bind, History, Price, Schema};
 use crate::term::Term;
-use crate::todo::{Content, Spec, State};
 
 /// An entity's registers as a schedule over time, as of `at` (`None`: ever)
 /// under `policy` (SPEC §6.5, `history`).
@@ -39,190 +35,6 @@ pub fn readings<'a, E: Schema>(
         knots.insert(instant, registers.clone());
     });
     Schedule::of(E::Registers::default(), knots)
-}
-
-/// One todo's registers at a moment (SPEC §6, "The todo schema's
-/// registers").
-#[derive(Debug, Clone, PartialEq)]
-pub struct Registers<'a, P: Payload> {
-    pub state: Frontier<'a, TodoEvent<P>>,
-    pub spec: Frontier<'a, TodoEvent<P>>,
-    pub content: Frontier<'a, TodoEvent<P>>,
-    pub tended: GrowSet<Instant>,
-}
-
-impl<P: Payload> Default for Registers<'_, P> {
-    fn default() -> Self {
-        Registers {
-            state: Frontier::default(),
-            spec: Frontier::default(),
-            content: Frontier::default(),
-            tended: GrowSet::new(),
-        }
-    }
-}
-
-impl<'a, P: Payload> Product<'a> for Registers<'a, P> {
-    type Schema = TodoEvent<P>;
-
-    fn registers(&self) -> Vec<Kind> {
-        Kind::ALL.to_vec()
-    }
-
-    fn join(&mut self, stamp: &'a Stamp<TodoEvent<P>>) {
-        for write in Write::of(&stamp.event) {
-            self.route(stamp, write);
-        }
-    }
-
-    fn frontier(&self, kind: Kind) -> &Frontier<'a, TodoEvent<P>> {
-        match kind {
-            Kind::State => &self.state,
-            Kind::Spec => &self.spec,
-            Kind::Content => &self.content,
-        }
-    }
-
-    fn join_to(&mut self, kind: Kind, stamp: &'a Stamp<TodoEvent<P>>) {
-        match kind {
-            Kind::State => self.state.join(stamp),
-            Kind::Spec => self.spec.join(stamp),
-            Kind::Content => self.content.join(stamp),
-        }
-    }
-
-    fn reading(&self, kind: Kind) -> Vec<&'a Stamp<TodoEvent<P>>> {
-        match kind {
-            Kind::State => self.state.reading::<State>(),
-            Kind::Spec => self.spec.reading::<Spec>(),
-            Kind::Content => self.content.reading::<Content>(),
-        }
-    }
-
-    /// No todo register is inflationary: a `Reopened` after a `Completed`
-    /// goes back, which is why a todo's conflicts are shown and priced.
-    fn grows(&self, _event: &TodoEvent<P>) -> Result<(), ProdromeError> {
-        Ok(())
-    }
-
-    /// No todo register is inflationary, so no reading of one must climb.
-    fn climbed(&self, _earlier: &Self) -> Result<(), ProdromeError> {
-        Ok(())
-    }
-
-    fn climbing(&self) -> Vec<Kind> {
-        Vec::new()
-    }
-}
-
-impl<'a, P: Payload> Registers<'a, P> {
-    fn route(&mut self, stamp: &'a Stamp<TodoEvent<P>>, write: Write<'a, P>) {
-        match write {
-            Write::State(_) => self.state.join(stamp),
-            Write::Spec(_) => self.spec.join(stamp),
-            Write::Content(_) => self.content.join(stamp),
-            Write::Tend(at) => self.tended.join(at),
-        }
-    }
-
-    /// The candidate bindings, `{None}` for an open todo.
-    pub fn outcomes(&self) -> Candidates {
-        let mut out: Candidates = self
-            .state
-            .reading::<State>()
-            .into_iter()
-            .flat_map(|stamp| Write::of(&stamp.event))
-            .filter_map(|write| match write {
-                Write::State(binding) => Some(binding),
-                _ => None,
-            })
-            .collect();
-        if out.is_empty() {
-            out.insert(None);
-        }
-        out
-    }
-
-    pub fn specs(&self) -> Vec<&'a Term> {
-        self.spec
-            .reading::<Spec>()
-            .into_iter()
-            .flat_map(|stamp| Write::of(&stamp.event))
-            .filter_map(|write| match write {
-                Write::Spec(spec) => Some(spec),
-                _ => None,
-            })
-            .collect()
-    }
-
-    pub fn records(&self) -> Vec<&'a Authored<P>> {
-        self.content
-            .reading::<Content>()
-            .into_iter()
-            .flat_map(|stamp| Write::of(&stamp.event))
-            .filter_map(|write| match write {
-                Write::Content(record) => Some(record),
-                _ => None,
-            })
-            .collect()
-    }
-
-    /// Records this todo in `env`: its candidate bindings unless it is simply
-    /// open, and its tendings.
-    pub fn bind(&self, todo: &TodoId, env: &mut Env) {
-        let outcomes = self.outcomes();
-        if outcomes != Candidates::from([None]) {
-            env.outcomes.insert(todo.as_str().to_owned(), outcomes);
-        }
-        if !self.tended.is_empty() {
-            env.tended
-                .insert(todo.as_str().to_owned(), self.tended.clone());
-        }
-    }
-
-    /// The price of each world in force, one candidate from each register,
-    /// falling back to `first` where a register is unwritten yet: a flat 1.0
-    /// while resolved, else `checklist(spec, items)`, else `head`.
-    pub(crate) fn worlds(&self, first: &Self, head: Option<&Term>) -> Result<Vec<Term>, FplError> {
-        let mut specs: Vec<Option<&Term>> = or_first(self.specs(), first.specs())
-            .into_iter()
-            .map(Some)
-            .collect();
-        if specs.is_empty() {
-            specs.push(None);
-        }
-        let mut items: Vec<usize> = or_first(self.records(), first.records())
-            .into_iter()
-            .map(|record| record.payload.checklist_len())
-            .collect();
-        if items.is_empty() {
-            items.push(0);
-        }
-        let closed: BTreeSet<bool> = self.outcomes().iter().map(Option::is_some).collect();
-        let mut terms = Vec::new();
-        for closed in closed {
-            for spec in &specs {
-                for items in &items {
-                    let term = if closed {
-                        Some(fpl::mk_flat(1.0)?)
-                    } else {
-                        fpl::checklist(spec.cloned(), *items)?.or_else(|| head.cloned())
-                    };
-                    terms.extend(term);
-                }
-            }
-        }
-        Ok(terms)
-    }
-}
-
-/// `mine`, or `theirs` where `mine` is empty.
-fn or_first<T>(mine: Vec<T>, theirs: Vec<T>) -> Vec<T> {
-    if mine.is_empty() {
-        theirs
-    } else {
-        mine
-    }
 }
 
 /// The environment at `at` that FPL terms read (SPEC §6.1): the candidate

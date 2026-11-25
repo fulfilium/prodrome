@@ -63,7 +63,11 @@ memory, replicas, doors and frontiers). A program that admits schemas
 declared as text can depend on `prodrome-declared`, on the data crate. The
 crates `prodrome-tags` (tag sets), `prodrome-nest` (histories held in
 registers) and `prodrome-digest` (a summary tree over a log) each hold one
-module of the core.
+module of the core. A program that builds, prints and parses FPL terms can
+depend on `prodrome-term`, on the data crate, and a program that also
+writes the todo schema's events can add `prodrome-todo`. Neither crate
+evaluates a term: `prodrome-fpl` holds the evaluator, on the data crate and
+`prodrome-term`.
 
 ```toml
 [dependencies]

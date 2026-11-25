@@ -1,7 +1,11 @@
+//! What one event of the todo schema writes.
+
+use prodrome_data::instant::{instant_of, Instant};
+
 use crate::event::{Authored, TodoEvent};
-use crate::fpl::{self, Instant, Outcome};
 use crate::payload::Payload;
-use crate::term::Term;
+use prodrome_term::fpl::Outcome;
+use prodrome_term::term::Term;
 
 /// What one event writes, once for each register that it touches.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -25,7 +29,7 @@ impl<'e, P: Payload> Write<'e, P> {
     /// The writes of `event`. A record writes its content and, where it
     /// carries a spec, its spec. `Created` writes nothing.
     pub fn of(event: &'e TodoEvent<P>) -> impl Iterator<Item = Write<'e, P>> {
-        let at = fpl::instant_of(event.at());
+        let at = instant_of(event.at());
         let (first, second) = match event {
             TodoEvent::Created(_) => (None, None),
             TodoEvent::Completed(_) => (Some(Write::State(Some(Outcome::Completed(at)))), None),
@@ -66,8 +70,8 @@ impl Kind {
 mod tests {
     use super::*;
     use crate::event::{mk_completed, mk_created};
-    use crate::literal::Datetime;
     use crate::reference::Todo;
+    use prodrome_data::literal::Datetime;
 
     #[test]
     fn a_created_event_writes_no_register() {

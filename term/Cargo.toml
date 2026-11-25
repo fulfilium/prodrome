@@ -1,0 +1,25 @@
+[package]
+name = "prodrome-term"
+description = "The terms of FPL as data: their smart constructors, their canonical print and their parse"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "temporal", "fuzzy-logic"]
+categories = ["data-structures", "date-and-time"]
+
+[lib]
+name = "prodrome_term"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# A span is a `chrono::Duration`.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+# The literal grammar in which a term prints, the instants, and the names
+# that a reference checks.
+prodrome-data.workspace = true
+# The errors of a schedule.
+thiserror = "2"

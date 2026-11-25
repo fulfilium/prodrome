@@ -103,6 +103,15 @@
 //! `prodrome-digest` hold `nest`, `tags` and `digest`. This crate
 //! re-exports each module of these crates at the same path.
 //!
+//! The crate `prodrome-term` holds `term`, `schedule`, and the parts of
+//! `fpl` that build, print and parse a term, on `prodrome-data`. The crate
+//! `prodrome-fpl` holds the rest of `fpl` (the evaluator), `chain`,
+//! `breaks` and `observe`, on `prodrome-term`. The crate `prodrome-todo`
+//! holds `event`, `payload` and `reference`, and the todo schema's
+//! vocabulary and registers, which `todo` and `fold` re-export, on
+//! `prodrome-term`. A program that writes a todo's events can depend on
+//! `prodrome-data`, `prodrome-term` and `prodrome-todo` alone.
+//!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
 //! - `schema`: the events, entities and registers of a store (§4 to §6)
@@ -132,30 +141,26 @@
 //! - `reference`: the payload of the vectors (feature `reference`)
 //! - `laws`: laws as functions over a program's schemas (§9, feature `laws`)
 
-// The code that `#[derive(Literal)]` writes names this crate `::prodrome`,
-// as a program that depends on it does. This line makes the same path work
-// inside the crate, for the types that derive `Literal` here.
-extern crate self as prodrome;
-
-pub mod breaks;
-/// The chain compiler (SPEC §7.1).
-pub mod chain;
-pub mod event;
 pub mod fold;
-pub mod fpl;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod observe;
-pub mod payload;
-/// The reference payload, with which `conformance/*.py` was taken. A host
-/// defines its own payload and can turn off this default feature.
-#[cfg(feature = "reference")]
-pub mod reference;
-pub mod schedule;
 pub mod schema;
-pub mod term;
 pub mod todo;
 pub mod view;
+
+// The terms of FPL, from `prodrome-term`, and the evaluator, from
+// `prodrome-fpl`, at the paths that a program has always named. `fpl`
+// re-exports the constructors, the print and the parse of a term with the
+// evaluator.
+pub use prodrome_fpl::{breaks, chain, fpl, observe};
+pub use prodrome_term::{schedule, term};
+
+// The events and the payload of the todo schema, from `prodrome-todo`, at
+// the paths that a program has always named. `todo` and `fold` re-export
+// its vocabulary and its registers with the readings of a todo.
+#[cfg(feature = "reference")]
+pub use prodrome_todo::reference;
+pub use prodrome_todo::{event, payload};
 
 // The modules of `prodrome-data` that the core does not extend, at the
 // paths that a program has always named.

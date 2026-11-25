@@ -1,0 +1,27 @@
+[package]
+name = "prodrome-fpl"
+description = "The evaluator of FPL: fulfillment, explanation, linking, the chain compiler and the next change of a view"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "temporal", "fuzzy-logic"]
+categories = ["data-structures", "date-and-time"]
+
+[lib]
+name = "prodrome_fpl"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The arithmetic of instants and spans.
+chrono = { version = "0.4", default-features = false, features = ["std"] }
+# The names of the stores that a qualified reference reads, the error of
+# the literal grammar, and the one causal order.
+prodrome-data.workspace = true
+# The terms that this crate evaluates.
+prodrome-term.workspace = true
+# The errors of linking and of the chain compiler.
+thiserror = "2"

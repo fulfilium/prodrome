@@ -11,8 +11,8 @@ use crate::fpl::{
     div_delta, eval, offset, phase, power_mean, Closed, Delta, Env, Instant, Outcome,
     WITHIN_SAMPLES,
 };
-use crate::schedule::Schedule;
-use crate::term::{normalize, Term, TermF};
+use prodrome_term::schedule::Schedule;
+use prodrome_term::term::{normalize, Term, TermF};
 
 /// How a value between two steps is read.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
