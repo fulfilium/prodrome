@@ -2,7 +2,7 @@
 
 This note explains how Prodrome reads an inflationary register, and why.
 For the rule as implemented, see `SPEC.md` §6 and law 32, and
-`core/src/fold/climb.rs`.
+`data/src/fold/climb.rs`.
 
 ## The fault
 

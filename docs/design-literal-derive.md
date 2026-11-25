@@ -10,7 +10,7 @@ A type that a store holds has one stored form: a call of a constructor,
 such as `Note(on='block', lines=('one',))`. Before this change, a program
 wrote that form by hand, in up to four places: the type, a table of its
 constructor's name and field names, a function that prints a value, and a
-function that reads it back. The reference payload (`core/src/reference.rs`)
+function that reads it back. The reference payload (`todo/src/reference.rs`)
 had all four for each of its records, and an application with many stored
 types repeats them for each type. When the four places disagree, a value
 prints in a form that does not read back.
