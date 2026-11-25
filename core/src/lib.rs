@@ -103,6 +103,15 @@
 //! `prodrome-digest` hold `nest`, `tags` and `digest`. This crate
 //! re-exports each module of these crates at the same path.
 //!
+//! The crate `prodrome-term` holds `term`, `schedule`, and the parts of
+//! `fpl` that build, print and parse a term, on `prodrome-data`. The crate
+//! `prodrome-fpl` holds the rest of `fpl` (the evaluator), `chain`,
+//! `breaks` and `observe`, on `prodrome-term`. The crate `prodrome-todo`
+//! holds `event`, `payload` and `reference`, and the todo schema's
+//! vocabulary and registers, which `todo` and `fold` re-export, on
+//! `prodrome-term`. A program that writes a todo's events can depend on
+//! `prodrome-data`, `prodrome-term` and `prodrome-todo` alone.
+//!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
 //! - `schema`: the events, entities and registers of a store (§4 to §6)

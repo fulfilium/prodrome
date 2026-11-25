@@ -10,8 +10,9 @@ the data crate's doc comments. Section 10 records the stage after that,
 which made the crates `prodrome-memo`, `prodrome-dag` and
 `prodrome-declared`. Section 11 records the stage after that, which made
 the crates `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
-`prodrome-digest`, and gives the order of the stages that remain. The
-other stages are proposals. For what is implemented, see `SPEC.md` and
+`prodrome-digest`. Section 12 records the stage after that, which made
+the crates `prodrome-term`, `prodrome-fpl` and `prodrome-todo`, and gives
+the order of the stages that remain. The other stages are proposals. For what is implemented, see `SPEC.md` and
 `CHANGELOG.md`.
 
 Terms used below:
@@ -382,6 +383,7 @@ So the stages of section 5 have these targets, in the line measure:
 | 3, the instants and the words (section 9) | 92,204 without the data crate | 19,231 | |
 | 4, the readings, as made (section 10) | 66,077 without the data, memo, declared and dag crates | 19,654 | 28,767 (`store`, `nest`, `tags`, still in the core) |
 | 4, the store, as made (section 11) | 33,374 without the crates below it | 19,756 | 21,214 (`store` and `snapshot`) |
+| 4, the terms, the evaluator and the todo schema, as made (section 12) | 17,038 without the crates below it | 19,913 | 21,214 |
 | 4, each further crate | | under 25,000 by the application's tool | under 25,000 |
 
 The targets of 15,000 and 19,000 for the data crate were set before
@@ -1357,3 +1359,318 @@ and not the readings. If the stage of fpl finds with `scripts/edges.py`
 that `TodoEvent` and its `mk_*` name only fpl and the data crate, the
 todo's events can move before the reading crate, and those two units
 then read the data crate, fpl, the store and the events.
+
+## 12. The terms, the evaluator and the todo schema, as made
+
+The application of sections 9 to 11 adopted the revision `39c408f` and
+counted again which of its units depend on `prodrome-core`. Eight more
+units left the core at that revision, and eleven still depend on it. By
+`scripts/face.py --lines`, the core was 33,374 tokens at the merge base
+`b32472b` of this stage, over the budget, and each of the eleven units
+read it whole. A term, the evaluator or a todo's event holds ten of the
+eleven. This stage made three crates: `prodrome-term`, which holds the
+terms as data, `prodrome-fpl`, which holds the evaluator, and
+`prodrome-todo`, which holds the todo schema's events and its other data.
+
+**The method.** The method is the method of stage 3. Each commit below
+builds and passes the three commands of `AGENTS.md`:
+
+1. The cut. The parts of `fpl` that build, print and parse a term, with
+   the environment that a term reads, moved to a private module `syntax`
+   of the core, and `fpl` re-exported it. The todo schema's vocabulary,
+   its registers and what each event writes moved from `todo`, `fold` and
+   `fold/write.rs` to a private module `todo_schema`, and `todo` and
+   `fold` re-exported them. `Segment` moved from `prodrome-nest` to the
+   data crate (see below). After this commit, each of these commands
+   prints that no module of the set names a module outside it:
+
+   ```console
+   $ python3 scripts/edges.py core/src term schedule syntax
+   $ python3 scripts/edges.py core/src term schedule syntax fpl chain breaks observe
+   $ python3 scripts/edges.py core/src term schedule syntax event payload todo_schema reference
+   ```
+
+   The modules of each set name the data crate at its own paths, so the
+   script also proves that they name no module of the core that
+   re-exports a crate above the data crate.
+2. The move of `term`, `schedule` and `syntax` to `term/src/` (`syntax`
+   became the module `fpl` of the new crate), of `fpl`, `chain`, `breaks`
+   and `observe` to `fpl/src/`, and of `event`, `payload`, `reference` and
+   `todo_schema` to `todo/src/` (`todo_schema` became the module `todo`).
+   The CI's lint check runs `scripts/edges.py` over the source directory
+   of each new crate.
+3. The test `todo/tests/alone.rs`, below.
+
+Another commit records the stage in this note, in `CHANGELOG.md`, in
+`README.md` and in `docs/development.md`. `prodrome-core` re-exports every
+moved item at its old path, so `cli/`, `wasm/`, `github/` and the tests
+build with no change of an import. No trait was added, and no item was
+renamed or narrowed.
+
+**The terms as data.** At the merge base, `python3 scripts/edges.py
+core/src term` printed five uses of a module outside the set: `term`
+named `Delta`, `Instant`, `PRIORITY_POWER`, `FplError`, the smart
+constructors and the private `piecewise` of `fpl`, and `Schedule` of
+`schedule`. None of these is a part of the evaluator. A term holds a
+`Schedule` in a `Piecewise`, so `schedule` is part of the terms too. The
+constructors named one more crate, which the script does not see because
+the core re-exports it: `mk_ref_in` checks an entity by the rule of
+`nest::Segment`, and `prodrome-nest` depends on `prodrome-dag`. A
+`Segment` is a name with a rule for valid text, as `TodoId` is, so it
+moved to `prodrome_data::segment`, and `prodrome-nest` re-exports it at
+`prodrome_nest::Segment`. With that move, `term`, `schedule` and the
+constructors stand on the data crate alone.
+
+The terms could be part of the data crate, or a crate of their own. The
+data crate is 19,913 tokens by `scripts/face.py --lines` after this
+stage, and the terms are 6,910. Together they would be 26,823 tokens,
+which is over the budget by this note's measure and about 30,500 to
+31,400 by the application's tool. So the terms are the crate
+`prodrome-term`, on the data crate. A program that builds a term and
+stores it reads 26,823 tokens in place of the 113,095 of `prodrome-core`
+and the crates below it.
+
+`prodrome-term` holds these items. Each keeps its path through the core.
+
+| Items | The path in `prodrome-term` | The path that `prodrome-core` keeps |
+|---|---|---|
+| `Term`, `TermF`, `CurvePoint`, `normalize`, `schema` and its items | `prodrome_term::term::…` | `prodrome::term::…` |
+| `Schedule` and the rest of `schedule` | `prodrome_term::schedule::…` | `prodrome::schedule::…` |
+| the smart constructors: `mk_flat`, `mk_decay`, `mk_curve`, `mk_conj`, `mk_least`, `least_of`, `mk_offset`, `mk_gate`, `mk_shift`, `mk_within`, `mk_importance`, `mk_offset_by`, `mk_after`, `mk_recur`, `mk_periodic`, `mk_ref`, `mk_ref_in`, `mk_absent`, `mk_piecewise`, `checklist` | `prodrome_term::fpl::…` (file `fpl/construct.rs`) | `prodrome::fpl::…` |
+| the spans: `Delta`, `div_delta`, `total_seconds`, `delta_from_hours`, `hours` | `prodrome_term::fpl::…` (file `fpl/delta.rs`) | `prodrome::fpl::…` |
+| the print and the parse: `print_term`, `parse_term`, `Term::to_value`, `Term::from_value`, the impl of `Literal` for `Term` | `prodrome_term::fpl::…` (file `fpl/printed.rs`) | `prodrome::fpl::…` |
+| what a term reads: `Env`, `Outcome`, `Candidates` | `prodrome_term::fpl::…` (file `fpl/env.rs`) | `prodrome::fpl::…` |
+| `PRIORITY_POWER`, and the re-exports of `Instant`, `instant_of`, `datetime_of`, `iso`, `parse_iso` and `FplError` | `prodrome_term::fpl::…` | `prodrome::fpl::…` |
+
+`Env`, `Outcome` and `Candidates` moved because the todo schema's
+registers name them (see below), and because they are data: SPEC §6.1
+defines the environment as a snapshot of history, and each of the three
+is a plain value with no code of the evaluator. A second evaluator, in
+this language or another, reads the same three values. `Term::to_value`,
+`Term::from_value` and the impl of `Literal` for `Term` must be in the
+crate of `Term`, because the first two are inherent methods and the trait
+is in another crate. The module `term::schema` names each field of each
+layer, so a second evaluator reads a term's shape from `prodrome-term`
+alone, and the print of SPEC §2 is its format.
+
+Four items became public and `#[doc(hidden)]`, because the evaluator or
+the core calls them and `pub(crate)` does not reach across crates. Each
+doc starts with "For the core; no promise.": `piecewise`, which `chain`
+and `fold::flatten` call, and `us_of`, `after` and `ratio`, the
+arithmetic of spans in microseconds that the evaluator calls for each
+node. None of them changes a value that a later call trusts.
+
+**The evaluator.** `fpl` (the rest: `Closed`, `fulfillment`, `explained`,
+`Explanation`, `Note`, `Scalar`, `link`, `link_in`, `LinkError`, `Stores`,
+`Member` and the others), `chain`, `breaks` and `observe` are the crate
+`prodrome-fpl`, on the data crate and `prodrome-term`. Its module `fpl`
+re-exports `prodrome_term::fpl`, so `prodrome_fpl::fpl` and
+`prodrome::fpl` hold the same items, as `prodrome_dag::policy` and
+`prodrome::policy` do. These items stay in it:
+
+| Item | Reason |
+|---|---|
+| `WITHIN_SAMPLES` | It is the number of samples of the evaluation of `Within`. |
+| `Closed`, `holds_absent` | A `Closed` term is what evaluation takes (SPEC §7.2), and `link` makes one. |
+| `wire_key`, `scalar`, `scalars` | They make the notes of an explanation. |
+
+The face of `prodrome-fpl` is 5,705 tokens by `scripts/face.py --lines`
+and 4,290 by the rustdoc measure, far under the budget, so this stage
+does not divide it. A program that asks what changes next
+(`observe`), a program that explains a price (`explained`, `Note`,
+`Explanation`) and a program that only calls `fulfillment` each read the
+data crate, `prodrome-term` and `prodrome-fpl`: 32,528 tokens. A division
+would save each of them at most the 5,705 tokens of the crate.
+
+**The todo schema.** `TodoEvent`, its records, its `mk_*` and `Payload`
+name only the terms and the data crate: with `event` and `payload` in the
+set of the evaluator, `scripts/edges.py` prints no use outside it, and
+`event` and `payload` name no module of the evaluator. One edge goes up,
+and the script does not show it, because it is a rule of Rust: the impl
+of `Schema` for `TodoEvent` must be in the crate of `TodoEvent`, because
+`Schema` is in the data crate. That impl names `fold::Registers` and
+`fold::Kind`, which the note listed with the readings of a todo, and
+`Write`. These are the todo schema's data, as follows:
+
+| Item | What it names | Moved to |
+|---|---|---|
+| `TODO_SIGNATURES`, `TodoVocabulary` and the impl of `Schema` | the terms' signatures, `Payload`, the data crate | `prodrome_todo::todo` |
+| `State`, `Spec`, `Content` and their impls of `RegisterType` | `Discrete` of the data crate | `prodrome_todo::todo` |
+| `Registers`, its impl of `Product`, `outcomes`, `specs`, `records` and `bind` | the register algebra of the data crate, `Env` and `Candidates` | `prodrome_todo::todo`, re-exported at `prodrome::fold::Registers` |
+| `Write`, `Kind` | `Outcome`, `Term`, `Authored` | `prodrome_todo::todo`, re-exported at `prodrome::fold::{Write, Kind}` |
+
+`Registers::bind` names `Env`, and `Write` names `Outcome`, so the cut
+needed those two in the terms crate, a move of data. The crate-visible
+method `Registers::worlds`, which computes the price of each world with
+`mk_flat` and `checklist`, became a private function of the core's
+`todo`, because only the impls of `Price` and `History` call it. These
+items stay in the core's `todo`:
+
+| Item | Reason |
+|---|---|
+| the impls of `Price`, `History`, `Row` and `Bind` for `TodoEvent` | The traits are in the core's `schema`, and they move with the reading crate. Rust allows an impl of a local trait for a type of another crate. |
+| `todo::Reading` | It is the type of `Row::reading`. |
+
+So the todo schema's events are the crate `prodrome-todo`, on the data
+crate and `prodrome-term`, with no dependency on the evaluator:
+`event`, `payload`, `reference` (behind the default feature `reference`,
+which the core's feature of the same name turns on), and `todo`. The
+derived types of `reference` name the data crate with
+`#[literal(crate = prodrome_data)]`. A program that writes a todo with a
+decaying price reads the data crate, `prodrome-term` and
+`prodrome-todo`: 31,866 tokens, and nothing of how a price is computed.
+The test `todo/tests/alone.rs` is that program: it builds a decaying
+spec, writes three events and an object that holds one, prints them,
+parses them back, and checks the object's name against `sha256sum`. Its
+only crates of the workspace are those three.
+
+**What is left of the core.** The core holds `fold` (the readings of a
+todo, and the re-exports), `schema` (the traits `Price`, `History`,
+`Bind` and `Row`), `todo` (the impls of those traits, and `Reading`),
+`view`, `laws` behind its feature, and the root doc. Its face is 17,038
+tokens by `scripts/face.py --lines`, of which `laws` is 11,220, and 4,802
+by the rustdoc measure with the default features (8,624 with `laws`).
+The core no longer uses `chrono` itself, so `chrono` is a
+dev-dependency.
+
+**The face.** "Before" is the merge base `b32472b`. The rustdoc measure
+is with the default features. The crates that this stage does not change
+keep their faces: `prodrome-memo` 7,697, `prodrome-declared` 4,151,
+`prodrome-dag` 14,424, `prodrome-store` 21,214, `prodrome-tags` 4,036 and
+`prodrome-digest` 4,319 by the line measure.
+
+| Crate | Lines, before | Lines, after | Rustdoc, before | Rustdoc, after |
+|---|--:|--:|--:|--:|
+| `prodrome-core`, without the crates below | 33,374 | 17,038 | 15,141 | 4,802 |
+| `prodrome-data` | 19,756 | 19,913 | 12,030 | 12,143 |
+| `prodrome-nest` | 4,124 | 4,011 | 2,234 | 2,149 |
+| `prodrome-term` | | 6,910 | | 3,649 |
+| `prodrome-fpl` | | 5,705 | | 4,290 |
+| `prodrome-todo` | | 5,043 | | 3,436 |
+| all twelve crates | 113,095 | 114,461 | | |
+
+The crates together are 1,366 tokens more than before by the line
+measure: the root docs and module heads of the three new crates and of
+`segment`, the lines of the core that re-export, and the marks of the
+hidden items. Every crate is under the budget by both measures.
+
+**Which crates a unit reads.** The table has one row for each unit of the
+count at the start of this section. Before this stage, each of these
+units read `prodrome-core` and the eight crates below it, 113,095
+tokens. "All twelve" is `prodrome-core` with the eleven crates below it,
+114,461 tokens. A unit that names a constructor at `prodrome::fpl` names
+it at `prodrome_term::fpl` instead, and so on for the other paths of
+`CHANGELOG.md`.
+
+| Unit | Held by | Crates after | Tokens after |
+|---|---|---|--:|
+| a chains unit | `event::TodoEvent` | data, term, todo | 31,866 |
+| an API unit | `observe::Observation`, `observe::NextChange` | data, term, fpl; its tests also read the core, for `view::entries` | 32,528 |
+| a release unit | `TodoEvent`, `mk_completed`, `Term`, `TermF` | data, term, todo | 31,866 |
+| a base unit | the evaluator and the terms alone | data, term, fpl | 32,528 |
+| a command line | the events, `mk_absent`, `mk_decay`, `mk_flat`, `Term` | data, term, todo | 31,866 |
+| an assistant unit | `fulfillment`, `link`, `Payload`, `view::entries` | all twelve | 114,461 |
+| a records unit | the events, `todo::TodoVocabulary`, the terms, `view::Entry` | all twelve | 114,461 |
+| an inbox unit | `fold::price`, `schema::Price`, the events, the terms | all twelve | 114,461 |
+| a signatures unit | the readings of `fold`, the evaluator, `view::entries` | all twelve | 114,461 |
+| a todo unit | the evaluator, the events, `view::{Confidence, Provisional, list_order}` | all twelve | 114,461 |
+| a browser module | the readings of `fold`, the evaluator, the events | all twelve | 114,461 |
+
+So five units leave the core in this stage, and each reads at most 32,528
+tokens in place of 113,095. The eleven units together read 847,420
+tokens in place of 1,244,045. Each of the six units that still read the
+core names `view` or a reading of `fold` or `schema`, which the next
+stage moves. Without its name of `view::entries`, the assistant unit
+would read the data crate, `prodrome-term`, `prodrome-fpl` and
+`prodrome-todo`: 37,571 tokens.
+
+**The timings.** The benchmark of section 9, in the release profile with
+no link-time optimisation, on a generated store of 15,009 objects over
+100 todos, about 400 bytes each, with two more operations for this
+stage: `fulfillment` 2,000 times over a closed term of 60 nested levels
+(each a `Conj` of the level below, a shifted `Periodic` of a `Decay`, and
+a `Flat`, under an `Offset`), and `observe::next_change` 20 times over
+such a term of 12 levels. Each binary takes the median of ten runs of each
+operation. Each run appends the same ten tendings on a warm handle, so
+after the first run each append finds its object in the store. The base
+binary and the branch binary ran in turn, eleven times each, in five
+rounds on one store. The second and the fifth round ran the branch first.
+The table gives the median of the 55 medians of each binary, in
+milliseconds, and the change in the count of instructions that
+`valgrind --tool=cachegrind` gives for one run of the operation.
+
+| Operation | Before | After | Change | Change in instructions |
+|---|--:|--:|--:|--:|
+| cold read | 135.4 | 132.4 | −2.2 % | −0.03 % |
+| `registers::fold` | 28.3 | 28.9 | +2.0 % | −0.00 % |
+| `view::entries` | 68.0 | 68.2 | +0.3 % | +0.02 % |
+| `Dag::verify` | 39.3 | 39.5 | +0.3 % | +0.11 % |
+| append | 25.8 | 25.1 | −2.8 % | not counted |
+| `fulfillment` | 23.8 | 24.2 | +1.6 % | −0.34 % |
+| `observe::next_change` | 2.78 | 2.89 | +4.2 % | −0.25 % |
+
+The rounds vary by more than these changes: one round alone gave −11
+to +12 percent for each operation. `observe::next_change` is the
+shortest operation, and its median is over 3 percent. A second run took
+the median of 21 runs of `next_change` 200 times, in 20 pairs of the two
+binaries: +2.9 percent, with each binary's runs between 21 and 30
+milliseconds. The counts of instructions decide it: the branch runs 0.25
+percent fewer instructions for `next_change` and 0.34 percent fewer for
+`fulfillment`, so the evaluator's loop does no more work across the new
+crate boundary. The evaluator calls these functions of `prodrome-term`
+for each node or each step, so they are `#[inline]`: `Term::new`,
+`Term::out`, `Term::into_out`, `Outcome::at`, `us_of`, `after`, `ratio`,
+`div_delta`, `total_seconds`, and `divide_and_round`, which `div_delta`
+calls. The functions of `Schedule`, `TermF` and the register algebra are
+generic, so the caller compiles them.
+
+**Compile time.** A build of the workspace in the dev profile, with four
+cores, twice each, each time in a new target directory, in two rounds.
+"Touch" is the build after `touch data/src/lib.rs`, twice after each
+clean build.
+
+| Build | Before | After |
+|---|--:|--:|
+| clean | 24.0 s, 23.9 s, 25.1 s, 25.2 s | 26.1 s, 26.8 s, 25.5 s, 26.7 s |
+| touch | 2.3 s, 2.3 s, 2.3 s, 2.3 s, 2.8 s, 2.2 s, 2.5 s, 2.5 s | 2.4 s, 2.4 s, 2.3 s, 2.5 s, 2.4 s, 2.3 s, 2.3 s, 2.3 s |
+
+A clean build takes about 1.5 seconds more. A probable cause is that the
+core waits for `prodrome-term` and then for `prodrome-fpl` and
+`prodrome-todo`, whose code it compiled as modules of one crate before.
+The build after an edit of the data crate does not change.
+
+**The size of the wasm.** `nix build .#prodrome-wasm` gives a module
+(`web/prodrome_bg.wasm`) of 1,411,073 bytes at the merge base and
+1,415,649 bytes after this stage: 4,576 bytes, or 0.32 percent, more.
+The profile `wasm-release` uses fat link-time optimisation, so the
+compiler sees the code of every crate. This note did not find which code
+the 4,576 bytes are.
+
+**The tests.** The integration tests of the core run unchanged through
+the re-exports: 465 tests. The core's unit tests fell from 24 to 14: one
+moved to `prodrome-term` (the round trip of `term::schema`) and nine to
+`prodrome-todo` (the tests of `event`, `todo`, `write` and `reference`).
+`prodrome-fpl` has no unit test; the core's integration tests check the
+evaluator's laws through the re-exports. No law was added or changed,
+and no property test moved.
+
+**What remains, in order.** The units of the application that still
+depend on `prodrome-core` after this stage each name `view`, a reading of
+`fold`, or a trait of `schema`:
+
+1. the reading crate: the readings of a todo (`fold::env`, `specs`,
+   `content`, `flatten`, `price`, `link_specs`, `member`, `stores` and
+   `readings`), `view`, the traits `Price`, `History`, `Bind` and `Row`
+   with their impls for `TodoEvent`, and `todo::Reading`. These name the
+   data crate, `prodrome-dag` (`fold::read`, `registers::Node`),
+   `prodrome-term`, `prodrome-fpl` and `prodrome-todo`, and no module of
+   the store. They are about 3,800 tokens by `scripts/face.py --lines`.
+   The six units above that still read the core would then read the
+   crates below the core and this one.
+2. what is left: `laws` behind its feature, the root doc, and the
+   re-exports of the facade.
+
+The stages of section 5 named fpl, digest, reading and todo. Digest was
+made in section 11, and fpl and the data of todo in this section, so
+only the reading crate is left. The impls of the reading traits for
+`TodoEvent` go with that crate, because the traits do.

@@ -118,9 +118,19 @@ tags/         prodrome-tags, mergeable tag sets, on the data and dag crates.
               The core re-exports it as `prodrome::tags`.
 digest/       prodrome-digest, a summary tree over a log, on the data and
               memo crates. The core re-exports it as `prodrome::digest`.
+term/         prodrome-term, the terms of FPL as data: their smart
+              constructors, their print and parse, and the environment that
+              a term reads, on the data crate. The core re-exports `term`
+              and `schedule`, and each item of its `fpl` at `prodrome::fpl`.
+fpl/          prodrome-fpl, the evaluator of FPL, the chain compiler,
+              breakpoints and the next change of a view, on the data and
+              term crates. The core re-exports each module.
+todo/         prodrome-todo, the todo schema as data: its events, its
+              payload, its vocabulary and its registers, on the data and
+              term crates. The module `reference` is the payload of the
+              vectors. The core re-exports each module.
 core/         prodrome-core, the database. The module list in core/src/lib.rs
-              gives the SPEC section of each module. The module `reference`
-              is the payload of the vectors.
+              gives the SPEC section of each module.
 derive/       prodrome-derive, the procedural macro `#[derive(Literal)]`,
               which the data crate and the core re-export as
               literal::codec::Literal
