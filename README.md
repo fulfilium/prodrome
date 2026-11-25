@@ -67,7 +67,9 @@ module of the core. A program that builds, prints and parses FPL terms can
 depend on `prodrome-term`, on the data crate, and a program that also
 writes the todo schema's events can add `prodrome-todo`. Neither crate
 evaluates a term: `prodrome-fpl` holds the evaluator, on the data crate and
-`prodrome-term`.
+`prodrome-term`. A program that reads a todo's price and its row in a list
+can depend on `prodrome-reading`, on the data, dag, term, fpl and todo
+crates; it reads no store.
 
 ```toml
 [dependencies]

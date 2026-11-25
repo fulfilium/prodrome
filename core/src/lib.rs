@@ -112,6 +112,16 @@
 //! `prodrome-term`. A program that writes a todo's events can depend on
 //! `prodrome-data`, `prodrome-term` and `prodrome-todo` alone.
 //!
+//! The crate `prodrome-reading` holds `fold` (the readings of a todo, with
+//! the re-exports of the register algebra and of `fold::read`), `schema`
+//! (the traits `Price`, `History`, `Bind` and `Row`), `todo` (their impls
+//! for the todo schema) and `view`, on `prodrome-data`, `prodrome-dag`,
+//! `prodrome-term`, `prodrome-fpl` and `prodrome-todo`. A program that
+//! reads a todo's price and its row in a list can depend on these
+//! crates alone, with `prodrome-memo`, on which `prodrome-dag` depends.
+//! This crate holds only the law kit, behind the feature
+//! `laws`, and re-exports every other module.
+//!
 //! Modules, with the section of `SPEC.md` (or of a design note) for each:
 //! - `literal`: values and the literal grammar (§2)
 //! - `schema`: the events, entities and registers of a store (§4 to §6)
@@ -141,12 +151,13 @@
 //! - `reference`: the payload of the vectors (feature `reference`)
 //! - `laws`: laws as functions over a program's schemas (§9, feature `laws`)
 
-pub mod fold;
 #[cfg(feature = "laws")]
 pub mod laws;
-pub mod schema;
-pub mod todo;
-pub mod view;
+
+// The readings of a schema's history and their instances for the todo
+// schema, from `prodrome-reading`, at the paths that a program has always
+// named.
+pub use prodrome_reading::{fold, schema, todo, view};
 
 // The terms of FPL, from `prodrome-term`, and the evaluator, from
 // `prodrome-fpl`, at the paths that a program has always named. `fpl`

@@ -70,6 +70,10 @@ prodrome-fpl.workspace = true
 # The todo schema's events and payload, which this crate re-exports at
 # `prodrome::event`, `prodrome::payload` and `prodrome::reference`.
 prodrome-todo.workspace = true
+# The readings of a schema's history and their instances for the todo
+# schema, which this crate re-exports at `prodrome::fold`,
+# `prodrome::schema`, `prodrome::todo` and `prodrome::view`.
+prodrome-reading.workspace = true
 sha2 = "0.10"
 thiserror = "2"
 

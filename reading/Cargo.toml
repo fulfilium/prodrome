@@ -1,0 +1,33 @@
+[package]
+name = "prodrome-reading"
+description = "The readings of a schema's history: its price, its history as a function of time, its binding for FPL and its row in a list"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../README.md"
+keywords = ["event-sourcing", "temporal", "fuzzy-logic", "todo"]
+categories = ["data-structures", "date-and-time"]
+
+[lib]
+name = "prodrome_reading"
+path = "src/lib.rs"
+
+# Each dependency is here because a module of this crate needs it.
+[dependencies]
+# The register algebra, the stamps, the names and the policy `Everything`.
+prodrome-data.workspace = true
+# The fold of the DAG, the reading of an entity's registers and `Policy`.
+prodrome-dag.workspace = true
+# The terms that a price is, the environment that a term reads, and the
+# constructors that build a price.
+prodrome-term.workspace = true
+# The linking and the evaluation of a price, for a row of the list.
+prodrome-fpl.workspace = true
+# The todo schema, for its readings and its impls of this crate's traits.
+prodrome-todo.workspace = true
+
+[dev-dependencies]
+# The unit tests write todos with the reference payload.
+prodrome-todo = { workspace = true, features = ["reference"] }
