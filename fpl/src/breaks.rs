@@ -4,7 +4,9 @@ use std::ops::Add;
 
 use chrono::Duration;
 
-use crate::fpl::{div_delta, eval, fulfillment, Closed, Env, Instant};
+use crate::fpl::{
+    advance, delta_of_us, div_delta, eval, fulfillment, retreat, us_of, Closed, Env, Instant,
+};
 use prodrome_term::term::{Term, TermF};
 
 /// Where a term changes slope, where it jumps, and whether knots there are the
@@ -82,7 +84,9 @@ fn local(layer: TermF<Breaks>) -> Breaks {
         } => Breaks {
             slopes: vec![end_date],
             jumps: BTreeSet::from_iter(
-                [Some(end_date - lead_up), start_date].into_iter().flatten(),
+                [Some(retreat(end_date, lead_up)), start_date]
+                    .into_iter()
+                    .flatten(),
             )
             .into_iter()
             .collect(),
@@ -106,8 +110,8 @@ fn local(layer: TermF<Breaks>) -> Breaks {
         // Affine in the child.
         TermF::Offset { term, .. } => term,
         TermF::Shift { delta, term } => Breaks {
-            slopes: term.slopes.iter().map(|at| *at - delta).collect(),
-            jumps: term.jumps.iter().map(|at| *at - delta).collect(),
+            slopes: term.slopes.iter().map(|at| retreat(*at, delta)).collect(),
+            jumps: term.jumps.iter().map(|at| retreat(*at, delta)).collect(),
             exact: term.exact,
         },
         TermF::OffsetBy { delta, term } if term.constant() => delta,
@@ -152,7 +156,7 @@ fn crossings(terms: &[&Term], from: Instant, to: Instant) -> Vec<Instant> {
     };
     let lines: Vec<(f64, f64)> = read(from)
         .into_iter()
-        .zip(read(from + Duration::microseconds(half)))
+        .zip(read(advance(from, Duration::microseconds(half))))
         .filter_map(|(start, middle)| Some((start?, middle?)))
         .collect();
     let mut out = Vec::new();
@@ -161,7 +165,7 @@ fn crossings(terms: &[&Term], from: Instant, to: Instant) -> Vec<Instant> {
             let (d0, d1) = (a0 - b0, a1 - b1);
             let at = d0 / (d0 - d1) * half as f64;
             if d0 != d1 && 0.0 < at && at < span as f64 {
-                out.push(from + Duration::microseconds(at.round() as i64));
+                out.push(advance(from, Duration::microseconds(at.round() as i64)));
             }
         }
     }
@@ -213,18 +217,16 @@ pub fn series_knots(
     }
     for j in &breaks.jumps {
         if from < *j && *j <= to {
-            instants.insert(*j - Duration::seconds(1));
+            instants.insert(retreat(*j, Duration::seconds(1)));
         }
     }
     if !breaks.exact {
         // The reference's `(end - start) / SAMPLES` is microsecond-exact and
         // rounded half to even; `i * step` is then exact. Anything coarser
         // would put the samples on instants the reference never evaluated.
-        let step = div_delta(to - from, SAMPLES)
-            .num_microseconds()
-            .expect("a window inside the microsecond range");
+        let step = us_of(div_delta(to - from, SAMPLES));
         for i in 0..=SAMPLES {
-            instants.insert(from + Duration::microseconds(step * i));
+            instants.insert(advance(from, delta_of_us(step * i128::from(i))));
         }
     }
     Series {

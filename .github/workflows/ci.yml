@@ -48,8 +48,10 @@ jobs:
             run: |
               cargo fmt --all --check
               python3 scripts/test_edges.py
-              # Each file path in backticks in AGENTS.md, CONTRIBUTING.md
-              # and README.md names a file that exists.
+              python3 scripts/test_doc_paths.py
+              # Each file path and each directory path in backticks in
+              # AGENTS.md, CONTRIBUTING.md, README.md and docs/*.md names a
+              # file or a directory of the repository.
               python3 scripts/doc_paths.py
               # With no module named, edges.py prints each path in a crate
               # of the library that names the facade (`prodrome::`), which

@@ -25,9 +25,9 @@
 //! | `prodrome-store` | the store on disk and in memory, replicas, doors, frontiers | 21,067 |
 //! | `prodrome-declared` | schemas declared as text | 4,003 |
 //! | `prodrome-tags`, `prodrome-nest`, `prodrome-digest` | tag sets; histories held in registers; a summary tree over a log | 3,990, 3,926, 4,196 |
-//! | `prodrome-term` | FPL terms: build, print, parse; schedules | 6,606 |
-//! | `prodrome-fpl` | the evaluator, the chain compiler, breakpoints, observation | 5,546 |
-//! | `prodrome-todo` | the todo schema's events and payload, the reference payload | 4,735 |
+//! | `prodrome-term` | FPL terms: build, print, parse; schedules | 7,226 |
+//! | `prodrome-fpl` | the evaluator, the chain compiler, breakpoints, observation | 5,742 |
+//! | `prodrome-todo` | the todo schema's events and payload, the reference payload | 4,731 |
 //! | `prodrome-reading` | a todo's price and its row in a list | 3,949 |
 //!
 //! What to depend on, for what a program does:
@@ -35,12 +35,12 @@
 //! | The program | Depends on | Tokens |
 //! |---|---|--:|
 //! | writes events with a store and reads them under a policy | data, memo, dag, store | 62,708 |
-//! | reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 62,477 |
+//! | reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 63,289 |
 //! | has a schema of its own and no todos: defines it, prints and parses its events | data | 20,039 |
 //! | the same, and folds its events under a policy | data, memo, dag | 41,641 |
 //! | the same, and keeps them in a store | data, memo, dag, store | 62,708 |
 //! | adds a second backend for a replica: implements `store::Replica` | data, memo, dag, store | 62,708 |
-//! | uses the whole library, or the law kit | this crate | 113,015 |
+//! | uses the whole library, or the law kit | this crate | 113,827 |
 //!
 //! `prodrome-dag` depends on `prodrome-memo`, so a program that reads a DAG
 //! reads both. `prodrome-store` also holds the files of a store on disk.

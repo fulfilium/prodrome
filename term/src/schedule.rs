@@ -8,7 +8,8 @@
 //! - `a + b` at `t` is `a at t + b at t` where `A` is a monoid (`Default` and
 //!   `Add`), so `at` is a monoid homomorphism;
 //! - `join ss` at `t` is `ss at t` at `t` (the diagonal of the reader monad);
-//! - `shift δ s` at `t` is `s` at `t + δ`;
+//! - `shift δ s` at `t` is `s` at `t + δ`, where the sum stops at the ends
+//!   of the time axis;
 //! - `normal s` reads as `s` everywhere, and two schedules read alike
 //!   everywhere exactly when their normal forms are equal;
 //! - `next_change s t` is the first knot after `t` whose value differs from
@@ -144,17 +145,22 @@ impl<A> Schedule<A> {
     }
 
     /// At `t`, the result is this schedule at `t + by`, so a knot at `τ`
-    /// holds from `τ − by`.
+    /// holds from `τ − by`. A knot that lands before the first instant of the
+    /// axis is in force at every instant, so the last such knot becomes the
+    /// head. A knot that lands after the last instant is never in force, so
+    /// it is dropped.
     #[must_use]
     pub fn shift(self, by: Delta) -> Schedule<A> {
-        Schedule {
-            head: self.head,
-            knots: self
-                .knots
-                .into_iter()
-                .map(|(at, value)| (at - by, value))
-                .collect(),
+        let mut head = self.head;
+        let mut knots = Vec::with_capacity(self.knots.len());
+        for (at, value) in self.knots {
+            match at.checked_sub_signed(by) {
+                Some(moved) => knots.push((moved, value)),
+                None if by > Delta::zero() => head = value,
+                None => break,
+            }
         }
+        Schedule { head, knots }
     }
 
     /// Both values at every instant, with a knot wherever either schedule has

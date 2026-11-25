@@ -1704,8 +1704,9 @@ builds and passes the three commands of `AGENTS.md`:
 Other commits answer the review of section 12 (see "The follow-ups"), and
 one records the stage in this note and in `CHANGELOG.md`. `prodrome-core` re-exports each module of the
 new crate at its old path, so `cli/`, `wasm/`, `github/` and the tests
-build with no change of an import. No trait was added, and no item was
-renamed or narrowed.
+build with no change of an import. No trait was added and no item was
+renamed. Two hidden items were narrowed: `after` and `ratio` became private
+(see "The follow-ups").
 
 **The edges.** At the merge base, `python3 scripts/edges.py core/src fold
 schema todo view` already printed that no module of the set names a
@@ -1772,11 +1773,26 @@ no division. The test is what a program needs together:
   only writes a todo's events would then read. And the methods of
   `Entry<TodoEvent<P>>` (`outcome`, `content`, `is_open`, `state`, `at`,
   `claimed`) are inherent methods, which must be in the crate of `Entry`.
-  To move them out, they would become functions or the methods of a new
-  trait, which renames items or adds a trait only to make a cut. So the
-  general part and the todo's part are one crate, and a program with its
-  own schema reads the 5,043 tokens of `prodrome-todo` that it does not
-  use: 63,808 tokens in place of 58,765.
+  There are two ways to move them out of that crate: as functions, or as
+  the methods of a new trait. Each renames items or adds a trait only to
+  make a cut.
+
+  A third way keeps the names. The six methods read only `self.reading`
+  and `self.claim`, and both have the type `Row::Reading`. So they can be
+  one inherent impl that is bounded on the associated type, `impl<E:
+  Row<Reading = todo::Reading>> Entry<E>`. The general crate would then
+  hold the traits, the generic folds, `view` and this impl, and a small
+  crate would hold the four impls of the traits for `TodoEvent`. The cost
+  is a fourteenth crate, with its lines in `README.md`,
+  `docs/development.md`, the lint check of `scripts/edges.py` and the
+  re-exports of `prodrome-core`. The general crate must also keep the
+  type `todo::Reading` and `lowered`, because the bound names the type, so
+  one type of the todo stays in the general part. The trigger is the first
+  program that has a schema of its own and wants the general part without
+  the 5,043 tokens of `prodrome-todo`. This stage does not make the cut.
+  Until then, the general part and the todo's part are one crate, and a
+  program with its own schema reads the 5,043 tokens of `prodrome-todo`
+  that it does not use: 63,808 tokens in place of 58,765.
 
 **What is left of the core.** `prodrome-core` holds the root doc, the
 re-exports, and `laws` behind its feature. Its face is 13,392 tokens by
@@ -1794,7 +1810,7 @@ all that it names but `prodrome-memo`. The line measure reads every
 source file whatever the features, so `laws` in the store crate would
 bring that crate from 21,214 to about 32,400 tokens, over the budget, for
 every program that opens a store. A crate of its own would save a program
-that runs the kit only the 2,171 tokens of the facade's root doc. A
+that runs the kit only the 2,172 tokens of the facade's root doc. A
 program that runs the kit names it in its `[dev-dependencies]`, so the
 kit costs nothing to the unit that a program ships.
 
@@ -2085,8 +2101,8 @@ which named crates that are no longer the callers. The rule is one rule for
 every crate. A hidden item is not part of the face of rustdoc, and it may
 change in any release of the library. The crates release together with
 exact version requirements, so no program that follows the rule sees a
-change. 56 items are hidden, 27 of them methods and
-29 functions, types and aliases. Ten of them are new in this stage.
+change. 59 items are hidden, 27 of them methods and
+32 functions, types and aliases. Ten of them are new in this stage.
 They are the helpers that `#[derive(Literal)]` calls (`codec::read`,
 `read_or_default`, `call_of`, `headed_len`, `headed_names`,
 `headed_table`, `names_field`, `distinct`, `Site` and `Reader`), which
@@ -2094,7 +2110,7 @@ section 9 had kept public and documented "For the derive".
 
 **Would a private shared crate remove the need?** No. A crate that only the
 library depends on would hold the free functions and the types of the list
-below (29 items) with no hidden mark, but crates.io requires every
+below (32 items) with no hidden mark, but crates.io requires every
 dependency of a published crate to be published, so the shared crate is
 public too. Its items stay `pub`, and its name and its documentation would
 carry the "no promise" instead of an attribute. It cannot hold the
@@ -2371,6 +2387,11 @@ macro `newtype_str!` crosses to `prodrome-todo`.
 | Module | Items | Decision | Who names them outside the crate | Reason |
 |---|---|---|---|---|
 | `fpl` | `PRIORITY_POWER` | keep | examples | Named by a program of this repository. |
+| `fpl/axis` | `FIRST` | keep | tests | The first and last instant of the time axis (SPEC §7, "The time axis"). |
+| `fpl/axis` | `LAST` | keep | prodrome-fpl, tests | The first and last instant of the time axis (SPEC §7, "The time axis"). |
+| `fpl/axis` | `advance` | cross-crate only | prodrome-fpl, tests | Another crate of the library calls it; no outside program should. |
+| `fpl/axis` | `retreat` | cross-crate only | prodrome-fpl | Another crate of the library calls it; no outside program should. |
+| `fpl/axis` | `delta_of_us` | cross-crate only | prodrome-fpl | Another crate of the library calls it; no outside program should. |
 | `fpl/construct` | `mk_flat`, `mk_decay`, `mk_curve`, `mk_conj`, `mk_least`, `mk_offset`, `mk_gate`, `mk_shift`, `mk_within`, `mk_importance`, `mk_offset_by`, `mk_after`, `mk_recur`, `mk_periodic`, `mk_ref`, `mk_ref_in`, `mk_absent`, `mk_piecewise` | keep | cli, examples, github program, wasm exports | Named by a program of this repository. |
 | `fpl/construct` | `least_of` | keep | prodrome-fpl, prodrome-reading | The smart constructors of terms (SPEC §7). |
 | `fpl/construct` | `checklist` | keep | prodrome-reading | The smart constructors of terms (SPEC §7). |
@@ -2505,16 +2526,16 @@ field and each variant is an item):
 | `prodrome-tags` | 19 | 0 | 18 | 1 | 38 | 19 | 0 | 18 | 1 | 38 |
 | `prodrome-nest` | 0 | 0 | 39 | 7 | 46 | 0 | 0 | 39 | 7 | 46 |
 | `prodrome-digest` | 25 | 0 | 16 | 2 | 43 | 25 | 0 | 16 | 2 | 43 |
-| `prodrome-term` | 41 | 52 | 18 | 16 | 127 | 41 | 52 | 18 | 16 | 127 |
-| `prodrome-fpl` | 48 | 2 | 30 | 14 | 94 | 48 | 2 | 30 | 13 | 93 |
+| `prodrome-term` | 41 | 52 | 18 | 16 | 127 | 41 | 56 | 19 | 16 | 132 |
+| `prodrome-fpl` | 48 | 2 | 30 | 14 | 94 | 48 | 2 | 31 | 12 | 93 |
 | `prodrome-todo` | 41 | 8 | 16 | 53 | 118 | 41 | 8 | 16 | 53 | 118 |
 | `prodrome-reading` | 45 | 0 | 6 | 7 | 58 | 45 | 0 | 6 | 7 | 58 |
 | `prodrome-core` | 1 | 0 | 54 | 23 | 78 | 1 | 0 | 54 | 23 | 78 |
-| all | 464 | 321 | 360 | 230 | 1375 | 464 | 321 | 360 | 215 | 1360 |
+| all | 464 | 321 | 360 | 230 | 1375 | 464 | 325 | 362 | 214 | 1365 |
 
-The first five columns are before and the last five are after. The only
-change of the count is that the 15 narrowed items left it, all from
-"nobody". Of the items that nobody names, the
+The first five columns are before and the last five are after. The 15
+narrowed items left the count, all from "nobody". The change merged from
+`main` (the time axis) adds five items to `prodrome-term` and removes none. Of the items that nobody names, the
 public fields and variants are the bulk. They are the shape of a type that
 a program constructs or matches, so each stays with its type.
 
@@ -2603,6 +2624,9 @@ the body of `payload::required`, which stays public.
 | `prodrome-data` | `stamp` | `Place` | prodrome-dag | before |
 | `prodrome-data` | `stamp` | `Scope` | prodrome-dag | before |
 | `prodrome-data` | `topo` | `Topo` | prodrome-fpl | before |
+| `prodrome-term` | `fpl/axis` | `advance` | prodrome-fpl, tests | before |
+| `prodrome-term` | `fpl/axis` | `retreat` | prodrome-fpl | before |
+| `prodrome-term` | `fpl/axis` | `delta_of_us` | prodrome-fpl | before |
 | `prodrome-term` | `fpl/construct` | `piecewise` | prodrome-fpl, prodrome-reading | before |
 | `prodrome-term` | `fpl/delta` | `us_of` | prodrome-fpl | before |
 
@@ -2645,11 +2669,12 @@ of each item it describes, and says that the law kit needs a dependency on
 
 ### The face
 
-The columns "before" are the merge base `ed70e10`. The rustdoc measure is
+The columns "before" are the merge base `b882e3e`, which includes the
+change of the time axis. The rustdoc measure is
 with the default features. The line measure is `scripts/face.py --lines`.
 "Doc chars" are the doc characters of the rustdoc face. "Ten longest" are
-the doc characters of the ten items of each crate that have the longest
-docs, before this stage.
+the doc characters of the ten items of each crate that had the longest
+docs at `ed70e10`, before and after this stage.
 
 | Crate | Doc chars before | after | Ten longest before | after | Rustdoc tokens before | after | Line tokens before | after |
 |---|--:|--:|--:|--:|--:|--:|--:|--:|
@@ -2661,12 +2686,12 @@ docs, before this stage.
 | `prodrome-tags` | 5,517 | 5,345 | 3,445 | 3,273 | 1,890 | 1,847 | 4,036 | 3,990 |
 | `prodrome-nest` | 6,437 | 6,115 | 3,938 | 3,616 | 2,149 | 2,068 | 4,011 | 3,926 |
 | `prodrome-digest` | 5,735 | 5,285 | 3,735 | 3,285 | 1,794 | 1,682 | 4,319 | 4,196 |
-| `prodrome-term` | 8,531 | 7,867 | 3,935 | 3,271 | 3,649 | 3,483 | 6,861 | 6,606 |
-| `prodrome-fpl` | 13,435 | 12,376 | 5,455 | 4,521 | 4,290 | 4,018 | 5,793 | 5,546 |
-| `prodrome-todo` | 8,609 | 7,452 | 5,112 | 4,020 | 3,436 | 3,147 | 5,043 | 4,735 |
+| `prodrome-term` | 9,332 | 8,668 | 3,935 | 3,369 | 3,897 | 3,731 | 7,474 | 7,226 |
+| `prodrome-fpl` | 13,612 | 12,553 | 5,455 | 4,521 | 4,334 | 4,063 | 5,989 | 5,742 |
+| `prodrome-todo` | 8,609 | 7,440 | 5,112 | 3,892 | 3,436 | 3,144 | 5,043 | 4,731 |
 | `prodrome-reading` | 9,847 | 9,364 | 4,240 | 3,757 | 3,211 | 3,090 | 4,077 | 3,949 |
 | `prodrome-core` | 7,641 | 7,582 | 13,506 | 13,380 | 1,989 | 1,975 | 13,391 | 13,356 |
-| all thirteen | 154,985 | 146,277 | 76,635 | 69,014 | 52,660 | 50,090 | 114,930 | 113,015 |
+| all thirteen | 155,963 | 147,243 | 76,635 | 68,984 | 52,952 | 50,380 | 115,739 | 113,827 |
 
 With the feature `laws`, `prodrome-core` is 5,811 tokens by the rustdoc
 measure before and 5,780 after. The line measure falls less than the
@@ -2678,15 +2703,15 @@ and under the 21,400 of "The targets".
 
 **Which crates a unit reads.** The sums use the line measure. The sets are
 the sets of the root doc of `prodrome-core`. "Before" is the sum of the
-faces at `ed70e10`.
+faces at `b882e3e`.
 
 | A program that | Crates | Tokens before | Tokens after |
 |---|---|--:|--:|
 | writes events with a store and reads them under a policy | data, memo, dag, store | 63,248 | 62,708 |
-| reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 63,808 | 62,477 |
+| reads a todo's price and its row in a list | data, memo, dag, term, fpl, todo, reading | 64,617 | 63,289 |
 | has its own schema and folds it under a policy | data, memo, dag | 42,034 | 41,641 |
 | has its own schema and prints and parses events | data | 19,913 | 20,039 |
-| uses the whole library | all thirteen | 114,930 | 113,015 |
+| uses the whole library | all thirteen | 115,739 | 113,827 |
 
 Section 13 gave 63,808 tokens for the second row. Each sum falls by the
 cuts of this stage, except the sums that hold the data crate alone, which

@@ -8,8 +8,8 @@ use chrono::{Duration, Timelike};
 
 use crate::breaks::{breakpoints, Breaks};
 use crate::fpl::{
-    div_delta, eval, offset, phase, power_mean, Closed, Delta, Env, Instant, Outcome,
-    WITHIN_SAMPLES,
+    advance, delta_of_us, div_delta, eval, offset, phase, power_mean, retreat, us_of, Closed,
+    Delta, Env, Instant, Outcome, LAST, WITHIN_SAMPLES,
 };
 use prodrome_term::schedule::Schedule;
 use prodrome_term::term::{normalize, Term, TermF};
@@ -187,12 +187,19 @@ fn bounded(term: &Term, now: Instant, env: &Env, observation: Observation) -> Op
         return None;
     }
     let base = grain(now);
-    let at = |us: i64| base + Duration::microseconds(us);
+    // The microseconds from `base` to the last instant of the time axis,
+    // where the search ends, and at most the horizon.
+    let room = (LAST - base).num_microseconds().unwrap_or(i64::MAX);
+    if room == 0 {
+        return None;
+    }
+    let limit = room.min(1 << HORIZON);
+    let at = |us: i64| advance(base, Duration::microseconds(us));
     let holds_until = |us: i64| holds(Some(at(us)));
     // `same` is proved one value, or is 0, which nothing needs proved.
     let mut same = 0;
     for bit in 0..=HORIZON {
-        let changed = 1i64 << bit;
+        let changed = (1i64 << bit).min(limit);
         if !holds_until(changed) {
             let mut changed = changed;
             while changed - same > 1 {
@@ -206,6 +213,9 @@ fn bounded(term: &Term, now: Instant, env: &Env, observation: Observation) -> Op
             return Some(at(changed));
         }
         same = changed;
+        if changed == limit {
+            break;
+        }
     }
     Some(at(same))
 }
@@ -224,8 +234,8 @@ impl Span {
 
     fn shifted(self, by: Delta) -> Span {
         Span {
-            from: self.from + by,
-            to: self.to.map(|to| to + by),
+            from: advance(self.from, by),
+            to: self.to.map(|to| advance(to, by)),
         }
     }
 
@@ -239,7 +249,7 @@ impl Span {
             (
                 Some(Span {
                     from: self.from,
-                    to: Some(at - Duration::microseconds(1)),
+                    to: Some(retreat(at, Duration::microseconds(1))),
                 }),
                 Some(Span { from: at, ..self }),
             )
@@ -369,11 +379,10 @@ fn range(term: &Term, span: Span, env: &Env) -> Range {
         // by the window, and a power mean lies between its least and greatest
         // member, each clamped up to 0.001.
         TermF::Within { window, term, .. } => {
-            let reach = Duration::microseconds(
-                microseconds(div_delta(*window, WITHIN_SAMPLES)) * WITHIN_SAMPLES,
-            );
+            let reach =
+                delta_of_us(us_of(div_delta(*window, WITHIN_SAMPLES)) * i128::from(WITHIN_SAMPLES));
             let widened = Span {
-                to: span.to.map(|to| to + reach),
+                to: span.to.map(|to| advance(to, reach)),
                 ..span
             };
             range(term, widened, env).map_high(|high| high.max(0.001))
@@ -476,16 +485,17 @@ fn after_range(
 /// The stretches of one cycle `span` folds onto: all of it, one stretch of
 /// it, or two where the span wraps.
 fn cycle(period: Delta, anchor: Instant, span: Span) -> Vec<Span> {
-    let last = anchor + period - Duration::microseconds(1);
+    let one = Duration::microseconds(1);
+    let last = retreat(advance(anchor, period), one);
     let stretch = |from, to| Span { from, to: Some(to) };
     match span.to {
         Some(to) if to - span.from < period => {
             let start = phase(period, anchor, span.from);
-            let stop = start + (to - span.from);
+            let stop = advance(start, to - span.from);
             if stop <= last {
                 vec![stretch(start, stop)]
             } else {
-                vec![stretch(start, last), stretch(anchor, stop - period)]
+                vec![stretch(start, last), stretch(anchor, retreat(stop, period))]
             }
         }
         _ => vec![stretch(anchor, last)],
@@ -500,7 +510,7 @@ fn exact_range(term: &Term, span: Span, env: &Env, breaks: &Breaks) -> Range {
     let mut at: BTreeSet<Instant> = span.to.into_iter().chain([span.from]).collect();
     for cut in breaks.slopes.iter().chain(&breaks.jumps) {
         at.extend(
-            [*cut - one, *cut, *cut + one]
+            [retreat(*cut, one), *cut, advance(*cut, one)]
                 .into_iter()
                 .filter(|t| span.holds(*t)),
         );
@@ -574,27 +584,27 @@ fn steps(
 ) -> Schedule<Option<u32>> {
     let head = observation.observe(eval(term, from, env));
     let base = grain(from);
-    let at = |us: i64| base + Duration::microseconds(us);
+    let at = |us: i64| advance(base, Duration::microseconds(us));
     let read = |us: i64| observation.observe(eval(term, at(us), env));
-    let cuts: BTreeSet<Instant> = breaks
+    // A cut farther than 2⁶³ µs from `from` is not looked for.
+    let cuts: BTreeSet<(Instant, i64)> = breaks
         .slopes
         .iter()
         .chain(&breaks.jumps)
-        .copied()
-        .filter(|cut| *cut > from)
+        .filter(|cut| **cut > from)
+        .filter_map(|cut| (*cut - base).num_microseconds().map(|us| (*cut, us)))
         .collect();
     let mut knots = BTreeMap::new();
     let mut current = head;
-    let mut start = 0;
+    let mut start = 0i64;
     let mut step = |us: i64, current: &mut Option<u32>| {
         *current = read(us);
         knots.insert(at(us), *current);
     };
-    for cut in cuts {
-        let end = microseconds(cut - base);
+    for (_, end) in cuts {
         // The stretch's line, read at its two ends: where it crosses the
         // next step's boundary is where that step's search starts.
-        let (low, high) = (start + 1, end - 1);
+        let (low, high) = (start.saturating_add(1), end.saturating_sub(1));
         let line = eval(term, at(low), env).zip(eval(term, at(high), env));
         let guess = |current: Option<u32>| {
             let ((from, to), step) = line.zip(current)?;
@@ -607,7 +617,9 @@ fn steps(
             let us = || low.saturating_add((fraction * (high - low) as f64).round() as i64);
             fraction.is_finite().then(us)
         };
-        while let Some(us) = first_in(start + 1, high, guess(current), |us| read(us) != current) {
+        while let Some(us) = first_in(start.saturating_add(1), high, guess(current), |us| {
+            read(us) != current
+        }) {
             step(us, &mut current);
             start = us;
         }
@@ -616,8 +628,9 @@ fn steps(
         }
         start = end;
     }
-    if read(start + 1) != current {
-        step(start + 1, &mut current);
+    let after = start.saturating_add(1);
+    if read(after) != current {
+        step(after, &mut current);
     }
     Schedule::of(head, knots)
 }
@@ -675,9 +688,4 @@ fn first_in(low: i64, high: i64, guess: Option<i64>, differs: impl Fn(i64) -> bo
 /// after `now` and a breakpoint, itself on the grid, is one of them.
 fn grain(now: Instant) -> Instant {
     now - Duration::nanoseconds(i64::from(now.nanosecond() % 1000))
-}
-
-fn microseconds(span: Delta) -> i64 {
-    span.num_microseconds()
-        .expect("a span between two of a term's instants fits in microseconds")
 }

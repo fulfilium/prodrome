@@ -97,7 +97,7 @@ Terms used below:
 
 ### 1.1 What both forms share today
 
-`Replica` (in `core/src/store/replica.rs`) has six required methods and two
+`Replica` (in `store/src/store/replica.rs`) has six required methods and two
 provided ones. Each has a law in SPEC section 3 or 9:
 
 | Method | What it answers | Law |

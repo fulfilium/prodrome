@@ -3,17 +3,20 @@
 //! The `mk_*` smart constructors check the invariants of a term, and
 //! `parse_term` calls them. `Term::new` skips the checks.
 
+mod axis;
 mod construct;
 mod delta;
 mod env;
 mod printed;
 
+pub use axis::{advance, retreat, FIRST, LAST};
 pub use construct::{
     checklist, least_of, mk_absent, mk_after, mk_conj, mk_curve, mk_decay, mk_flat, mk_gate,
     mk_importance, mk_least, mk_offset, mk_offset_by, mk_periodic, mk_piecewise, mk_recur, mk_ref,
     mk_ref_in, mk_shift, mk_within, piecewise,
 };
-pub use delta::{delta_from_hours, div_delta, hours, total_seconds, us_of, Delta};
+use delta::admit_span;
+pub use delta::{delta_from_hours, delta_of_us, div_delta, hours, total_seconds, us_of, Delta};
 pub use env::{Candidates, Env, Outcome};
 pub use printed::{parse_term, print_term};
 pub use prodrome_data::instant::{datetime_of, instant_of, iso, parse_iso, FplError, Instant};

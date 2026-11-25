@@ -5,6 +5,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod axis_vectors;
 mod bodies;
 mod calibration;
 mod causal;
@@ -66,4 +67,5 @@ mod signatures;
 mod store_laws;
 mod tags;
 mod tips;
+mod total;
 mod verify_findings;

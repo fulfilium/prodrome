@@ -281,6 +281,19 @@ constructor's fields never change, in any release.
   `codec::required`. A hand-written codec that called a hidden helper of
   the derive keeps compiling, and reads fields with `Fields::of` and
   `Fields::get`.
+- **The smart constructors refuse a span that does not fit in 64 bits of
+  microseconds and an instant outside the years 1 to 9999 (SPEC §7, "The
+  time axis").** `mk_shift`, `mk_within`, `mk_decay`, `mk_after` and
+  `mk_periodic` refuse the span, and `mk_decay`, `mk_curve`, `mk_after`,
+  `mk_recur`, `mk_periodic` and `mk_piecewise` refuse the instant. The
+  literal reader already refused both, so no stored term changes. A term
+  that these constructors refuse could not be printed. The constructors
+  already returned a `Result`, so no signature changes. `us_of`, a hidden
+  function, returns an `i128` where it returned an `i64`.
+  `Schedule::shift` drops a knot that falls after the last instant of the
+  axis, and turns a knot before the first instant into the head. The new
+  public items are the constants `FIRST` and `LAST`, and the new hidden
+  items are `advance`, `retreat` and `delta_of_us`.
 
 - **`digest::view` takes two waters and the cost of a line (issue #104,
   SPEC laws 88 to 91).** The signature is
@@ -308,7 +321,8 @@ constructor's fields never change, in any release.
   the feature `laws`, and re-exports every other module at its old path,
   so a program that depends on `prodrome-core` changes nothing. No
   behaviour, stored byte, canonical print, conformance vector or law
-  changes, and no item is renamed or narrowed. A program that moves to the
+  changes, and no item is renamed. Two hidden items are narrowed: `after`
+  and `ratio` of `prodrome-term` became private. A program that moves to the
   new crate changes these paths:
   - `prodrome::fold` becomes `prodrome_reading::fold`, which holds
     `readings`, `env`, `specs`, `content`, `flatten`, `price`,
@@ -762,6 +776,21 @@ constructor's fields never change, in any release.
   token's closure is every object.
 
 ### Fixed
+
+- **The evaluator no longer stops on a time shift past the calendar
+  (SPEC §7, "The time axis"; law 92).** Evaluation panicked where it added
+  a span to an instant and the sum left the range of the calendar type. A
+  `Shift` of 100 million days did this, and so did a long `Within` window,
+  a `Periodic` period, a `Decay` lead-up, and the search of `next_change`.
+  A program that folded a store that held such a term stopped. Now every
+  instant that evaluation computes is on the time axis, and a sum that
+  would leave the axis stops at the end that it passes. A reading inside
+  the axis keeps its value, its print and its vectors. `conformance/axis.py`
+  is a new file of seven readings past the ends of the axis. The same change
+  removes three more panics: the count of microseconds of a span of more
+  than 292,000 years, the rounding of `div_delta` for a divisor of more
+  than 2⁶², and `delta_from_hours` for an hour count of more than 2⁶³
+  microseconds.
 
 - **A list shows a todo that content records alone make (SPEC §6.7, law
   87).** A todo whose first event is an `Authored` record, with no

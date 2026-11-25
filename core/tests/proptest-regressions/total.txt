@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc af277eade58819dc8e9232b9634af7b34ebccbca8c17fd72970292b8d31f095e # shrinks to term = Term(Shift { delta: TimeDelta { secs: 9223372036854, nanos: 775807000 }, term: Term(Flat { value: 0.02 }) }), env = Env { outcomes: {}, tended: {} }, from = -262143-01-01T00:00:00, to = +262142-12-31T23:59:59.999999
+cc b78c08b112bb0395575089b1db09b98ea87826ec2867ed3c025461b4f3a5b1b7 # shrinks to body = Term(Flat { value: 0.02 }), env = Env { outcomes: {}, tended: {} }, delta = TimeDelta { secs: 9223372036854, nanos: 775807000 }, now = +262142-12-31T23:59:59.999999
+cc a7eb3cf5061911b3a0b5b86e068149fbb91ca053397b6dab84c32c3c2928c134 # shrinks to term = Term(Shift { delta: TimeDelta { secs: 0, nanos: 1000 }, term: Term(Flat { value: 0.02 }) }), env = Env { outcomes: {}, tended: {} }, readings = [-262143-01-01T00:00:00, -262143-01-01T00:00:00, +262142-12-31T23:59:59.999999]
+cc 23b34c9f30d36cd3402b8478c46fc95572333b944e726bc58689481bc91c8a58 # shrinks to term = Term(Shift { delta: TimeDelta { secs: -251613561600, nanos: 0 }, term: Term(Piecewise(Schedule { head: Term(Flat { value: 0.02 }), knots: [(9999-12-31T23:59:59.999999, Term(Flat { value: 0.8942260021102637 }))] })) }), env = Env { outcomes: {}, tended: {} }, readings = [-262143-01-01T00:00:00, -262143-01-01T00:00:00, -262143-01-01T00:00:00]

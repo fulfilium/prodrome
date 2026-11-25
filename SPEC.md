@@ -85,10 +85,10 @@ fuzzed.
 **The vector vocabulary.** `conformance/*.py` — the evidence §9 is checked
 against — is one expression of THIS grammar, printed by this printer and read
 by this parser, against a SECOND whitelist that is disjoint from a store's:
-`Folds`, `Dags`, `Fpl`, `Series`, `View`, `Links`, `Recurs`, `Changes`,
-`Husks`; `FoldCase`, `DagCase`, `FplCase`, `SeriesCase`, `ViewCase`,
-`LinkCase`, `RecurCase`, `ChangeCase`, `HuskCase`; `Bound`, `Open`, `Spec`, `Content`, `Object`,
-`Parents`, `Conflict`, `RowConflict`, `Refused`, `Step`, `Price`, `Sample`,
+`Folds`, `Dags`, `Fpl`, `Axis`, `Series`, `View`, `Links`, `Recurs`,
+`Changes`, `Husks`; `FoldCase`, `DagCase`, `FplCase`, `AxisCase`,
+`SeriesCase`, `ViewCase`, `LinkCase`, `RecurCase`, `ChangeCase`, `HuskCase`;
+`Bound`, `Open`, `Spec`, `Content`, `Object`, `Parents`, `Conflict`, `RowConflict`, `Refused`, `Step`, `Price`, `Sample`,
 `Knot`, `Asked`, `Row`; and, for an explanation's
 decoration, `Node`, `NoteEntry`, `One`, `Many`, `Maps`, `Fields`, `Pair`. A
 STORE's parse admits none of these and a VECTOR's parse admits none of §4's
@@ -1175,6 +1175,26 @@ lowers anything it is composed with.
   answer is its first knot after `now` whose value differs. The environment is a snapshot, read as
   evaluation reads it: a binding or tending dated after `now` comes into
   force at its instant.
+- **The time axis.** A term is read at the instants of the time axis: the
+  whole microseconds from `-262143-01-01T00:00:00` to
+  `+262142-12-31T23:59:59.999999`, the range of the reference's calendar
+  type, which holds the grammar's years 1 to 9999 (§2) and more. Every
+  instant that evaluation computes lies on the axis. Where the sum or the
+  difference of an instant and a span would lie outside the axis, the
+  result is the end of the axis that it passes. So `Shift(δ, a)` read at
+  `t` is `a` read at `t + δ` where that is on the axis, at the last instant
+  where `t + δ` is after it, and at the first instant where it is before
+  it. The rule applies to each instant that the evaluator computes: the
+  shift of `Shift`, `After` and `Recur`, the samples of `Within`, the
+  instant of `Periodic`, the start of `Decay`'s window, and the knots of a
+  shifted schedule (a knot before the first instant holds at every instant
+  of the axis, so it replaces the head; a knot after the last instant is
+  never in force). This rule states what was undefined. A reading inside
+  the axis keeps its value, and every vector stays as it was. A term holds
+  only spans that fit in 64 bits of microseconds (about 292,000 years,
+  inside the grammar's 999,999,999 days) and only instants of the grammar's
+  years. Each smart constructor refuses the rest, so a stored term needs no
+  check when it is read. Law 92.
 - A term has ONE serialization and it is §2's literal print. A JavaScript
   boundary may carry a JSON shape of the same term — the reference one is
   `prodrome-wasm-exports`'s `json` module, lowercase kind tags and spans in
@@ -2712,6 +2732,23 @@ after which a part other than the new line differs.
     `digest_waters.rs::a_late_summary_changes_no_view_before_its_node_settles`,
     `digest_waters.rs::a_late_summary_closes_a_part_before_its_node`,
     `digest_waters.rs::a_late_summary_can_open_a_part_before_its_node`.
+
+92. **The evaluator is total over every term that a program can build.**
+    For every term that the smart constructors build, with spans and
+    instants anywhere in what they admit, every reading instant of the time
+    axis (§7, "The time axis") and every environment, `fulfillment`,
+    `explained`, `next_change`, the sampling of a series and the `flatten`
+    of a log that holds the term as a spec return, and each number that
+    they give is in `[0, 1]`. The print of the term parses as the term, and
+    its normal form reads as it does. `Shift(δ, a)` read at `t` is `a` read
+    at `t + δ`, with the sum stopped at the ends of the axis.
+    `conformance/axis.py` holds seven such readings, with the values that the
+    rule gives.
+    `axis_vectors.rs::every_reading_past_an_end_of_the_axis_is_the_rules`,
+    `total.rs::the_evaluator_is_total_over_every_constructible_term`,
+    `total.rs::a_series_over_any_window_is_in_the_unit_interval`,
+    `total.rs::a_log_holding_any_such_spec_flattens`,
+    `total.rs::a_shift_reads_its_body_at_the_sum_stopped_at_the_ends`.
 
 ## 10. Non-goals
 

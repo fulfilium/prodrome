@@ -19,7 +19,7 @@ many times.
 - `TermF`'s fields are enumerated about twelve times: `map`, `transpose`,
   `children`, `kind`, `to_value`/`from_value`, `TERM_SIGNATURES`,
   `scalar_notes`, the wasm JSON codec and `explanation_json`, `Link::scalars`,
-  and a copy of the JSON codec in Suzatary (`app/core/src/wire.rs`).
+  and a copy of the JSON codec in an application.
 - `explain` repeats `eval`'s time routing and calls `eval` at every node.
 - The literal codec helpers exist three times (`fpl`, `payload`, `event` and
   `reference`).
@@ -46,7 +46,7 @@ core/src/
 ```
 
 The schema is the one place a term's fields are named. The literal printer
-and parser, the wasm JSON, the explanation notes and Suzatary's codec all
+and parser, the wasm JSON, the explanation notes and an application's codec all
 render it. One evaluator produces a number or an explanation. One fold,
 parameterised by the register, gives §6.1–6.6.
 
@@ -58,14 +58,14 @@ Stored bytes (constructor names, field order, `''` as absent, parse defaults
 such as a missing `lead_up` meaning one week), the conformance vectors and
 `wasm/conformance/term-json.json` (including its quirks), the verify finding
 strings, fulfillment to 1e-9, the twelve wasm functions and their JSON that
-Suzatary's web calls, and the hot-path performance (the `Arc` writes, notes
+an application's web page calls, and the hot-path performance (the `Arc` writes, notes
 never built when only a number is asked for). Laws 4 and 6 compare two
 implementations: keep them two.
 
 ## Stages
 
-Each is one PR, green on the workspace tests, the wasm tests and Suzatary's
-`web/test/wasm.test.ts`.
+Each is one PR, green on the workspace tests, the wasm tests and the wasm
+tests of an application that calls them.
 
 0. Snapshot tests: the bytes of all twelve wasm functions over one DAG
    vector, and the verify finding strings.
@@ -81,6 +81,6 @@ Each is one PR, green on the workspace tests, the wasm tests and Suzatary's
    changes at the `Dag` seam.
 6. `Write` and the registers; `Env` and `Outcome` unified.
 7. The event header and body split, bytes unchanged. Stages 4, 6 and 7 reach
-   Suzatary in one pin bump.
+   an application in one pin bump.
 8. Boundaries: the wasm wire from the schema, one `Price` for cli and github,
-   Suzatary drops its codec.
+   an application drops its codec.
