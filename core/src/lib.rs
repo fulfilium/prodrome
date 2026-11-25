@@ -40,12 +40,12 @@
 //! // An event carries the instant its writer stamped on it. The store has no
 //! // clock: `at` is data, and nothing here reads the machine's.
 //! let at = Datetime::new(2026, 9, 8, 9, 0, 0, 0)?;
-//! store.append(mk_created("todo-1", at, "bassel", "publish the crate", "")?)?;
+//! store.append(mk_created("todo-1", at, "ada", "publish the crate", "")?)?;
 //!
 //! // A spec is an FPL term — what this todo is worth as a function of time.
 //! let deadline = instant_of(Datetime::new(2026, 9, 15, 17, 0, 0, 0)?);
 //! let spec = mk_decay(0.55, 0.05, deadline, delta_from_hours(72.0), None)?;
-//! store.append(mk_spec_revised("todo-1", at, "bassel", spec, "")?)?;
+//! store.append(mk_spec_revised("todo-1", at, "ada", spec, "")?)?;
 //!
 //! // Read the DAG back: every object rehashed on the way in, once; the store
 //! // holds what it has read, and the next read reads only what is new.

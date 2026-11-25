@@ -315,8 +315,8 @@ mod tests {
     #[test]
     fn a_completion_binds_and_a_reopening_clears() {
         let log: Vec<Event> = vec![
-            mk_completed("alpha", at(2), "bassel", "").expect("valid"),
-            mk_reopened("alpha", at(4), "bassel", "").expect("valid"),
+            mk_completed("alpha", at(2), "ada", "").expect("valid"),
+            mk_reopened("alpha", at(4), "ada", "").expect("valid"),
         ];
         let policy = roster();
         assert_eq!(env_at(&log, at(3), &policy).outcomes.len(), 1);
@@ -333,8 +333,8 @@ mod tests {
     #[test]
     fn a_resolved_todo_reads_one_from_the_instant_it_was_resolved() {
         let log = vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.2).expect("valid")), 0),
-            mk_completed("alpha", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", Some(mk_flat(0.2).expect("valid")), 0),
+            mk_completed("alpha", at(3), "ada", "").expect("valid"),
         ];
         let flat = flat(&log, at(9));
         let term =
@@ -349,7 +349,7 @@ mod tests {
         let log = vec![authored(
             "alpha",
             1,
-            "bassel",
+            "ada",
             Some(mk_flat(0.5).expect("valid")),
             2,
         )];
@@ -364,8 +364,8 @@ mod tests {
     #[test]
     fn a_todo_with_no_spec_and_no_checklist_has_no_function() {
         let log = vec![
-            authored("alpha", 1, "bassel", None, 0),
-            mk_completed("alpha", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", None, 0),
+            mk_completed("alpha", at(3), "ada", "").expect("valid"),
         ];
         assert!(flat(&log, at(9)).is_empty());
     }
