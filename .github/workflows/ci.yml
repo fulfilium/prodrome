@@ -37,7 +37,7 @@ concurrency:
 jobs:
   cargo:
     # TWO CHECKS OF ONE BUILD'S SOURCES, IN PARALLEL, each in its own
-    # target/: `lint` (fmt, clippy, the doctests) and `test` (every other
+    # target/: `lint` (fmt, clippy, the docs, the doctests) and `test` (every other
     # test). Each records and saves only what its own commands built, so a
     # cached artefact is always one its own check brought up to date.
     strategy:
@@ -48,6 +48,9 @@ jobs:
             run: |
               cargo fmt --all --check
               python3 scripts/test_edges.py
+              # Each file path in backticks in AGENTS.md, CONTRIBUTING.md
+              # and README.md names a file that exists.
+              python3 scripts/doc_paths.py
               # With no module named, edges.py prints each path in a crate
               # of the library that names the facade (`prodrome::`), which
               # also breaks the build. It does not prove the layering of a
@@ -65,7 +68,16 @@ jobs:
               python3 scripts/edges.py term/src
               python3 scripts/edges.py fpl/src
               python3 scripts/edges.py todo/src
+              python3 scripts/edges.py reading/src
               cargo clippy --locked --workspace --all-targets -- -D warnings
+              # The docs of each library with warnings denied, so that a
+              # broken or ambiguous link fails the check. The three runs
+              # take about 40 seconds from a cold target/.
+              export RUSTDOCFLAGS="-D warnings"
+              cargo doc --locked --workspace --no-deps --lib
+              cargo doc --locked --workspace --no-deps --lib --all-features
+              cargo doc --locked --workspace --no-deps --lib --no-default-features
+              unset RUSTDOCFLAGS
               cargo test --locked --workspace --doc
           - check: test
             run: cargo test --locked --workspace --lib --bins --tests

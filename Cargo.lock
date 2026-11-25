@@ -496,6 +496,7 @@ dependencies = [
  "prodrome-fpl",
  "prodrome-memo",
  "prodrome-nest",
+ "prodrome-reading",
  "prodrome-store",
  "prodrome-tags",
  "prodrome-term",
@@ -591,6 +592,17 @@ dependencies = [
  "prodrome-dag",
  "prodrome-data",
  "prodrome-memo",
+]
+
+[[package]]
+name = "prodrome-reading"
+version = "0.9.0"
+dependencies = [
+ "prodrome-dag",
+ "prodrome-data",
+ "prodrome-fpl",
+ "prodrome-term",
+ "prodrome-todo",
 ]
 
 [[package]]

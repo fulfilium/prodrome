@@ -11,9 +11,10 @@ which made the crates `prodrome-memo`, `prodrome-dag` and
 `prodrome-declared`. Section 11 records the stage after that, which made
 the crates `prodrome-store`, `prodrome-tags`, `prodrome-nest` and
 `prodrome-digest`. Section 12 records the stage after that, which made
-the crates `prodrome-term`, `prodrome-fpl` and `prodrome-todo`, and gives
-the order of the stages that remain. The other stages are proposals. For what is implemented, see `SPEC.md` and
-`CHANGELOG.md`.
+the crates `prodrome-term`, `prodrome-fpl` and `prodrome-todo`. Section 13
+records the stage after that, which made the crate `prodrome-reading` and
+left `prodrome-core` as a facade, and says what remains of the issue. For
+what is implemented, see `SPEC.md` and `CHANGELOG.md`.
 
 Terms used below:
 
@@ -384,6 +385,7 @@ So the stages of section 5 have these targets, in the line measure:
 | 4, the readings, as made (section 10) | 66,077 without the data, memo, declared and dag crates | 19,654 | 28,767 (`store`, `nest`, `tags`, still in the core) |
 | 4, the store, as made (section 11) | 33,374 without the crates below it | 19,756 | 21,214 (`store` and `snapshot`) |
 | 4, the terms, the evaluator and the todo schema, as made (section 12) | 17,038 without the crates below it | 19,913 | 21,214 |
+| 4, the readings, in their crate (section 13) | 13,392 without the crates below it, of which `laws` is 11,220 | 19,913 | 21,214 |
 | 4, each further crate | | under 25,000 by the application's tool | under 25,000 |
 
 The targets of 15,000 and 19,000 for the data crate were set before
@@ -1676,3 +1678,324 @@ The stages of section 5 named fpl, digest, reading and todo. Digest was
 made in section 11, and fpl and the data of todo in this section, so
 only the reading crate is left. The impls of the reading traits for
 `TodoEvent` go with that crate, because the traits do.
+
+## 13. The readings, in their crate
+
+At the merge base `dc41c12` of this stage, six units of the application of
+sections 9 to 12 still depended on `prodrome-core`. Each named `view`, a
+reading of `fold` or a trait of `schema`, and the core depended on every
+other crate of the library, so each of the six read all twelve crates:
+114,465 tokens by `scripts/face.py --lines`. This stage made the crate
+`prodrome-reading`, which holds those modules, and left in `prodrome-core`
+the law kit and the re-exports.
+
+**The method.** The method is the method of stage 3. Each commit below
+builds and passes the three commands of `AGENTS.md`:
+
+1. The cut. The modules `fold`, `schema`, `todo` and `view` name the data
+   crate, `prodrome-dag`, `prodrome-term`, `prodrome-fpl` and
+   `prodrome-todo` at their own paths, and not through the modules of the
+   core that re-export them (see "The edges").
+2. The move of the four files to `reading/src/`, whole, with the new
+   crate in `README.md` and `docs/development.md`. The CI's lint check
+   runs `scripts/edges.py` over `reading/src`.
+
+Other commits answer the review of section 12 (see "The follow-ups"), and
+one records the stage in this note and in `CHANGELOG.md`. `prodrome-core` re-exports each module of the
+new crate at its old path, so `cli/`, `wasm/`, `github/` and the tests
+build with no change of an import. No trait was added, and no item was
+renamed or narrowed.
+
+**The edges.** At the merge base, `python3 scripts/edges.py core/src fold
+schema todo view` already printed that no module of the set names a
+module outside it. That proves less than in the stages before, because
+the other modules of the core are now `pub use` lines in `lib.rs`, which
+the script does not read, so it cannot see a use of them. The four
+modules named eight of them: `event`, `payload`, `fpl`, `policy`,
+`registers`, `schedule`, `term` and `literal`. The cut replaced each such
+path with the path in the lower crate. After the cut, the four files name
+no path `crate::` outside the set, and the paths that they name outside
+the crate are of five crates only:
+
+```console
+$ grep -ohE 'prodrome_[a-z]+' core/src/{fold,schema,todo,view}.rs | sort -u
+prodrome_dag
+prodrome_data
+prodrome_fpl
+prodrome_term
+prodrome_todo
+```
+
+The proof that holds after the move is Cargo's: `prodrome-reading`
+compiles with those five crates as its only dependencies of the
+workspace. Each item that the four modules name is in one of them:
+
+| The core's module | The items that the set names | Their crate |
+|---|---|---|
+| `event`, `payload` | `TodoEvent`, `TodoId`, `Authored`, `Payload`; `Hash` | `prodrome-todo`; `prodrome-data` |
+| `fpl` | `Env`, `FplError`, `Instant`, `Candidates`, `Outcome`, `least_of`, `piecewise`, `mk_absent`, `mk_flat`, `checklist`, `instant_of`, `iso`; `Member`, `Stores`, `Closed`, `LinkError`, `link_in`, `fulfillment` | `prodrome-term`; `prodrome-fpl` |
+| `policy` | `Everything`; `Policy` | `prodrome-data`; `prodrome-dag` |
+| `registers` | `Stamp`; `Folded`, `Prodrome`, `Genesis`, `Node`, `fold` | `prodrome-data`; `prodrome-dag` |
+| `schedule`, `term` | `Schedule`, `Term` | `prodrome-term` |
+| `literal` | `Datetime`, `ProdromeError` | `prodrome-data` |
+
+`fold` also re-exports `prodrome_dag::fold`, which holds `read` and the
+hidden `scan` and `admits`, and `prodrome_todo::todo::{Kind, Registers,
+Write}`. No module of the set names `store`, `snapshot`, `memo`,
+`declared`, `tags`, `nest` or `digest`, so the cut moved no item and no
+body: it changed only the paths of the imports. `prodrome-reading` does
+not depend on `prodrome-memo` itself, but `prodrome-dag` does, because
+`sign::Checks` keeps the results of signature checks in a `memo::Lru`. So
+a program on the reading crate reads the memo crate too.
+
+**One crate or several.** The face of `prodrome-reading` is 4,077 tokens
+by `scripts/face.py --lines`, far under the budget, so the budget asks for
+no division. The test is what a program needs together:
+
+- A program that prices (`fold::price`, `flatten`, `specs`, `env`) and a
+  program that lists (`view::entries`, `Entry`, `list_order`) are not
+  different programs by the edges. `view::entries` calls `fold::stores`,
+  `fold::member` and `fold::read`, so every program that lists also
+  prices. A crate of the pricing alone would save a program that prices
+  only the 1,558 tokens of `view`.
+- A program with its own schema and no todos implements `Price`,
+  `History`, `Bind` and `Row`. These traits name only `Term`, `Env` and
+  `FplError` of `prodrome-term` and `Policy` of `prodrome-dag`, and
+  `fold::readings`, `env`, `flatten`, `price`, `link_specs`, `member`,
+  `stores` and `view::entries` are generic over the schema. So the
+  general part could stand on four crates without `prodrome-todo`. But
+  two rules of Rust tie the todo's part to it. The impls of the four
+  traits for `TodoEvent` must be in the crate of the traits or in
+  `prodrome-todo`, and in `prodrome-todo` they would make that crate
+  depend on `prodrome-dag` and the evaluator, which every program that
+  only writes a todo's events would then read. And the methods of
+  `Entry<TodoEvent<P>>` (`outcome`, `content`, `is_open`, `state`, `at`,
+  `claimed`) are inherent methods, which must be in the crate of `Entry`.
+  To move them out, they would become functions or the methods of a new
+  trait, which renames items or adds a trait only to make a cut. So the
+  general part and the todo's part are one crate, and a program with its
+  own schema reads the 5,043 tokens of `prodrome-todo` that it does not
+  use: 63,808 tokens in place of 58,765.
+
+**What is left of the core.** `prodrome-core` holds the root doc, the
+re-exports, and `laws` behind its feature. Its face is 13,392 tokens by
+`scripts/face.py --lines`, of which `laws` is 11,220, and 1,991 by the
+rustdoc measure with the default features (5,813 with `laws`). A program
+reads no item of the core to read a price or a row.
+
+`laws` stays in the facade. Its functions check the laws of SPEC §9 over
+a store's objects, an event or replicas, and they name `store`
+(`MemoryStore`, `EventStore`, `Overlay`, `Replica`, `Held`, `Sender`,
+`sync`, `accept`), `snapshot`, `sign`, `memo`, `dag`, `registers` and
+`fold::read`. What it tests is the whole library below the readings, not
+one crate. The crate closest to it is `prodrome-store`, which depends on
+all that it names but `prodrome-memo`. The line measure reads every
+source file whatever the features, so `laws` in the store crate would
+bring that crate from 21,214 to about 32,400 tokens, over the budget, for
+every program that opens a store. A crate of its own would save a program
+that runs the kit only the 2,171 tokens of the facade's root doc. A
+program that runs the kit names it in its `[dev-dependencies]`, so the
+kit costs nothing to the unit that a program ships.
+
+**The face.** "Before" is the merge base `dc41c12`. The rustdoc measure is
+with the default features. The crates that this stage does not change
+keep their faces: `prodrome-data` 19,913, `prodrome-memo` 7,697,
+`prodrome-declared` 4,151, `prodrome-dag` 14,424, `prodrome-store`
+21,214, `prodrome-nest` 4,011, `prodrome-tags` 4,036, `prodrome-digest`
+4,319 and `prodrome-todo` 5,043 by the line measure.
+
+| Crate | Lines, before | Lines, after | Rustdoc, before | Rustdoc, after |
+|---|--:|--:|--:|--:|
+| `prodrome-core`, without the crates below | 17,038 | 13,392 | 4,802 | 1,991 |
+| `prodrome-core` with `laws` | | | 8,624 | 5,813 |
+| `prodrome-reading` | | 4,077 | | 3,211 |
+| `prodrome-term` | 6,914 | 6,861 | 3,649 | 3,649 |
+| `prodrome-fpl` | 5,705 | 5,793 | 4,290 | 4,290 |
+| all thirteen crates | 114,465 | 114,931 | | |
+
+The crates together are 466 tokens more than before by the line measure:
+the root doc of the new crate (284), and in the core the lines that
+re-export it and the paragraph of the root doc that names it. `after` and
+`ratio` moved from `prodrome-term` to `prodrome-fpl` (see "The
+follow-ups"), with the module doc of their new file. Every crate is under
+the budget by both measures.
+
+A program that reads a todo's price and its row in a list reads the data
+crate, `prodrome-memo`, `prodrome-dag`, `prodrome-term`, `prodrome-fpl`,
+`prodrome-todo` and `prodrome-reading`: 19,913 + 7,697 + 14,424 + 6,861
++ 5,793 + 5,043 + 4,077 = 63,808 tokens by the line measure, and 36,697
+by the rustdoc measure, in place of the 114,465 tokens of all twelve
+crates. It reads no file of the store's replicas, tags, nests, digest or
+declared schemas. Of the 63,808 tokens, 7,697 are the memo crate, which
+the program reads only because `sign::Checks` in `prodrome-dag` names
+`memo::Lru`.
+
+**Which crates a unit reads.** The table has one row for each unit of
+section 12 that still read the core. Before this stage, each read all
+twelve crates, 114,465 tokens.
+
+| Unit | Held to the core by | Crates after | Tokens after |
+|---|---|---|--:|
+| an assistant unit | `view::entries` | data, memo, dag, term, fpl, todo, reading | 63,808 |
+| a records unit | `view::Entry` | data, memo, dag, term, fpl, todo, reading | 63,808 |
+| an inbox unit | `fold::price`, `schema::Price`; `payload::spec_field` is `prodrome_todo::payload::spec_field` | data, memo, dag, term, fpl, todo, reading | 63,808 |
+| a signatures unit | `fold::{content, env, flatten, link_specs, member, specs}`, `view::entries` | data, memo, dag, term, fpl, todo, reading | 63,808 |
+| a todo unit | `view::{Confidence, Provisional, list_order}` | data, memo, dag, term, fpl, todo, reading | 63,808 |
+| a browser module | `fold::{env, flatten, link_specs, specs}` (`fold::Write` is `prodrome_todo::todo::Write`) | data, memo, dag, term, fpl, todo, reading | 63,808 |
+
+So no unit of the application needs `prodrome-core` after this stage.
+The six units together read 382,848 tokens in place of 686,790. A unit
+that names a reading at `prodrome::fold` names it at
+`prodrome_reading::fold` instead, and so on for the paths of
+`CHANGELOG.md`. An agent that changes `view::entries` reads the file
+`reading/src/view.rs` and the faces of the seven crates: 63,808 tokens.
+Each of the seven crates is under the budget of 25,000 tokens that the
+application gives to one dependency, and the largest, the data crate, is
+19,913.
+
+**The follow-ups.** The review of section 12 asked for five changes,
+each made in its own commit:
+
+- `after` and `ratio` were public and `#[doc(hidden)]` in `prodrome-term`,
+  and only the evaluator calls them. They are private functions of a new
+  module `span` of `prodrome-fpl`. `us_of` stays in `prodrome-term`,
+  because the print of a span calls it. The doc of `piecewise` names its
+  callers: `chain` and `link` in `prodrome-fpl`, and `fold::flatten` in
+  `prodrome-reading`.
+- `AGENTS.md` named files that earlier stages moved, and named other
+  files by a bare name. Each path now names a file from the root of the
+  repository. The new script `scripts/doc_paths.py` prints each path in
+  backticks in `AGENTS.md`, `CONTRIBUTING.md` and `README.md` that names
+  no file, and the CI's lint check runs it.
+- `CHANGELOG.md` says that `prodrome-core` no longer turns on chrono's
+  feature `clock`, and names the two items of `prodrome-term` that are
+  public and hidden.
+- The CI's lint check runs `cargo doc` over the libraries with warnings
+  denied, with the default features, with all features and with none:
+  about 40 seconds from a cold target directory. Five links in the docs
+  of the wasm crates were broken or ambiguous, and they are fixed.
+- The timing of `observe::next_change`: see "The timings".
+
+**The timings.** The benchmark of section 12, in the release profile with
+no link-time optimisation, on a generated store of 15,011 objects over
+100 todos, about 250 bytes each. Each binary takes the median of ten runs of
+each operation, and each run appends the same ten tendings on a warm
+handle. Every run is pinned to one core with `taskset -c 3`. The base
+binary and the branch binary ran in turn, eleven times each, in three
+rounds on one store; the second round ran the branch first. The table
+gives the median of the 33 medians of each binary, in milliseconds, and
+the change in the count of instructions that `valgrind --tool=cachegrind`
+gives for one run of the operation.
+
+| Operation | Before | After | Change | Change in instructions |
+|---|--:|--:|--:|--:|
+| cold read | 210.3 | 211.5 | +0.5 % | not counted |
+| `registers::fold` | 27.6 | 28.0 | +1.4 % | not counted |
+| `view::entries` | 55.2 | 55.9 | +1.2 % | −0.02 % |
+| `fulfillment` | 32.8 | 33.4 | +1.7 % | 0 |
+| `observe::next_change` | 3.29 | 3.37 | +2.4 % | 0 |
+| `Dag::verify` | 39.0 | 40.1 | +2.8 % | not counted |
+| append | 377.5 | 375.6 | −0.5 % | not counted |
+
+No operation is slower by more than 3 percent. The two binaries run the
+same number of instructions for `fulfillment` (245,227,492) and for
+`next_change` (28,887,637), and each function runs the same number in
+both. `registers::fold` and `Dag::verify` are in `prodrome-dag`, which
+this stage does not change. So the changes of the table are the
+variation of the machine and of the layout of the code, which is about
+2 to 3 percent for these operations.
+
+**The timing of `next_change`.** Section 12 measured
+`observe::next_change` 4.2 percent slower, then 2.9 percent, with 0.25
+percent fewer instructions. This stage measured it again, pinned to one
+core, against the binary of `b32472b`, the merge base of section 12. Each
+binary takes the median of ten runs of `next_change` 20 times over a term
+of 12 levels.
+
+| Run | `b32472b` | This stage | Change |
+|---|--:|--:|--:|
+| 1: 101 medians of each binary, in alternating pairs | 3.245 ms | 3.358 ms | +3.5 % |
+| 2: 101 medians of each binary, in triples with the third binary below | 3.230 ms | 3.287 ms | +1.8 % |
+
+The quartiles of the 101 medians of each binary overlap in both runs: in
+run 1, 3.181 to 3.803 ms and 3.278 to 3.684 ms. The instructions decide
+the question:
+
+- This stage runs 28,887,637 instructions for one run of `next_change`,
+  and `b32472b` runs 28,973,897, which is 0.30 percent more. The binary
+  of the merge base `dc41c12` runs exactly as many as this stage.
+- The functions differ in what the compiler inlined. At this stage
+  `TermF::children` is a function of its own (51,840 instructions and
+  6,480 indirect branches, which are its calls and returns), where at
+  `b32472b` it was inlined into its callers. In exchange, the drop of a
+  `TermF<()>`, a growth of a vector of floats and the collection of a set
+  of instants are inlined or gone, so the total is lower.
+- The simulated predictor of cachegrind gives at this stage 8.8 percent
+  more mispredicted indirect branches than at `b32472b`, but the increase
+  is in functions whose code is the same in both binaries, such as
+  `breaks::local` and `Term::try_cata`. Such a change follows from the
+  addresses of the code, not from the work.
+- A third binary, this stage with `#[inline]` on `TermF::children`, ran
+  in run 2. It runs 29,042,833 instructions and its median was 3.282 ms,
+  1.6 percent over `b32472b`, as this stage is. So the call to
+  `children` does not cost the difference.
+
+So `next_change` does no more work than at `b32472b`, and no call that the
+compiler stopped inlining explains its time. The difference, between 1.8
+and 3.5 percent in two runs of the same method, is the layout of the code.
+No `#[inline]` was added.
+
+**Compile time.** `cargo build --workspace --all-targets -j 4` in the dev
+profile, twice each, each time in a new target directory, in two rounds.
+"Touch" is the build after `touch data/src/lib.rs`, twice after each
+clean build. These builds include every test target, so they are longer
+than the builds of section 12.
+
+| Build | Before | After |
+|---|--:|--:|
+| clean | 164.8 s, 156.9 s | 159.2 s, 155.3 s |
+| touch | 19.3 s, 17.1 s, 26.0 s, 22.0 s | 23.7 s, 23.4 s, 22.7 s, 24.9 s |
+
+A clean build does not change. The build after an edit of the data crate
+may take about 2 seconds more, the median of 23.6 seconds in place of
+20.7, which is inside the spread of the runs before. A probable cause is
+that the core and its tests now wait for `prodrome-reading`, which waits
+for `prodrome-fpl` and `prodrome-todo`.
+
+**The size of the wasm.** `nix build .#prodrome-wasm` could not run in the
+environment of this stage, because it could not fetch the flake's input
+`crane`. So a script ran the same steps by hand, with the tools of the
+flake's nixpkgs: `cargo build --profile wasm-release --target
+wasm32-unknown-unknown -p prodrome-wasm`, then `wasm-bindgen --target
+web` 0.2.127, then `wasm-opt -Os` with the features that `flake.nix`
+names. The module `prodrome_bg.wasm` is 1,416,276 bytes at the merge
+base and 1,416,398 bytes after this stage: 122 bytes, or 0.01 percent,
+more. The module that cargo writes, before `wasm-bindgen`, is 1,637,402
+and 1,637,535 bytes.
+
+**The tests.** The integration tests of the core run unchanged through the
+re-exports: 465 tests, and one long run that is ignored by default. The
+14 unit tests of `fold` and `view` moved with them, so the core has no
+unit test and `prodrome-reading` has 14. They name the lower crates in
+place of the core's modules, and their assertions do not change. The doc
+test of the core's root runs in the core. No law was added or changed,
+and no property test moved.
+
+**What remains of issue #92.** The issue asks for three things: shorter
+doc comments, a narrower public face, and a division of the core into
+crates in the order of its modules. Stage 1 shortened the doc comments.
+The stages of sections 8 to 13 divided the core, and every crate is under
+the budget. No unit of the application needs the core, and the core holds
+nothing that a program must read. Two things remain:
+
+1. The narrowing of section 3. Stage 3 narrowed four items, and each
+   later stage narrowed none, because each moved items whole. Section 3
+   listed 46 items that only other modules used, and items that only the
+   tests or `cli/` used. Many of them are now in other crates, some as
+   `#[doc(hidden)]` items that the crate above calls. Nobody has decided
+   item by item which of them a program outside the library can need.
+   The line measure counts a hidden item, so only the loss of `pub`
+   removes one from it.
+2. The release that publishes the crates, which is its own decision.
+
+So this stage advances the issue and does not complete it.

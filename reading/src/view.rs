@@ -8,15 +8,18 @@
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
-use crate::event::{Hash, TodoEvent};
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::{self, Genesis, Node};
+use prodrome_data::event::Hash;
+use prodrome_data::literal::{Datetime, ProdromeError};
+use prodrome_data::policy::Everything;
+use prodrome_fpl::fpl::{self, Candidates, LinkError, Outcome};
+use prodrome_term::term::Term;
+use prodrome_todo::event::TodoEvent;
+use prodrome_todo::payload::Payload;
+
 use crate::fold::{self, Product};
-use crate::fpl::{self, Candidates, LinkError, Outcome};
-use crate::literal::{Datetime, ProdromeError};
-use crate::payload::Payload;
-use crate::policy::{Everything, Policy};
-use crate::registers::{self, Genesis, Node};
 use crate::schema::{Bind, History, Row};
-use crate::term::Term;
 
 /// An entity's fulfillment function (SPEC §6.4) and its value at a moment.
 ///
@@ -284,11 +287,11 @@ pub fn entries<E: Row + History + Bind>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dag::Dag;
-    use crate::event::{mk_completed, mk_sealed, seal_hash, Actor};
-    use crate::fpl::mk_flat;
-    use crate::policy::Untrusted;
-    use crate::reference::{mk_authored, Todo};
+    use prodrome_dag::dag::Dag;
+    use prodrome_data::policy::Untrusted;
+    use prodrome_fpl::fpl::mk_flat;
+    use prodrome_todo::event::{mk_completed, mk_sealed, seal_hash, Actor};
+    use prodrome_todo::reference::{mk_authored, Todo};
 
     type Event = TodoEvent<Todo>;
 
@@ -340,7 +343,7 @@ mod tests {
     #[test]
     fn a_claiming_completion_is_a_claim_and_the_entry_is_provisional() {
         let nodes = chain(vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
+            authored("alpha", 1, "ada", Some(mk_flat(0.25).expect("valid"))),
             mk_completed("alpha", at(3), "triage", "").expect("valid"),
         ]);
         let entries = entries(&nodes, at(9), &roster()).expect("folds");
@@ -356,7 +359,7 @@ mod tests {
         assert_eq!(
             entry.confidence,
             Confidence::Provisional(Provisional::Claimed),
-            "the claim alone, since bassel wrote the content"
+            "the claim alone, since ada wrote the content"
         );
         assert_eq!(
             entry.value(),
@@ -396,7 +399,7 @@ mod tests {
         let nodes = chain(vec![authored(
             "alpha",
             9,
-            "bassel",
+            "ada",
             Some(mk_flat(0.5).expect("valid")),
         )]);
         let entries = entries(&nodes, at(1), &roster()).expect("folds");
@@ -413,8 +416,8 @@ mod tests {
     #[test]
     fn a_resolved_todo_reads_one_and_carries_its_instant() {
         let nodes = chain(vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.2).expect("valid"))),
-            mk_completed("alpha", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", Some(mk_flat(0.2).expect("valid"))),
+            mk_completed("alpha", at(3), "ada", "").expect("valid"),
         ]);
         let entries = entries(&nodes, at(9), &roster()).expect("folds");
         let [entry] = &entries[..] else {
@@ -440,10 +443,10 @@ mod tests {
         )
         .expect("valid");
         let nodes = chain(vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
-            authored("beta", 1, "bassel", Some(mk_flat(0.5).expect("valid"))),
-            authored("group", 1, "bassel", Some(group)),
-            mk_completed("beta", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", Some(mk_flat(0.25).expect("valid"))),
+            authored("beta", 1, "ada", Some(mk_flat(0.5).expect("valid"))),
+            authored("group", 1, "ada", Some(group)),
+            mk_completed("beta", at(3), "ada", "").expect("valid"),
         ]);
         let rows = entries(&nodes, at(2), &roster()).expect("folds");
         // The harmonic mean of 0.25 and 0.5 while both are open ...
@@ -461,7 +464,7 @@ mod tests {
         let nodes = chain(vec![authored(
             "alpha",
             1,
-            "bassel",
+            "ada",
             Some(fpl::mk_ref("ghost".to_owned()).expect("valid")),
         )]);
         let rows = entries(&nodes, at(9), &roster()).expect("folds");
@@ -488,11 +491,11 @@ mod tests {
         )
         .expect("valid");
         let nodes = chain(vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
+            authored("alpha", 1, "ada", Some(mk_flat(0.25).expect("valid"))),
             // A record with no spec, and a todo only ever created.
-            authored("beta", 1, "bassel", None),
-            crate::event::mk_created("gamma", at(1), "bassel", "a note", "").expect("valid"),
-            authored("group", 1, "bassel", Some(group)),
+            authored("beta", 1, "ada", None),
+            prodrome_todo::event::mk_created("gamma", at(1), "ada", "a note", "").expect("valid"),
+            authored("group", 1, "ada", Some(group)),
         ]);
         let rows = entries(&nodes, at(9), &roster()).expect("folds");
         let [alpha, beta, gamma, group] = &rows[..] else {
@@ -511,16 +514,16 @@ mod tests {
     #[test]
     fn a_list_puts_every_row_with_no_number_after_the_priced_ones_by_id() {
         let nodes = chain(vec![
-            authored("delta", 1, "bassel", Some(mk_flat(0.75).expect("valid"))),
-            authored("gamma", 1, "bassel", None),
-            authored("beta", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
+            authored("delta", 1, "ada", Some(mk_flat(0.75).expect("valid"))),
+            authored("gamma", 1, "ada", None),
+            authored("beta", 1, "ada", Some(mk_flat(0.25).expect("valid"))),
             authored(
                 "alpha",
                 1,
-                "bassel",
+                "ada",
                 Some(fpl::mk_ref("ghost".to_owned()).expect("valid")),
             ),
-            authored("epsilon", 1, "bassel", Some(mk_flat(0.25).expect("valid"))),
+            authored("epsilon", 1, "ada", Some(mk_flat(0.25).expect("valid"))),
         ]);
         let mut rows = entries(&nodes, at(9), &roster()).expect("folds");
         rows.sort_by(list_order);

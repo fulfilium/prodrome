@@ -129,8 +129,15 @@ todo/         prodrome-todo, the todo schema as data: its events, its
               payload, its vocabulary and its registers, on the data and
               term crates. The module `reference` is the payload of the
               vectors. The core re-exports each module.
-core/         prodrome-core, the database. The module list in core/src/lib.rs
-              gives the SPEC section of each module.
+reading/      prodrome-reading, the readings of a schema's history: its
+              price, its history as a function of time, its binding for FPL
+              and its row in a list, and their instances for the todo
+              schema, on the data, dag, term, fpl and todo crates. The core
+              re-exports each module.
+core/         prodrome-core, the facade: it re-exports every crate above at
+              the paths that a program names, and holds the law kit behind
+              the feature `laws`. The module list in core/src/lib.rs gives
+              the SPEC section of each module.
 derive/       prodrome-derive, the procedural macro `#[derive(Literal)]`,
               which the data crate and the core re-export as
               literal::codec::Literal

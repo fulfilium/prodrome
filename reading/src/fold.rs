@@ -9,14 +9,17 @@ use std::collections::{BTreeMap, BTreeSet};
 pub use prodrome_dag::fold::*;
 pub use prodrome_todo::todo::{Kind, Registers, Write};
 
-use crate::event::{Authored, TodoEvent, TodoId};
-use crate::fpl::{self, Env, FplError, Instant};
-use crate::payload::Payload;
-use crate::policy::{Everything, Policy};
-use crate::registers::{Folded, Prodrome, Stamp};
-use crate::schedule::Schedule;
+use prodrome_dag::policy::Policy;
+use prodrome_dag::registers::{Folded, Prodrome};
+use prodrome_data::policy::Everything;
+use prodrome_data::stamp::Stamp;
+use prodrome_fpl::fpl::{self, Env, FplError, Instant};
+use prodrome_term::schedule::Schedule;
+use prodrome_term::term::Term;
+use prodrome_todo::event::{Authored, TodoEvent, TodoId};
+use prodrome_todo::payload::Payload;
+
 use crate::schema::{Bind, History, Price, Schema};
-use crate::term::Term;
 
 /// An entity's registers as a schedule over time, as of `at` (`None`: ever)
 /// under `policy` (SPEC §6.5, `history`).
@@ -245,13 +248,13 @@ pub fn stores<E: History + Bind>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dag::Dag;
-    use crate::event::{mk_completed, mk_reopened, mk_sealed, seal_hash, Actor};
-    use crate::fpl::{fulfillment, mk_flat, print_term};
-    use crate::literal::Datetime;
-    use crate::policy::Untrusted;
-    use crate::reference::{mk_authored, mk_subtodo, Todo};
-    use crate::registers::fold;
+    use prodrome_dag::dag::Dag;
+    use prodrome_dag::registers::fold;
+    use prodrome_data::literal::Datetime;
+    use prodrome_data::policy::Untrusted;
+    use prodrome_fpl::fpl::{fulfillment, mk_flat, print_term};
+    use prodrome_todo::event::{mk_completed, mk_reopened, mk_sealed, seal_hash, Actor};
+    use prodrome_todo::reference::{mk_authored, mk_subtodo, Todo};
 
     type Event = TodoEvent<Todo>;
 
@@ -312,8 +315,8 @@ mod tests {
     #[test]
     fn a_completion_binds_and_a_reopening_clears() {
         let log: Vec<Event> = vec![
-            mk_completed("alpha", at(2), "bassel", "").expect("valid"),
-            mk_reopened("alpha", at(4), "bassel", "").expect("valid"),
+            mk_completed("alpha", at(2), "ada", "").expect("valid"),
+            mk_reopened("alpha", at(4), "ada", "").expect("valid"),
         ];
         let policy = roster();
         assert_eq!(env_at(&log, at(3), &policy).outcomes.len(), 1);
@@ -330,8 +333,8 @@ mod tests {
     #[test]
     fn a_resolved_todo_reads_one_from_the_instant_it_was_resolved() {
         let log = vec![
-            authored("alpha", 1, "bassel", Some(mk_flat(0.2).expect("valid")), 0),
-            mk_completed("alpha", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", Some(mk_flat(0.2).expect("valid")), 0),
+            mk_completed("alpha", at(3), "ada", "").expect("valid"),
         ];
         let flat = flat(&log, at(9));
         let term =
@@ -346,7 +349,7 @@ mod tests {
         let log = vec![authored(
             "alpha",
             1,
-            "bassel",
+            "ada",
             Some(mk_flat(0.5).expect("valid")),
             2,
         )];
@@ -361,8 +364,8 @@ mod tests {
     #[test]
     fn a_todo_with_no_spec_and_no_checklist_has_no_function() {
         let log = vec![
-            authored("alpha", 1, "bassel", None, 0),
-            mk_completed("alpha", at(3), "bassel", "").expect("valid"),
+            authored("alpha", 1, "ada", None, 0),
+            mk_completed("alpha", at(3), "ada", "").expect("valid"),
         ];
         assert!(flat(&log, at(9)).is_empty());
     }
