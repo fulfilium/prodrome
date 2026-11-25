@@ -35,10 +35,11 @@ use prodrome::literal::{parse_literal, Call, Datetime, Table, Value};
 /// crate, and `Signature::Fields` throughout, so a field order is checked
 /// rather than assumed.
 pub const VECTORS: Table = Table(&[
-    // --- the eight roots ----------------------------------------------------
+    // --- the nine roots -----------------------------------------------------
     ("Folds", &["logs"]),
     ("Dags", &["dags"]),
     ("Fpl", &["terms"]),
+    ("Axis", &["cases"]),
     ("Series", &["series"]),
     ("View", &["policy", "untrusted", "cases"]),
     ("Links", &["specs", "env", "cases"]),
@@ -85,6 +86,8 @@ pub const VECTORS: Table = Table(&[
             "explain",
         ],
     ),
+    // A term whose spans leave the time axis, and its readings (§7).
+    ("AxisCase", &["why", "term", "samples"]),
     (
         "SeriesCase",
         &["seed", "term", "from", "to", "exact", "knots"],

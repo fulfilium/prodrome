@@ -85,10 +85,10 @@ fuzzed.
 **The vector vocabulary.** `conformance/*.py` — the evidence §9 is checked
 against — is one expression of THIS grammar, printed by this printer and read
 by this parser, against a SECOND whitelist that is disjoint from a store's:
-`Folds`, `Dags`, `Fpl`, `Series`, `View`, `Links`, `Recurs`, `Changes`,
-`Husks`; `FoldCase`, `DagCase`, `FplCase`, `SeriesCase`, `ViewCase`,
-`LinkCase`, `RecurCase`, `ChangeCase`, `HuskCase`; `Bound`, `Open`, `Spec`, `Content`, `Object`,
-`Parents`, `Conflict`, `RowConflict`, `Refused`, `Step`, `Price`, `Sample`,
+`Folds`, `Dags`, `Fpl`, `Axis`, `Series`, `View`, `Links`, `Recurs`,
+`Changes`, `Husks`; `FoldCase`, `DagCase`, `FplCase`, `AxisCase`,
+`SeriesCase`, `ViewCase`, `LinkCase`, `RecurCase`, `ChangeCase`, `HuskCase`;
+`Bound`, `Open`, `Spec`, `Content`, `Object`, `Parents`, `Conflict`, `RowConflict`, `Refused`, `Step`, `Price`, `Sample`,
 `Knot`, `Asked`, `Row`; and, for an explanation's
 decoration, `Node`, `NoteEntry`, `One`, `Many`, `Maps`, `Fields`, `Pair`. A
 STORE's parse admits none of these and a VECTOR's parse admits none of §4's
@@ -2742,6 +2742,9 @@ after which a part other than the new line differs.
     they give is in `[0, 1]`. The print of the term parses as the term, and
     its normal form reads as it does. `Shift(δ, a)` read at `t` is `a` read
     at `t + δ`, with the sum stopped at the ends of the axis.
+    `conformance/axis.py` holds seven such readings, with the values that the
+    rule gives.
+    `axis_vectors.rs::every_reading_past_an_end_of_the_axis_is_the_rules`,
     `total.rs::the_evaluator_is_total_over_every_constructible_term`,
     `total.rs::a_series_over_any_window_is_in_the_unit_interval`,
     `total.rs::a_log_holding_any_such_spec_flattens`,

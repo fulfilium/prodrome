@@ -746,7 +746,8 @@ constructor's fields never change, in any release.
   A program that folded a store that held such a term stopped. Now every
   instant that evaluation computes is on the time axis, and a sum that
   would leave the axis stops at the end that it passes. A reading inside
-  the axis keeps its value, its print and its vectors. The same change
+  the axis keeps its value, its print and its vectors. `conformance/axis.py`
+  is a new file of seven readings past the ends of the axis. The same change
   removes three more panics: the count of microseconds of a span of more
   than 292,000 years, the rounding of `div_delta` for a divisor of more
   than 2⁶², and `delta_from_hours` for an hour count of more than 2⁶³

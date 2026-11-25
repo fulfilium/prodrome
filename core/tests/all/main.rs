@@ -5,6 +5,7 @@
 #[path = "../common/mod.rs"]
 mod common;
 
+mod axis_vectors;
 mod bodies;
 mod calibration;
 mod causal;
