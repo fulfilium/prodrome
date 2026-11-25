@@ -1,0 +1,1 @@
+Change(genesis='e44b01205cdace6f30ebc3c48eee515a5e1ef4d70aae9a18b591ba5f45a131a9', deps=(), event=Created(todo='gh-109', at=datetime(2026, 11, 25, 19, 0, 31), actor='github-mirror', text='The evaluator is total over every term a program can construct', note=''))
