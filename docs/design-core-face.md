@@ -1772,11 +1772,26 @@ no division. The test is what a program needs together:
   only writes a todo's events would then read. And the methods of
   `Entry<TodoEvent<P>>` (`outcome`, `content`, `is_open`, `state`, `at`,
   `claimed`) are inherent methods, which must be in the crate of `Entry`.
-  To move them out, they would become functions or the methods of a new
-  trait, which renames items or adds a trait only to make a cut. So the
-  general part and the todo's part are one crate, and a program with its
-  own schema reads the 5,043 tokens of `prodrome-todo` that it does not
-  use: 63,808 tokens in place of 58,765.
+  There are two ways to move them out of that crate: as functions, or as
+  the methods of a new trait. Each renames items or adds a trait only to
+  make a cut.
+
+  A third way keeps the names. The six methods read only `self.reading`
+  and `self.claim`, and both have the type `Row::Reading`. So they can be
+  one inherent impl that is bounded on the associated type, `impl<E:
+  Row<Reading = todo::Reading>> Entry<E>`. The general crate would then
+  hold the traits, the generic folds, `view` and this impl, and a small
+  crate would hold the four impls of the traits for `TodoEvent`. The cost
+  is a fourteenth crate, with its lines in `README.md`,
+  `docs/development.md`, the lint check of `scripts/edges.py` and the
+  re-exports of `prodrome-core`. The general crate must also keep the
+  type `todo::Reading` and `lowered`, because the bound names the type, so
+  one type of the todo stays in the general part. The trigger is the first
+  program that has a schema of its own and wants the general part without
+  the 5,043 tokens of `prodrome-todo`. This stage does not make the cut.
+  Until then, the general part and the todo's part are one crate, and a
+  program with its own schema reads the 5,043 tokens of `prodrome-todo`
+  that it does not use: 63,808 tokens in place of 58,765.
 
 **What is left of the core.** `prodrome-core` holds the root doc, the
 re-exports, and `laws` behind its feature. Its face is 13,392 tokens by
