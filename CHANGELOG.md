@@ -257,6 +257,37 @@ constructor's fields never change, in any release.
   answers what `view(tree, summarized, budget)` answered, and
   `read(tree, Node::bytes, summarized)` the same name as
   `read(tree, summarized)`. No stored byte changes.
+- **The readings of a schema's history are the crate `prodrome-reading`,
+  and `prodrome-core` is a facade (issue #92, section 13 of
+  `docs/design-core-face.md`).** A program that reads a todo's price and
+  its row in a list can depend on `prodrome-data`, `prodrome-memo`,
+  `prodrome-dag`, `prodrome-term`, `prodrome-fpl`, `prodrome-todo` and
+  `prodrome-reading`: 63,808 tokens by `scripts/face.py --lines`, in place
+  of the 114,465 tokens of `prodrome-core` and the crates below it. The
+  new crate reads no store. `prodrome-core` holds only the law kit, behind
+  the feature `laws`, and re-exports every other module at its old path,
+  so a program that depends on `prodrome-core` changes nothing. No
+  behaviour, stored byte, canonical print, conformance vector or law
+  changes, and no item is renamed or narrowed. A program that moves to the
+  new crate changes these paths:
+  - `prodrome::fold` becomes `prodrome_reading::fold`, which holds
+    `readings`, `env`, `specs`, `content`, `flatten`, `price`,
+    `link_specs`, `member` and `stores`, and re-exports
+    `prodrome_dag::fold` and `Kind`, `Registers` and `Write` of
+    `prodrome_todo::todo`;
+  - `prodrome::schema` becomes `prodrome_reading::schema`, which holds
+    `Price`, `History`, `Bind` and `Row`, and re-exports
+    `prodrome_data::schema`;
+  - `prodrome::todo` becomes `prodrome_reading::todo`, which holds
+    `Reading` and the impls of the four traits for `TodoEvent`, and
+    re-exports `prodrome_todo::todo`;
+  - `prodrome::view` becomes `prodrome_reading::view`;
+  - `payload::spec_field` is `prodrome_todo::payload::spec_field`.
+
+  `after` and `ratio`, which were public and `#[doc(hidden)]` in
+  `prodrome_term::fpl`, are private to `prodrome-fpl`, because only the
+  evaluator calls them.
+
 - **The terms, the evaluator and the todo schema's events are crates of
   their own: `prodrome-term`, `prodrome-fpl` and `prodrome-todo` (issue
   #92, section 12 of `docs/design-core-face.md`).** A program that builds,
