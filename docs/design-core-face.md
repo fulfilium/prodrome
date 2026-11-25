@@ -1703,8 +1703,9 @@ builds and passes the three commands of `AGENTS.md`:
 Other commits answer the review of section 12 (see "The follow-ups"), and
 one records the stage in this note and in `CHANGELOG.md`. `prodrome-core` re-exports each module of the
 new crate at its old path, so `cli/`, `wasm/`, `github/` and the tests
-build with no change of an import. No trait was added, and no item was
-renamed or narrowed.
+build with no change of an import. No trait was added and no item was
+renamed. Two hidden items were narrowed: `after` and `ratio` became private
+(see "The follow-ups").
 
 **The edges.** At the merge base, `python3 scripts/edges.py core/src fold
 schema todo view` already printed that no module of the set names a
@@ -1793,7 +1794,7 @@ all that it names but `prodrome-memo`. The line measure reads every
 source file whatever the features, so `laws` in the store crate would
 bring that crate from 21,214 to about 32,400 tokens, over the budget, for
 every program that opens a store. A crate of its own would save a program
-that runs the kit only the 2,171 tokens of the facade's root doc. A
+that runs the kit only the 2,172 tokens of the facade's root doc. A
 program that runs the kit names it in its `[dev-dependencies]`, so the
 kit costs nothing to the unit that a program ships.
 

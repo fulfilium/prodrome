@@ -282,7 +282,8 @@ constructor's fields never change, in any release.
   the feature `laws`, and re-exports every other module at its old path,
   so a program that depends on `prodrome-core` changes nothing. No
   behaviour, stored byte, canonical print, conformance vector or law
-  changes, and no item is renamed or narrowed. A program that moves to the
+  changes, and no item is renamed. Two hidden items are narrowed: `after`
+  and `ratio` of `prodrome-term` became private. A program that moves to the
   new crate changes these paths:
   - `prodrome::fold` becomes `prodrome_reading::fold`, which holds
     `readings`, `env`, `specs`, `content`, `flatten`, `price`,
