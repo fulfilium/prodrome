@@ -74,7 +74,7 @@ shipped fields).
 ### 1. Three new objects
 
 ```
-Genesis(label='suzatary', nonce='9f2c…')
+Genesis(label='home', nonce='9f2c…')
 Change(genesis='<name>', deps=('3f…', 'a0…'), event=Completed(todo='a', …))
 Snapshot(genesis='<name>', tips=('…', '…'), previous='<name>' or '')
 ```
@@ -274,7 +274,7 @@ host concern, and `conflicts` still names them all.
 ## C. Attestation
 
 **Today.** Every object names every tip, so the newest tip's name is a
-Merkle root of the whole history. Suzatary's attestable-history site
+Merkle root of the whole history. An application's attestable-history site
 publishes that root: "everything below this hash existed before it".
 
 **With changes, no change commits to anything outside its todo.** Something
@@ -310,7 +310,7 @@ single-genesis, `adopt` must copy what it names, and the tips derivation must
 know that it names parents. If a host defined it, every reader would need
 that host's code to verify a store. And `Woven(parents, None)`, a merge with
 no event, already is a snapshot without a genesis or a chain: this is the
-same structure given its real job. The CADENCE is the host's: Suzatary
+same structure given its real job. The CADENCE is the host's: one application
 writes one per site build and publishes its name.
 
 ## D. Order

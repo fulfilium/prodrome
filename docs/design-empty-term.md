@@ -68,7 +68,7 @@ repository, until the code shows a boundary worth a crate of its own.
 ## What it enables
 
 A host can keep objects that are not todos in the same store, each with its
-own payload type and, when it matters, its own price. Suzatary's next use is
+own payload type and, when it matters, its own price. One application's next use is
 proposals: a draft email or a changeset is an object whose id is the hash of
 its content. Performing it appends its completion, carrying the response. A
 second submission of the same object reads that completion and returns the

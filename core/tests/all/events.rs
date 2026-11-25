@@ -244,10 +244,10 @@ fn name(byte: char) -> Hash {
 #[test]
 fn the_new_objects_print_as_declared() {
     let genesis: Envelope<TodoEvent<Todo>> =
-        Envelope::Genesis(mk_genesis("suzatary", &"9f".repeat(16)).expect("a genesis"));
+        Envelope::Genesis(mk_genesis("home", &"9f".repeat(16)).expect("a genesis"));
     assert_eq!(
         canonical_envelope(&genesis),
-        format!("Genesis(label='suzatary', nonce='{}')", "9f".repeat(16))
+        format!("Genesis(label='home', nonce='{}')", "9f".repeat(16))
     );
     assert!(parents_of(&genesis).is_empty());
     assert!(genesis.event().is_none());
