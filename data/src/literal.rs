@@ -54,7 +54,7 @@ impl ProdromeError {
         }
     }
 
-    /// For the core; no promise. The failure of an input or output on `path`.
+    /// For this library's own code; no promise. The failure of an input or output on `path`.
     #[doc(hidden)]
     pub fn io(path: &std::path::Path, error: &std::io::Error) -> Self {
         ProdromeError::Io {

@@ -174,8 +174,8 @@ impl<M> Tree<M> {
     }
 
     /// Whether `node` is settled: it does not hold the last line, so no
-    /// appended line renames it. The next line renames a node that holds the
-    /// last line, so a summary of that node goes stale.
+    /// appended line renames it. A summary of a node that holds the last line
+    /// goes stale at the next line.
     #[must_use]
     pub fn settled(&self, node: &Node<M>) -> bool {
         node.span.end < self.lines()
@@ -284,9 +284,8 @@ impl<M: Measure> Algebra<Node<M>> for Measured {
     }
 }
 
-/// The name of the tree as read under its costs, over its root's name
-/// and, in order, every line's cost (`line(node)`) and every inner node's
-/// summary length or its absence.
+/// The name of the tree as read under its costs: its root's name, and, in
+/// order, every line's cost and every inner node's summary length or absence.
 ///
 /// A cache of [`view`] or [`pending`] keyed by this name and the waters is
 /// never stale (law 46). A line's measure is not covered, because it is a
@@ -326,9 +325,8 @@ pub struct Part {
 }
 
 impl Part {
-    /// A handle to show a reader, `first+lines`: its first line and how
-    /// many lines it spans. A line that arrives before the part moves the
-    /// handle, and only the node's name stays the same.
+    /// A handle to show a reader, `first+lines`. A line that arrives before the
+    /// part moves the handle; only the node's name stays the same.
     #[must_use]
     pub fn handle(&self) -> String {
         format!("{}+{}", self.span.start, self.span.len())
@@ -381,24 +379,18 @@ pub fn zoom<M>(tree: &Tree<M>, name: &Hash) -> Option<Vec<Part>> {
     Some(node.children.iter().map(Node::part).collect())
 }
 
-/// The view of the log under the two `waters` (design §6.5, law 46). A
-/// line costs `line(node)`, and an inner node with a summary costs
+/// The view of the log under the two `waters` (design §6.5, laws 46, 88 and
+/// 89). A line costs `line(node)`, and an inner node with a summary costs
 /// `summarized(name)`. Each of the two must be a function of the node's
 /// name. To charge each line its [`Leaf::bytes`], pass [`Node::bytes`].
 ///
-/// The view is built as the log was, line by line. When a line's arrival
-/// puts the view over the high water, closings are made until the view
-/// costs at most the low water or no closing is admissible: a MERGE.
-/// Of the admissible closings, the one started at the most due node closes
-/// first. The due of a node is its age over its size, both in lines, and
-/// of two nodes that are as due, the older closes. The view is greedy, so
-/// it can stop over its waters although a fit with a coarser node to the
-/// left exists.
+/// The view is greedy: it can stop over its waters although a fit with a
+/// coarser node to the left exists.
 ///
-/// An arrival that makes no merge adds the line as one more part at the
-/// end and changes no other part (law 89). With [`Waters::at`], the view
-/// closes at every arrival that puts it over the budget, and only until it
-/// fits again (law 88).
+/// The most due node closes first, where the due of a node is its age over its
+/// size in lines, and a tie goes to the older node. An arrival that makes no
+/// merge adds one part at the end of the view and changes no other part (law
+/// 89). With [`Waters::at`], the view closes only until it fits (law 88).
 ///
 /// # Cost
 ///

@@ -1,7 +1,7 @@
 //! A set of small non-negative integers, which holds the positions of an
 //! object's ancestors.
 
-/// For the core; no promise. A set of small non-negative integers as a bitmap.
+/// For this library's own code; no promise. A set of small non-negative integers as a bitmap.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[doc(hidden)]
 pub struct BitSet(Vec<u64>);
@@ -26,7 +26,7 @@ impl BitSet {
     }
 
     /// Inserts a clear bit at `at`: every bit at or above it moves up one.
-    pub fn open(&mut self, at: usize) {
+    pub(crate) fn open(&mut self, at: usize) {
         let bits: Vec<usize> = self.iter().collect();
         *self = BitSet::default();
         for bit in bits {

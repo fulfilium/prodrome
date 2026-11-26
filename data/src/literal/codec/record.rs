@@ -36,7 +36,8 @@ pub trait Record: Literal {
     }
 }
 
-/// The context `C.f` of a field in a refusal, formatted only on a refusal.
+/// For this library's own code; no promise. The context `C.f` in a refusal.
+#[doc(hidden)]
 #[derive(Debug, Clone, Copy)]
 pub struct Site<'a> {
     constructor: &'a str,
@@ -49,31 +50,26 @@ impl Display for Site<'_> {
     }
 }
 
+/// For this library's own code; no promise. How a derived field is read.
+#[doc(hidden)]
 pub type Reader<T> = fn(&Value, &dyn Display) -> Result<T, ProdromeError>;
 
 /// # Errors
 ///
 /// `call` lacks the field.
-pub fn required<'a>(call: &'a Call, name: &str) -> Result<&'a Value, ProdromeError> {
+pub(crate) fn required<'a>(call: &'a Call, name: &str) -> Result<&'a Value, ProdromeError> {
     call.field(name)
         .ok_or_else(|| ProdromeError::invalid(format!("{}(...) is missing {name}", call.name)))
 }
 
-/// Reads the required field `name` of `call` with `reader`.
-///
-/// # Errors
-///
-/// `call` lacks the field, or `reader` refuses its value.
+/// For this library's own code; no promise. Reads a required field.
+#[doc(hidden)]
 pub fn read<T>(call: &Call, name: &str, reader: Reader<T>) -> Result<T, ProdromeError> {
     reader(required(call, name)?, &site(call, name))
 }
 
-/// Reads the field `name` of `call` with `reader`, or the `Default` of `T`
-/// where `call` lacks the field.
-///
-/// # Errors
-///
-/// `reader` refuses the field's value.
+/// For this library's own code; no promise. Reads a field that may be absent.
+#[doc(hidden)]
 pub fn read_or_default<T: Default>(
     call: &Call,
     name: &str,
@@ -101,9 +97,8 @@ pub fn call(value: &Value) -> Result<&Call, ProdromeError> {
     })
 }
 
-/// # Errors
-///
-/// `value` is not a call of `name`.
+/// For this library's own code; no promise. The call of `name` in `value`.
+#[doc(hidden)]
 pub fn call_of<'a>(value: &'a Value, name: &str) -> Result<&'a Call, ProdromeError> {
     match value.as_call() {
         Some(call) if call.name == name => Ok(call),

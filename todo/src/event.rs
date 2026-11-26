@@ -4,9 +4,7 @@
 //!
 //! Never change the field set of a shipped kind: a new field changes the
 //! canonical print, so no stored object would match its hash any more. Store
-//! new data in a new kind. The record kind carries the host's [`Payload`]
-//! (see [`crate::payload`]); the conformance vectors were taken with the
-//! payload `crate::reference`.
+//! new data in a new kind.
 
 pub use prodrome_data::event::*;
 
@@ -51,8 +49,8 @@ pub struct SpecRevised {
 /// A content record: a todo's whole content as of `at`.
 ///
 /// An edit is a new record for the same id, and the fold keeps the latest.
-/// The host defines the [`Payload`], and the core reads only its `spec` and
-/// its `checklist_len` (SPEC §4).
+/// The core reads only the `spec` and the `checklist_len` of the [`Payload`]
+/// (SPEC §4).
 #[derive(Debug, Clone, PartialEq)]
 pub struct Authored<P> {
     pub todo: TodoId,
@@ -281,9 +279,9 @@ impl<P: Payload> Authored<P> {
     /// A content record as a literal: the core's three fields, then the
     /// payload's fields in the order of its constructor.
     ///
-    /// The content fold (SPEC §6.3) returns records, and a consumer compares
-    /// their prints, so [`TodoEvent::to_value`] prints a record through this
-    /// function too.
+    /// [`TodoEvent::to_value`] prints a record through this function too,
+    /// because a consumer compares the prints of the content fold's records
+    /// (SPEC §6.3).
     pub fn to_value(&self) -> Value {
         headed(
             vec![

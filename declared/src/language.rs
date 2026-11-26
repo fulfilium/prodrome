@@ -147,10 +147,9 @@ impl Form {
         })
     }
 
-    /// The canonical print, with every set sorted (events and registers by
-    /// name, an enum's alternatives, a machine's covers, a register's
-    /// writes), so that two forms of one schema print as one text. The
-    /// print keeps the order of the fields, which is not a set.
+    /// The canonical print, with every set sorted, so that two forms of one
+    /// schema print as one text. The print keeps the order of the fields,
+    /// which is not a set.
     #[must_use]
     pub fn print(&self) -> String {
         print_literal(&self.normalized().to_value())

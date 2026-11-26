@@ -13,9 +13,9 @@ pub enum Doors {
     /// is not the one its handle keeps.
     ///
     /// The program declares this for every process that opens the
-    /// directory, not only for itself. A `git merge`, a copy of files, a
-    /// person, or an older binary breaks it, and then a decision of a handle
-    /// that has read the store answers from a history that lacks the door's
-    /// objects until a handle that lists holds the lock (SPEC law 85).
+    /// directory. A `git merge`, a copy of files, a person, or an older
+    /// binary breaks the declaration. A decision then answers from a history
+    /// that lacks the objects they add, until a handle that lists holds the
+    /// lock (SPEC law 85).
     Alone,
 }

@@ -1,9 +1,8 @@
 //! The tag set of one membership prodrome and one alias prodrome read
-//! together. It is a function of the two prodromes' objects alone, so
-//! every replica that holds the same objects reads the same tags. Where
-//! concurrent renames disagree, it still chooses one tag for every name by
-//! a rule that every replica applies alike, and lists each
-//! [`Disagreement`].
+//! together. Every replica that holds the same objects reads the same tags.
+//! Where
+//! concurrent renames disagree, it chooses one tag for every name by a rule
+//! that every replica applies alike, and lists each [`Disagreement`].
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -72,10 +71,10 @@ struct Candidates<S: Tagging> {
 }
 
 impl<S: Tagging> TagSet<S> {
-    /// The set that `memberships` and `aliases` hold, each one prodrome of
-    /// its store, read under the policy that binds every writer. A store
-    /// begun by one genesis holds one prodrome; an empty map reads as no
-    /// tags or no aliases.
+    /// The set that `memberships` and `aliases` hold, each one prodrome of its
+    /// store, read under the policy that binds every writer. A store begun by
+    /// one genesis holds one prodrome; an empty map reads as no tags or no
+    /// aliases.
     #[must_use]
     pub fn of(
         memberships: &Prodrome<MembershipEvent<S>>,
@@ -215,8 +214,8 @@ impl<S: Tagging> TagSet<S> {
     /// `None` where the target already carries it.
     ///
     /// An event's name is its key, `at`, `actor` and body. So when one
-    /// actor adds a tag, takes it off and adds it again with one `at`, the
-    /// second add is the first add's event again, and the store writes
+    /// actor adds a tag, takes it off and adds it again with the same `at`,
+    /// the second add is the first add's event again, and the store writes
     /// nothing for it.
     #[must_use]
     pub fn add(
@@ -253,9 +252,9 @@ impl<S: Tagging> TagSet<S> {
 
     /// The events after which every name of `from`'s tag and of `to`'s tag
     /// stands for `to`. A rename to a name of another tag merges the two
-    /// tags, and renaming back undoes a rename. Each event supersedes what
-    /// this set holds for its name, so it settles the disagreements on
-    /// those names. A rename that changes nothing writes nothing.
+    /// tags. Each event supersedes what this set holds for its name, so it
+    /// settles the disagreements on those names. Renaming back undoes a
+    /// rename. A rename that changes nothing writes nothing.
     #[must_use]
     pub fn rename(
         &self,

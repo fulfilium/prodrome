@@ -100,8 +100,7 @@ fn read_back<E: Schema>(replica: &(impl Replica<E> + ?Sized)) -> Result<(), Brok
 /// - `here` and `there` synced into a third replica in either order read
 ///   the same.
 ///
-/// Before them, law 1 at every object either holds: each reads back by its
-/// name as its print.
+/// Before them, law 1 holds at every object either replica holds.
 ///
 /// The kit does not check the rules of SPEC §3 on what a change rests on,
 /// nor the clauses of law 35 on appends in memory and on overlays. For the

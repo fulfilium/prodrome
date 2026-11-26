@@ -27,7 +27,7 @@ use prodrome_data::husk::{Hashed, HuskObject, Sender, Stored};
 use prodrome_data::literal::{Datetime, ProdromeError};
 use prodrome_data::schema::Schema;
 
-/// For the core; no promise.
+/// For this library's own code; no promise.
 /// What a [`Dag`] holds, let go of: every object, every print that is not
 /// one, and the names of the objects held as husks.
 #[doc(hidden)]
@@ -124,21 +124,21 @@ impl<E> Dag<E> {
         self.objects().get(name)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Every object held, in the history or waiting outside it.
     #[doc(hidden)]
     pub fn held(&self) -> impl Iterator<Item = (&Hash, &Envelope<E>)> {
         self.objects().iter().chain(&self.waiting)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Is `name` held as an object, in the history or waiting outside it?
     #[doc(hidden)]
     pub fn holds(&self, name: &Hash) -> bool {
         self.objects().contains_key(name) || self.waiting.contains_key(name)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Every print `name` was held as, an object or unread, let go.
     #[doc(hidden)]
     pub fn forget(&mut self, name: &Hash) -> Option<Envelope<E>> {
@@ -150,21 +150,21 @@ impl<E> Dag<E> {
             .or_else(|| self.waiting.remove(name))
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The prints that are not objects: `unread`, in place of those held.
     #[doc(hidden)]
     pub fn set_unread(&mut self, unread: BTreeMap<Hash, Unread>) {
         self.unread = unread;
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// `names`, held as objects, are held as husks.
     #[doc(hidden)]
     pub fn hold_husks(&mut self, names: impl IntoIterator<Item = Hash>) {
         self.husks.extend(names);
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// The object `name` of the history replaced by its husk. The husk of
     /// the object's own `Change` rests on what the object rests on, so the
     /// kept facts (the tips, the order and its index) are kept; a husk that
@@ -177,7 +177,7 @@ impl<E> Dag<E> {
         }
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Every object held, every print that is not one, and the names of the
     /// objects held as husks.
     #[doc(hidden)]
@@ -209,7 +209,7 @@ impl<E> Dag<E> {
         interior
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Make the history the interior of every object held: each one waits,
     /// and [`Dag::grow`] takes back in what rests only on the rest.
     #[doc(hidden)]
@@ -218,7 +218,7 @@ impl<E> Dag<E> {
         self.grow(held);
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Extend this down-set by every object `arrived` and held waiting that
     /// rests only on it and on each other, and answer the names taken; the
     /// rest wait, each resting on something neither holds. The one step
@@ -367,10 +367,9 @@ impl<E> Dag<E> {
     ///
     /// A name is either an [`Unread`] print or a parent that no print has.
     /// Apart from a cycle, [`Dag::interior`] is exactly the objects that no
-    /// `resting` set names. The answer depends only on the prints (law 40),
-    /// so a DAG and its interior give the same answer. [`Dag::verify`]
-    /// reports these names, and every reading of a replica leaves them out
-    /// (laws 44 and 45).
+    /// `resting` set names. The answer depends only on the prints (law 40), so a DAG and its
+    /// interior give the same answer. [`Dag::verify`] reports these names,
+    /// and every reading of a replica leaves them out (laws 44 and 45).
     #[must_use]
     pub fn excluded(&self) -> Vec<Excluded> {
         let children = self.children();
@@ -418,7 +417,7 @@ impl<E> Dag<E> {
         Ok(Reach::empty(order, index))
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// `among`, parents first, by Kahn's walk over them alone: a parent
     /// outside them is passed over. A cycle is a refusal.
     #[doc(hidden)]
@@ -426,7 +425,7 @@ impl<E> Dag<E> {
         self.history.order_among(among)
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// Is `name` a legacy root, a `Sealed` with no `prev`?
     #[doc(hidden)]
     pub fn is_root(&self, name: &Hash) -> bool {
@@ -512,7 +511,7 @@ impl<E: Schema> Dag<E> {
         })
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// [`Dag::from_prints`] of the prints `read` answers for `names`. Each
     /// print is read on the thread that decodes it, so the bytes of a print
     /// are let go once it is decoded, and the reads of a large store run on
@@ -569,7 +568,7 @@ impl<E: Schema> Dag<E> {
             .collect())
     }
 
-    /// For the core; no promise.
+    /// For this library's own code; no promise.
     /// One object as the registers read it, in this DAG's prodromes.
     #[doc(hidden)]
     pub fn node(&self, name: &Hash) -> Option<Node<E>> {
@@ -858,7 +857,7 @@ pub(crate) fn tips_among<'a>(
     apart(graph).0.into_iter().cloned().collect()
 }
 
-/// For the core; no promise.
+/// For this library's own code; no promise.
 /// What a graph given as each name with the parents it names lacks: the
 /// names a parent list names that are not names of the graph.
 #[doc(hidden)]

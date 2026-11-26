@@ -84,10 +84,8 @@ pub struct Valued<'d> {
 
 impl Valued<'_> {
     /// The value that the order compares: the datum itself, but under
-    /// inclusion the list's items sorted and each once.
-    ///
-    /// So two writes that the order cannot tell apart give one datum, and a
-    /// print of a reading depends only on the reading.
+    /// inclusion the list's items sorted and each once, so that a print of a
+    /// reading depends only on the reading.
     #[must_use]
     pub fn value(&self) -> Datum {
         match (self.order, self.datum) {

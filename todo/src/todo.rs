@@ -36,9 +36,8 @@ pub const TODO_SIGNATURES: &[(&str, &[&str])] = &[
 /// six kinds, and the payload's record kind with the constructors that its
 /// fields nest.
 ///
-/// The record kind has the fields `todo, at, actor` and then the payload's
-/// fields. The core's names take precedence, so a payload record named
-/// `Created` cannot be parsed as a record.
+/// The core's names take precedence, so a payload record named `Created`
+/// cannot be parsed as a record.
 #[derive(Debug, Clone)]
 pub struct TodoVocabulary<P> {
     /// `todo, at, actor` then the payload's fields, owned: the one signature that is

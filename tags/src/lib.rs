@@ -7,9 +7,8 @@
 //! membership event ([`membership`]) puts a tag on a target or takes it off.
 //! An alias event ([`alias`]) makes a tag a name of another tag. A rename or
 //! a merge of two tags writes aliases and no membership.
-//! [`TagSet`](set::TagSet) reads the two stores together. A host describes
-//! its sets with one [`Tagging`]. The target and the tag can be one type.
-//! `prodrome-core` re-exports this crate as `prodrome::tags`.
+//! [`TagSet`](set::TagSet) reads the two stores together. The target and
+//! the tag can be one type.
 //!
 //! The two field names must differ from each other and from `at`, `actor`
 //! and `to`, because a print with a repeated field does not parse. The check

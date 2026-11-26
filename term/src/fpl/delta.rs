@@ -23,8 +23,8 @@ pub(crate) fn admit_span(name: &str, span: Delta) -> Result<Delta, FplError> {
     }
 }
 
-/// For the evaluator; no promise. The span in whole microseconds. A span
-/// holds at most `i64::MAX` milliseconds, so the count always fits in
+/// For this library's own code; no promise. The span in whole microseconds.
+/// A span holds at most `i64::MAX` milliseconds, so the count always fits in
 /// 128 bits.
 #[doc(hidden)]
 #[inline]
@@ -32,7 +32,7 @@ pub fn us_of(d: Delta) -> i128 {
     i128::from(d.num_seconds()) * 1_000_000 + i128::from(d.subsec_nanos()) / 1_000
 }
 
-/// For the evaluator; no promise. The span of `us` microseconds, or the
+/// For this library's own code; no promise. The span of `us` microseconds, or the
 /// longest span of the same sign where `us` is longer than a span holds.
 #[doc(hidden)]
 #[inline]

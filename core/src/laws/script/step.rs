@@ -82,8 +82,8 @@ pub enum Writing {
     /// append refuses it, because its value in an inflationary register
     /// falls below the reading it supersedes; signed as [`Writing::Signed`].
     /// The replica takes it, its reading does not fall, and `verify` finds
-    /// it below. Where the append takes the event, it is appended as
-    /// [`Writing::Signed`].
+    /// it below. Where the append takes the event, it is a
+    /// [`Writing::Signed`] append.
     Below,
 }
 

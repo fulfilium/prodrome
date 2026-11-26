@@ -9,9 +9,8 @@ use super::path::Path;
 /// forms a monad, `P(Path × T)` (law 39).
 ///
 /// [`History::join`] puts each inner value at its outer key and then its
-/// inner key, `{(p·q, v)}`. Flattening never changes a value and only adds
-/// a prefix to its key, so it renames no content-addressed object and
-/// rewrites none of its deps.
+/// inner key, `{(p·q, v)}`. Flattening only adds a prefix to a key, so it
+/// renames no content-addressed object and rewrites none of its deps.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct History<T>(BTreeSet<(Path, T)>);
 

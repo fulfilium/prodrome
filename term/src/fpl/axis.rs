@@ -15,7 +15,7 @@ pub const LAST: Instant = match NaiveDate::MAX.and_hms_micro_opt(23, 59, 59, 999
     None => NaiveDateTime::MAX,
 };
 
-/// For the evaluator; no promise. `at` moved `by` later, or earlier where
+/// For this library's own code; no promise. `at` moved `by` later, or earlier where
 /// `by` is negative. A move that leaves the axis stops at the end that it
 /// reaches. It is the one place where the evaluator adds a span to an
 /// instant, so no sum of an instant and a span can overflow.
@@ -30,7 +30,7 @@ pub fn advance(at: Instant, by: Delta) -> Instant {
     }
 }
 
-/// For the evaluator; no promise. `at` moved `by` earlier: [`advance`] by
+/// For this library's own code; no promise. `at` moved `by` earlier: [`advance`] by
 /// the negated span.
 #[doc(hidden)]
 #[inline]

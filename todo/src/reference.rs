@@ -1,12 +1,11 @@
 //! The reference payload: the record shape that `conformance/*.py` was
-//! taken with, and a full example of a [`crate::payload::Payload`].
+//! taken with, and an example of a [`crate::payload::Payload`].
 //!
 //! Its record kind is `Authored(todo, at, actor, kind, created, body, spec,
 //! rationale, category, waiting_on, detail, source, subtodos, notes, note)`.
 //! Every `Authored(...)` print in `conformance/*.py` parses and prints back
-//! byte for byte under this payload, so its fields never change. No other
-//! module of the core reads a field of this payload. The default feature
-//! `reference` enables the module.
+//! byte for byte under this payload, so its fields never change. No other module reads a field of this payload.
+//! The default feature `reference` enables the module.
 
 use crate::event::{mk_record, Name, TodoEvent};
 use crate::payload::Payload;

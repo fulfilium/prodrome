@@ -3,19 +3,13 @@
 //! `docs/design-register-types.md` §5, §6.0).
 //!
 //! [`Declared`], an event of a declared schema, implements `Schema` by
-//! interpreting its [`Declaration`]. A register is read by `fold::maximal`,
-//! and by `fold::grows` where it is declared inflationary. A store of
-//! `prodrome-core` opened at a declaration (`EventStore::at`) runs the same
-//! code as the store of a Rust schema. A declared schema has no price
-//! (design §4).
+//! interpreting its [`Declaration`]. A declared schema has no price (design
+//! §4).
 //!
 //! The text form is the literal grammar of SPEC §2 under the closed
-//! vocabulary [`Form`], not JSON, so that objects and schemas share one
-//! parser, one printer and one whitelist. Every set in a declaration prints
-//! sorted, so the text depends only on the schema, and its hash is the
-//! schema's name.
-//!
-//! `tests/admit.rs` admits a schema and shows a refusal by its law.
+//! vocabulary [`Form`], so that objects and schemas share one parser, one
+//! printer and one whitelist. Every set in a declaration prints sorted, so
+//! the hash of the text is the schema's name.
 
 mod admit;
 mod event;
@@ -37,8 +31,8 @@ use prodrome_data::literal::{Signature, Vocabulary};
 /// An admitted declared schema: only [`Declaration::admit`] makes one, so
 /// every [`Law`] holds for it.
 ///
-/// A clone shares one value. Two declarations are equal exactly when their
-/// names (the hashes of their canonical texts) are equal.
+/// Two declarations are equal exactly when their names (the hashes of their
+/// canonical texts) are equal.
 #[derive(Clone)]
 pub struct Declaration(Arc<Admitted>);
 

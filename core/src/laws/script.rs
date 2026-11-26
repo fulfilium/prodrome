@@ -1,10 +1,10 @@
 //! Law 68: three replicas driven through a random script of steps, with
 //! every invariant checked after every step.
 //!
-//! A script finds bugs that need several features in sequence (for example
-//! a partial sync, then a revocation, then a read through a cache), which a
-//! law of one equation cannot reach. Each of three actors (`ada`, `ben` and
-//! `cai`) holds a replica of its own. After every step, [`run`] checks:
+//! A script finds bugs that need several features in sequence, such as a
+//! partial sync, a revocation and a read through a cache, which a law of one
+//! equation cannot reach. Each of three actors (`ada`, `ben` and `cai`)
+//! holds a replica of its own. After every step, [`run`] checks:
 //!
 //! - each replica's kept fold is the fold of what it holds, and its tips
 //!   and heads are its history's;
@@ -25,9 +25,8 @@
 //!   leaves every replica holding the same objects.
 //!
 //! An application runs the machine over its own schema with [`a_script`]
-//! and a strategy of the writes of each actor; `docs/script-law.md` shows
-//! how. A failure names the law, the step and what differs, and proptest
-//! shrinks the script to a short one.
+//! and a strategy of the writes of each actor (`docs/script-law.md`). A failure names the law, the step and what
+//! differs, and proptest shrinks the script.
 
 mod kept;
 mod keys;

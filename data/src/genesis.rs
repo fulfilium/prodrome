@@ -36,7 +36,7 @@ pub fn mk_genesis(label: &str, nonce: &str) -> Result<Genesis, ProdromeError> {
 }
 
 impl Genesis {
-    pub fn to_value(&self) -> Value {
+    pub(crate) fn to_value(&self) -> Value {
         Value::call(
             "Genesis",
             vec![
@@ -46,7 +46,7 @@ impl Genesis {
         )
     }
 
-    pub fn from_call(call: &Call) -> Result<Genesis, ProdromeError> {
+    pub(crate) fn from_call(call: &Call) -> Result<Genesis, ProdromeError> {
         mk_genesis(&string_field(call, "label")?, &string_field(call, "nonce")?)
     }
 }

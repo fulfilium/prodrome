@@ -174,7 +174,7 @@ fn crossings(terms: &[&Term], from: Instant, to: Instant) -> Vec<Instant> {
 
 /// The number of evaluations for a term that is not piecewise-linear: one
 /// every ~1.9 h over a week, one every ~9 h over a month.
-pub const SAMPLES: i64 = 96;
+pub(crate) const SAMPLES: i64 = 96;
 
 /// One point of a drawn curve. The value is `∅` where the term has no value,
 /// and a reader must draw no line to or from that point.
@@ -196,7 +196,7 @@ pub struct Series {
 ///
 /// Exact where the term is piecewise-linear: knots at the window edges, at
 /// every slope change inside it, and a second on either side of every jump.
-/// Composite terms also get [`SAMPLES`] evenly spaced evaluations. Each knot
+/// Composite terms also get `SAMPLES` evenly spaced evaluations. Each knot
 /// is evaluated against `env_at(t)`, the environment as of that instant, so a
 /// dependency that an `After` reads is unbound before it completed and bound
 /// from then on.

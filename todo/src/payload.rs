@@ -2,16 +2,11 @@
 //! attaches to a todo.
 //!
 //! The core owns the lifecycle kinds and the fields `todo`, `at` and `actor`
-//! of a record, and a [`Payload`] owns the other fields. The core reads only
-//! the spec and the checklist length of a payload (SPEC §6).
+//! of a record, and a [`Payload`] owns the other fields.
 //!
 //! The name, the fields and the field order of a payload's constructor are in
 //! every stored print and its hash, so they never change. To store new data,
-//! add a new constructor (SPEC §1). `crate::reference` is the reference
-//! payload.
-//!
-//! The reads of a stored call's fields, such as [`string_field`], are
-//! defined in `prodrome-data` and re-exported here.
+//! add a new constructor (SPEC §1).
 
 pub use prodrome_data::payload::*;
 
@@ -24,40 +19,34 @@ use prodrome_term::term::Term;
 /// The fields of a record (SPEC §4) beyond `todo`, `at` and `actor`.
 ///
 /// A store holds one payload type, because the vocabulary that a stored
-/// object is parsed against is closed (SPEC §2). So a payload is a type
-/// parameter and never a `dyn`.
+/// object is parsed against is closed (SPEC §2). So a payload is a type parameter and never a `dyn`.
 ///
 /// # The contract
 ///
 /// - The printer emits `KIND(todo=…, at=…, actor=…, <the fields in order>)`,
-///   where `KIND` and the fields are [`Record::CONSTRUCTOR`]'s, and the
-///   values are [`Record::values`].
-/// - [`Payload::VOCABULARY`] holds every other constructor that the fields
-///   nest. None of these names may be one of the core's, because the core's
-///   name wins and the payload's is then unreachable (SPEC §2).
-/// - [`Record::from_call`] is the parse boundary. It must refuse what the
-///   smart constructor refuses, and its error is the parse error. A derived
-///   record calls the smart constructor that `#[literal(new = ...)]` names.
-/// - [`Payload::spec`] and [`Payload::checklist_len`] are the only readings
-///   of a payload that the core takes (SPEC §6).
+///   where `KIND` and the fields are [`Record::CONSTRUCTOR`]'s.
+/// - No name in [`Payload::VOCABULARY`] may be one of the core's, because the
+///   core's name wins and the payload's is then unreachable (SPEC §2).
+/// - [`Record::from_call`] must refuse what the smart constructor refuses.
+///   A derived record calls the constructor that `#[literal(new = ...)]`
+///   names.
 ///
 /// The bound is `PartialEq` and not `Eq`, because a spec is a [`Term`], and
 /// a term holds floats.
 pub trait Payload: Record + Clone + PartialEq + Debug + Send + Sync + 'static {
     /// Every other constructor that the fields use, with its declared field
-    /// order. It is empty for a payload of plain values.
+    /// order.
     const VOCABULARY: &'static [Constructor];
 
-    /// The spec by which the record prices its todo, if it carries one
-    /// (SPEC §6.2, §6.4).
+    /// The spec that prices the todo (SPEC §6.2, §6.4).
     fn spec(&self) -> Option<&Term>;
 
-    /// The number of checklist items in the record (SPEC §6.4). A payload
-    /// without a checklist returns zero, and prices by its spec alone.
+    /// The number of checklist items in the record (SPEC §6.4). A payload without a checklist returns zero and prices by its
+    /// spec alone.
     fn checklist_len(&self) -> usize;
 }
 
-/// The core's fields of the record kind (SPEC §4), in order, before the
+/// The core's fields of the record kind (SPEC §4), which come before the
 /// payload's fields. They never change.
 pub const RECORD_PREFIX: &[&str] = &["todo", "at", "actor"];
 

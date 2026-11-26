@@ -134,7 +134,7 @@ impl<E: Schema, R: Replica<E> + ?Sized> Replica<E> for &R {
 /// parents first.
 ///
 /// Where `sender` is [`Sender::Keeper`], `to` takes the husks that `from`
-/// keeps; from a stranger it refuses them.
+/// keeps. From a stranger, `to` refuses them.
 ///
 /// # Errors
 ///

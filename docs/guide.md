@@ -270,32 +270,36 @@ contains:
 The function `list_order` gives the order of a list: the most urgent todo
 first, then every row that has no number.
 
-## Part III. Using the crate
+## Part III. Using the library
 
 ### 10. Your program: a payload and a policy
 
-A program that uses the core supplies two things:
+A program that uses the library supplies two things. The library has several
+crates, and a program depends on the ones that hold what it uses (the table in
+`README.md` lists them). The module paths below are the paths of the facade
+`prodrome-core`; each crate has the same paths under its own name.
 
-- **A payload**, which implements `payload::Payload`. The payload gives the
+- **A payload**, which implements `payload::Payload` (crate `prodrome-todo`).
+  The payload gives the
   name of its record kind, the fields of a record in order, the vocabulary
   of nested values in those fields, a parse function, a print function, and
   the two values that the folds read (the spec of a record and its checklist
   length). The default feature `reference` includes
-  `prodrome::reference::Todo`, which is the payload of the vectors in
-  `conformance/`. If your program has its own payload, turn the feature off
-  with `default-features = false`.
-- **A policy**, which implements `policy::Policy`. A policy is one function
-  from an event to `Binds` or `Claims`. This function is all of SPEC
-  section 5. `policy::Untrusted` is the reference policy.
-  `Untrusted::none()` lets every event bind.
+  `reference::Todo`, which is the payload of the vectors in `conformance/`.
+  If your program has its own payload, turn the feature off with
+  `default-features = false`.
+- **A policy**, which implements `policy::Policy` (crate `prodrome-dag`). A
+  policy is one function from an event to `Binds` or `Claims`. This function
+  is all of SPEC section 5. `policy::Untrusted` (crate `prodrome-data`) is the
+  reference policy. `Untrusted::none()` lets every event bind.
 
 The `prodrome` command-line tool is one such program. It uses the reference
 payload, the reference policy, and the system clock. It is the only code in
 the workspace that reads the system clock.
 
-To check your schema with the laws that this crate checks its own schemas
-with, enable the `laws` feature in your tests' dependency on the crate.
-The module `prodrome::laws` gives each law of SPEC section 9 that asks
+To check your schema with the laws that the library checks its own schemas
+with, add `prodrome-core` with the `laws` feature to your
+`[dev-dependencies]`. The module `prodrome::laws` gives each law of SPEC section 9 that asks
 nothing of a schema as a function. `printed` checks that each print parses
 and prints back. `free`, `routed` and `valued` check that a reading is a
 function of the object set. `synced` checks that a sync is a join. Each
@@ -305,8 +309,11 @@ found broken, with what differs.
 
 ### 11. The Rust quick start
 
-The [quick start](../core/src/lib.rs) in the crate documentation is a
-doctest, so `cargo test` runs it. It does these steps:
+The [quick start](../core/src/lib.rs) in the documentation of `prodrome-core`
+is a doctest, so `cargo test` runs it. It uses the facade for short paths: the
+store steps need `prodrome-store` and the crates below it, and the pricing
+steps need `prodrome-reading` and the crates below it (see the root
+documentation of `prodrome-core` for the sets). It does these steps:
 
 1. Open a store with `EventStore::<TodoEvent<Todo>>::new(&dir,
    Untrusted::none())`, and call `init` to write its genesis.
@@ -322,8 +329,10 @@ doctest, so `cargo test` runs it. It does these steps:
    `∅`.
 6. Or call `view::entries` to get one row for each todo.
 
-Run `cargo doc --open` to read the documentation of every module. The module
-list in `core/src/lib.rs` gives the SPEC section of each module.
+Run `cargo doc --open` in the crates that your program depends on, to read
+the documentation of their modules. The root documentation of `prodrome-core`
+says which crate holds which module, and gives the SPEC section of each
+module.
 
 ### 12. The store on disk
 

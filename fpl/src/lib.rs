@@ -1,13 +1,8 @@
-//! The evaluator of FPL (SPEC §7) on the terms of `prodrome-term`: the
-//! fulfillment of a closed term, its explanation, the linking of
-//! references, the chain compiler, breakpoints, and when the value that a
-//! view observes next changes.
+//! The evaluator of FPL (SPEC §7) on the terms of `prodrome-term`.
 //!
 //! - Evaluate: [`fpl::link`] binds each `Ref` of a term and returns a
 //!   [`fpl::Closed`] term, and [`fpl::fulfillment`] reads it at an instant
 //!   against an [`fpl::Env`].
-//! - Explain: [`fpl::explained`] returns the term's shape with the value of
-//!   each node.
 //! - Observe: [`observe::next_change`] gives the first instant at which an
 //!   [`observe::Observation`] of the value changes.
 //!

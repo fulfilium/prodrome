@@ -19,18 +19,18 @@ pub enum Law {
     /// The text is its own canonical print, so the schema's name is the hash
     /// of its text, as an object's is (SPEC §3).
     Canonical,
-    /// Names are unique: events (and no event has an envelope's name or the
-    /// grammar's own), fields within an event, registers, an enum's
-    /// alternatives, a machine's covers, and the writes into a register, one
-    /// per event.
+    /// Names are unique among events (none has an envelope's name or the
+    /// grammar's own), among the fields of an event, among registers, among
+    /// an enum's alternatives and a machine's covers, and among the writes
+    /// into a register (one per event).
     Unique,
     /// Every event has the key field, a text.
     Key,
     /// Every event has `at`, an instant, and `actor`, a text.
     Stamp,
-    /// Every register is written, by fields that exist, of one type, the
-    /// type its order reads: an integer for a total order, a list for
-    /// inclusion, an enum naming every state of a machine.
+    /// Every register is written by fields that exist, all of the type that
+    /// its order reads: an integer for a total order, a list for inclusion,
+    /// an enum naming every state of a machine.
     Typed,
     /// A machine's covering relation is acyclic, so its transitive closure
     /// is a partial order. The other orders are partial orders by

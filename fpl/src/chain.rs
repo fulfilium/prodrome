@@ -128,9 +128,8 @@ impl Link {
 /// compiler resolved the `After` nodes from.
 ///
 /// Its readers take no environment, because the compiled term holds no
-/// constructor that reads one. A bare `Term` would let a caller pass an
-/// environment that the term ignores. The links are kept because a reader
-/// cannot otherwise tell a cancellation from a demand met.
+/// constructor that reads one. The links tell a reader a cancellation from a
+/// demand met.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Compiled {
     term: Closed,

@@ -1,6 +1,4 @@
-//! FPL, the term language, as data (SPEC §7): the smart constructors of a
-//! term, its spans, its canonical print and its parse, and the environment
-//! that a term reads. This module evaluates nothing.
+//! FPL, the term language, as data (SPEC §7). This module evaluates nothing.
 //!
 //! The `mk_*` smart constructors check the invariants of a term, and
 //! `parse_term` calls them. `Term::new` skips the checks.

@@ -234,15 +234,14 @@ pub fn mk_ref(todo: String) -> Result<Term, FplError> {
     }))
 }
 
-/// A qualified reference: the fulfillment of `entity` in the prodrome that
-/// `store` names: a genesis's name, or a name that the evaluator's
-/// `Stores::named` declares (SPEC §7.2).
+/// A qualified reference to `entity` in the prodrome that `store` names: a
+/// genesis's name, or a name that the evaluator's `Stores::named` declares
+/// (SPEC §7.2).
 ///
 /// # Errors
 ///
 /// It refuses a `store` that breaks the rule of [`TodoId`], or
-/// an `entity` that breaks the rule of [`Segment`] (not empty,
-/// no `/`).
+/// an `entity` that breaks the rule of [`Segment`] (not empty, no `/`).
 pub fn mk_ref_in(store: String, entity: String) -> Result<Term, FplError> {
     TodoId::new(store.as_str()).map_err(|e| FplError(format!("RefIn.store: {e}")))?;
     Segment::new(entity.as_str()).map_err(|e| FplError(format!("RefIn.entity: {e}")))?;
@@ -258,8 +257,8 @@ pub fn mk_absent() -> Term {
 }
 
 /// A todo's fulfillment function from its own spec and the number of items
-/// of its checklist, `checklist(own, n)` in SPEC §6, "The todo schema's
-/// registers". With neither a spec nor an item, it returns `None`.
+/// of its checklist (SPEC §6, "The todo schema's registers"). With neither a
+/// spec nor an item, it returns `None`.
 pub fn checklist(own: Option<Term>, items: usize) -> Result<Option<Term>, FplError> {
     if items == 0 {
         return Ok(own);
@@ -301,12 +300,8 @@ pub fn mk_piecewise(head: Term, pieces: Vec<(Instant, Term)>) -> Result<Term, Fp
         })
 }
 
-/// For the evaluator and the readings; no promise. `prodrome-fpl` calls
-/// it in `chain` and `link`, and `prodrome-reading` in `fold::flatten`. A
-/// schedule of terms in normal form: each term
-/// opened into its own schedule, the schedule of schedules joined (its diagonal, which is
-/// splicing), and a piece that repeats the one before it dropped. A schedule
-/// with no piece left is its head.
+/// For this library's own code; no promise. The normal-form term of a
+/// schedule of terms.
 #[doc(hidden)]
 pub fn piecewise(schedule: Schedule<Term>) -> Term {
     let normal = schedule.map(opened).join().normal();

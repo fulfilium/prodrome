@@ -9,8 +9,7 @@
 //! of nodes.
 //!
 //! The crate depends only on `prodrome-data`, for the hash type and the
-//! literal codec. It uses no schema, no store and no FPL. `prodrome-core`
-//! re-exports it as `prodrome::memo`.
+//! literal codec. It uses no schema, no store and no FPL.
 
 #![warn(clippy::pedantic)]
 

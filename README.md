@@ -36,40 +36,30 @@ the most urgent todo first.
 
 ## Installation
 
-The crates are not on crates.io yet. To use the library, add it as a git
-dependency at a fixed commit:
+The crates are not on crates.io yet. Add each crate that the program needs
+as a git dependency at a fixed commit. The library has thirteen crates, and
+a program rarely needs all of them. Depend on the crates in this table, and
+not on the facade `prodrome-core`, unless the program uses most of the
+library or the law kit:
 
-```toml
-[dependencies]
-prodrome = { package = "prodrome-core", git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
-```
+| The program | Depends on |
+|---|---|
+| builds, prints, parses, hashes and time-stamps events, or has a schema of its own | `prodrome-data` |
+| reads the registers of an entity from its events under a policy | `prodrome-data`, `prodrome-memo` (the caches), `prodrome-dag` (the DAG of a store's objects, its fold, the policies, the proof of signatures) |
+| opens a store, appends to it and reads it under a policy | the three crates above, and `prodrome-store` (the store on disk and in memory, replicas, doors, frontiers) |
+| adds a second backend for a replica | the same four crates; the backend implements `store::Replica` |
+| admits schemas declared as text | `prodrome-data` and `prodrome-declared` |
+| keeps tag sets or histories held in registers | `prodrome-tags` or `prodrome-nest`, each with `prodrome-data`, `prodrome-memo` and `prodrome-dag` |
+| keeps a summary tree over a log | `prodrome-digest`, with `prodrome-data` and `prodrome-memo` |
+| builds, prints and parses FPL terms | `prodrome-data` and `prodrome-term` |
+| also writes the todo schema's events | the same two, and `prodrome-todo` |
+| evaluates a term | `prodrome-data`, `prodrome-term` and `prodrome-fpl` |
+| reads a todo's price and its row in a list | `prodrome-data`, `prodrome-memo`, `prodrome-dag`, `prodrome-term`, `prodrome-fpl`, `prodrome-todo` and `prodrome-reading`; it reads no store |
+| runs the law kit, or uses most of the library | `prodrome-core`, which re-exports every module of the other crates |
 
-A program that only builds, prints, parses, hashes and time-stamps events
-can depend on the smaller crate `prodrome-data` instead, which holds the
-literals, the events, the objects, their names, and the conversions of an
-event's instant:
-
-```toml
-[dependencies]
-prodrome-data = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
-```
-
-A program that reads the registers of an entity from its events under a
-policy can depend on `prodrome-data`, `prodrome-memo` (the caches) and
-`prodrome-dag` (the DAG of a store's objects, its fold, the policies and
-the proof of signatures). A program that opens a store, appends to it and
-reads it under a policy can add `prodrome-store` (the store on disk and in
-memory, replicas, doors and frontiers). A program that admits schemas
-declared as text can depend on `prodrome-declared`, on the data crate. The
-crates `prodrome-tags` (tag sets), `prodrome-nest` (histories held in
-registers) and `prodrome-digest` (a summary tree over a log) each hold one
-module of the core. A program that builds, prints and parses FPL terms can
-depend on `prodrome-term`, on the data crate, and a program that also
-writes the todo schema's events can add `prodrome-todo`. Neither crate
-evaluates a term: `prodrome-fpl` holds the evaluator, on the data crate and
-`prodrome-term`. A program that reads a todo's price and its row in a list
-can depend on `prodrome-reading`, on the data, dag, term, fpl and todo
-crates; it reads no store.
+The root documentation of `prodrome-core` gives the size of each crate's
+public API in tokens, so that a reader knows what a dependency costs to
+read. This is a `Cargo.toml` of a program that opens a store:
 
 ```toml
 [dependencies]
@@ -79,9 +69,18 @@ prodrome-memo = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>
 prodrome-store = { git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
 ```
 
+This is the dependency on the facade:
+
+```toml
+[dependencies]
+prodrome = { package = "prodrome-core", git = "https://github.com/fulfilium/prodrome", rev = "<commit>" }
+```
+
 A program that depends on several of these crates gives each the same
-revision. The core requires the exact version of each of the other crates
-that it is released with.
+revision. The facade requires the exact version of each of the other crates
+that it is released with. The path of an item depends on the dependency: a
+program that depends on `prodrome-data` names `prodrome_data::event::Hash`,
+and a program that depends on the facade names `prodrome::event::Hash`.
 
 The library needs Rust 1.85 or later. The command-line tool is called
 `prodrome`, and it is in the crate `prodrome-cli`. Install it with cargo or

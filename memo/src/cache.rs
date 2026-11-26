@@ -2,18 +2,17 @@
 //! a partial function (design §6.2; SPEC §6, "A cache is a tabulation of a
 //! pure function").
 //!
-//! [`Cache::join`] merges two caches by the union of their pairs, so caches
-//! sync as replicas do (law 56). A key that comes to hold two values is a
-//! [`Finding`], which the cache keeps as evidence and never chooses between.
-//! An [`Evict`] policy decides which entries go, and it means the same over
-//! every [`Holder`]: over a file, it bounds the keys and so the file (law
-//! 58). [`Cache::forget`] also erases the bytes of the values (law 55).
+//! [`Cache::join`] merges two caches by the union of their pairs (law 56). A
+//! key that comes to hold two values is a [`Finding`], which the cache keeps
+//! as evidence and never chooses between. An [`Evict`] policy decides which
+//! entries go, and it means the same over every [`Holder`]: over a file, it
+//! bounds the keys and so the file (law 58). [`Cache::forget`] also erases
+//! the bytes of the values (law 55).
 //!
 //! A cache is not a replica of a store (`store::Replica`): an entry is
 //! deleted freely, is verified by recomputing and stays out of every
-//! checkpoint. The two
-//! never share a type, so that no entry can be received into a history and
-//! no object can be evicted from one.
+//! checkpoint. The two never share a type, so that no entry can be received
+//! into a history and no object can be evicted from one.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::marker::PhantomData;

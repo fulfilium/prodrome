@@ -27,7 +27,7 @@ pub fn read<'a, E: Schema>(
     scan(stream, at, policy, |_, _| {})
 }
 
-/// For the core; no promise. The admitted writes joined instant by instant.
+/// For this library's own code; no promise. The admitted writes joined instant by instant.
 //
 // `each` is shown the registers as they stand at every instant at which a
 // write is dated. The product is a semilattice, so the order in which the
@@ -56,7 +56,7 @@ pub fn scan<'a, E: Schema>(
     registers
 }
 
-/// For the core; no promise. Whether `stamp` joins its registers at `at` under `policy`.
+/// For this library's own code; no promise. Whether `stamp` joins its registers at `at` under `policy`.
 //
 // It joins where it is dated by then and the policy binds it: the reference
 // policy binds an event the schema does not ask about whoever wrote it (a

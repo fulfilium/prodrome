@@ -32,9 +32,8 @@ impl Outcome {
 /// candidate. One member is a value, and several members are a conflict.
 pub type Candidates = BTreeSet<Option<Outcome>>;
 
-/// A snapshot of history (SPEC §6.1): the candidate bindings that `After`
-/// reads for each todo that is not simply open, and the tendings that `Recur`
-/// reads for each todo.
+/// A snapshot of history (SPEC §6.1): the candidates that `After` reads for
+/// each todo that is not simply open, and the tendings that `Recur` reads.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Env {
     pub outcomes: BTreeMap<String, Candidates>,
