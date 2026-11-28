@@ -97,7 +97,8 @@ its todo id:
 - `roadmap(data, title:, href:, markup:)`: the open items that exist at `at`,
   in the core's list order (ascending value, then every item with no number,
   ties by id: the order `prodrome list` prints), then the closed.
-- `item(data, todo, markup:, objects:, back:)`: body, price and state, the
+- `item(data, todo, markup:, objects:, back:, back-title:)`: a link back to
+  the list at `back`, which shows `back-title` (`Roadmap` by default), then body, price and state, the
   thirty days, what it waits on and what waits on it, detail, the price in words ("42% now, falling from 55% to 5%
   by Sep 29, 17:00, over 3 days") with the explanation's parts beneath it,
   and the history, each event dated and linked to its object file.

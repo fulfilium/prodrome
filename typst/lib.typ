@@ -351,13 +351,15 @@
 /// One todo's page: its body, its price and its thirty days, what it waits
 /// on and what waits on it, its detail, why it is worth what it is, and its
 /// history. `todo` is the row's key. `objects` is where an object's file is
-/// linked (`objects/<hash>.py` on the site).
+/// linked (`objects/<hash>.py` on the site). `back` is the link to the list,
+/// and `back-title` is the list's title, which the link shows.
 #let item(
   data,
   todo,
   markup: false,
   objects: "objects/",
   back: "#/",
+  back-title: [Roadmap],
 ) = _look({
   let entry = data.entries.find(e => _key(e) == todo)
   if entry == none {
@@ -368,7 +370,7 @@
     let record = _record(data, entry)
     let body = _body(data, entry)
 
-    _aside("crumbs", _sep(link(back)[← Roadmap], raw(todo)))
+    _aside("crumbs", _sep(link(back)[← #back-title], raw(todo)))
     heading(level: 1, if body == "" { raw(todo) } else { _text(body, markup) })
     _rule
 
