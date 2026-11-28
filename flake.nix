@@ -530,6 +530,15 @@
             grep -q 'href="#/todo/ship-the-viewer"' roadmap.html
             grep -q '<strong>the viewer</strong>' roadmap.html
             grep -q '<svg' item.html
+            # The link back to the list shows `back-title`, and "Roadmap"
+            # when the caller gives none.
+            grep -q '← Roadmap</a>' item.html
+            printf '%s\n' '#import "@local/prodrome-typst:0.1.0": item' \
+              '#let data = json("data.json")' \
+              '#item(data, data.focus, back-title: [Claims])' > titled.typ
+            ${typstCompile} --features html --format html titled.typ titled.html
+            grep -q '← Claims</a>' titled.html
+            ! grep -q 'Roadmap' titled.html
             touch $out
           '';
           # The package compiles in typst-wasm's restricted project, whose

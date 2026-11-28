@@ -777,6 +777,12 @@ constructor's fields never change, in any release.
 
 ### Fixed
 
+- **An item page's link back to the list shows the list's title.**
+  prodrome-typst's `item` takes `back-title`, the words of the link back to
+  the list, with `Roadmap` as the default. The viewer passes the title that
+  its list page shows. Before this change, the item page of a store with a
+  label showed "← Roadmap", and the list page showed the label.
+
 - **The evaluator no longer stops on a time shift past the calendar
   (SPEC §7, "The time axis"; law 92).** Evaluation panicked where it added
   a span to an instant and the sum left the range of the calendar type. A

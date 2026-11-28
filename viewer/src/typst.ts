@@ -66,7 +66,7 @@ export function itemDocument(): string {
   return [
     IMPORT,
     `#let data = json("/data.json")`,
-    `#item(data, data.focus, markup: false, objects: data.objects, back: "#/" + data.query)`,
+    `#item(data, data.focus, markup: false, objects: data.objects, back: "#/" + data.query, back-title: data.title)`,
     ``,
   ].join("\n");
 }
