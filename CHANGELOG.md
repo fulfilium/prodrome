@@ -10,6 +10,12 @@ constructor's fields never change, in any release.
 
 ### Added
 
+- **The viewer's `read` can explain every todo in one reading.** `read`
+  takes `explained`: `"focus"` explains the page's focus only, as the
+  viewer's pages ask, and `"every"` explains every todo. A program that
+  writes the page of every item, such as a static site, asks for `"every"`
+  and does not fold the store a second time to explain each todo.
+
 - **The viewer shows any public store named in its address, and several
   stores as one list (docs/design-viewer-stores.md).** A link names each
   store after `#/?`: a base URL under which `objects/` lies, or

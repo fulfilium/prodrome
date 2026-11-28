@@ -354,7 +354,7 @@ export function readStores(
   for (const { part } of parts) {
     const label = part.label;
     const own = focusLabel === label && focus !== null ? focus.todo : null;
-    const reading = attempt(() => read(core, part.objects, now, own, set));
+    const reading = attempt(() => read(core, part.objects, now, own, "focus", set));
     if (reading.kind === "failed") {
       say(label, part.store, `the core could not read this store: ${reading.why}`);
       continue;
