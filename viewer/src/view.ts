@@ -188,8 +188,16 @@ export function targets(term: unknown): Target[] {
 }
 
 /**
- * Everything a page needs, read at `now`. `focus` names the one todo whose
- * explanation is wanted (the item page); the list asks for none.
+ * Which todos `read` explains. A page of the viewer shows one item, so it
+ * asks for the explanation of its focus only. A program that writes the page
+ * of every item asks for every explanation in one reading.
+ */
+export type Explained = "focus" | "every";
+
+/**
+ * Everything a page needs, read at `now`. `focus` names the todo that the
+ * page is about (the item page), or is `null` for the list. `explained`
+ * says whose explanation the view holds: the focus's only, or every todo's.
  *
  * `stores` is the set of prodromes a qualified reference reads (SPEC §7.2):
  * the `prices` answer of every loaded store's objects, `[{genesis, env,
@@ -201,7 +209,14 @@ export function targets(term: unknown): Target[] {
  * not form a DAG, have no honest reading (see prodrome-wasm's `Read`). The
  * page hands it only the objects the core kept (stores.ts).
  */
-export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string | null, stores: string): Folded {
+export function read(
+  core: Core,
+  objects: ObjectIn[],
+  now: Naive,
+  focus: string | null,
+  explained: Explained,
+  stores: string,
+): Folded {
   const sent = JSON.stringify(objects);
   const at = iso(now);
   const rows = JSON.parse(core.entries(sent, at, "[]")) as {
@@ -230,7 +245,7 @@ export function read(core: Core, objects: ObjectIn[], now: Naive, focus: string 
       continue;
     }
     marks[todo] = marksOf(core, closed, now, env, history);
-    if (todo === focus) explain[todo] = JSON.parse(core.explain(closed, at, env));
+    if (explained === "every" || todo === focus) explain[todo] = JSON.parse(core.explain(closed, at, env));
   }
 
   const view = {
